@@ -261,6 +261,12 @@ class DataProcesser:
         for key in self.float_cols:
             data.loc[:, key] = pd.to_numeric(data[key], errors='coerce', downcast='float')
 
+        # Numeric columns that are not in Float or Integer -- redundancy
+        for key in self.num_cols:
+            if key in self.float_cols + self.int_cols:
+                continue
+            data.loc[:, key] = pd.to_numeric(data[key], errors='coerce')
+
         # Categorical columns
         if fit_categorical:
             data = self._fit_cat_cols(data)
