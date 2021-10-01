@@ -39,9 +39,9 @@ class CatBoostClassifier:
     def get_params(self, **args):
         return self.model.get_params(**args)
 
-    def fit(self, x, y):
+    def fit(self, X, y):
         # Split data
-        train_x, test_x, train_y, test_y = train_test_split(x, y, stratify=y, test_size=0.1)
+        train_x, test_x, train_y, test_y = train_test_split(X, y, stratify=y, test_size=0.1)
 
         # Set Attributes
         self.classes_ = np.unique(y)
@@ -53,8 +53,8 @@ class CatBoostClassifier:
         # Set trained
         self.trained = True
 
-    def predict(self, x):
-        return self.model.predict(x).reshape(-1)
+    def predict(self, X):
+        return self.model.predict(X).reshape(-1)
 
-    def predict_proba(self, x):
-        return self.model.predict_proba(x)
+    def predict_proba(self, X):
+        return self.model.predict_proba(X)

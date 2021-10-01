@@ -26,20 +26,20 @@ class BaseClassifier:
     def reset_weights(self):
         pass
 
-    def predict(self, x):
-        return self.model.predict(x)
+    def predict(self, X):
+        return self.model.predict(X)
 
-    def predict_proba(self, x):
+    def predict_proba(self, X):
         if self.hasPredictProba:
-            return self.model.predict_proba(x)
+            return self.model.predict_proba(X)
         else:
             raise AttributeError('{} has no predict_proba'.format(type(self.model).__name__))
 
-    def score(self, x, y):
-        return self.model.score(x, y)
+    def score(self, X, y):
+        return self.model.score(X, y)
 
-    def fit(self, x, y):
+    def fit(self, X, y):
         self.classes_ = np.unique(y)
-        self.model.fit(x, y)
+        self.model.fit(X, y)
         self.trained = True
         return self

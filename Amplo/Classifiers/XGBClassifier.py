@@ -28,22 +28,22 @@ class XGBClassifier:
         self.binary = False
 
     @staticmethod
-    def convert_to_d_matrix(x, y=None):
+    def convert_to_d_matrix(X, y=None):
         # Convert input
-        assert type(x) in [pd.DataFrame, pd.Series, np.ndarray], 'Unsupported data input format'
-        if isinstance(x, np.ndarray) and len(x.shape) == 0:
-            x = x.reshape((-1, 1))
+        assert type(X) in [pd.DataFrame, pd.Series, np.ndarray], 'Unsupported data input format'
+        if isinstance(X, np.ndarray) and len(X.shape) == 0:
+            X = X.reshape((-1, 1))
 
         if y is None:
-            return xgb.DMatrix(x)
+            return xgb.DMatrix(X)
 
         else:
             assert type(y) in [pd.Series, np.ndarray], 'Unsupported data label format'
-            return xgb.DMatrix(x, label=y)
+            return xgb.DMatrix(X, label=y)
 
-    def fit(self, x, y):
+    def fit(self, X, y):
         # Split & Convert data
-        train_x, test_x, train_y, test_y = train_test_split(x, y, stratify=y, test_size=0.1)
+        train_x, test_x, train_y, test_y = train_test_split(X, y, stratify=y, test_size=0.1)
         d_train = self.convert_to_d_matrix(train_x, train_y)
         d_test = self.convert_to_d_matrix(test_x, test_y)
 
@@ -66,10 +66,10 @@ class XGBClassifier:
                                )
         self.trained = True
 
-    def predict(self, x):
+    def predict(self, X):
         # todo check input data
         assert self.trained is True, 'Model not yet trained'
-        d_predict = self.convert_to_d_matrix(x)
+        d_predict = self.convert_to_d_matrix(X)
         prediction = self.model.predict(d_predict)
 
         # Parse into most-likely class
@@ -78,10 +78,10 @@ class XGBClassifier:
         else:
             return np.argmax(prediction, axis=1)
 
-    def predict_proba(self, x):
+    def predict_proba(self, X):
         # todo check input data
         assert self.trained is True, 'Model not yet trained'
-        d_predict = self.convert_to_d_matrix(x)
+        d_predict = self.convert_to_d_matrix(X)
         prediction = self.model.predict(d_predict)
 
         # Parse into probabilities

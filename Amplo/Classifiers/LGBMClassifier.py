@@ -76,10 +76,10 @@ class LGBMClassifier:
                                )
         self.trained = True
 
-    def predict(self, x):
+    def predict(self, X):
         # todo check input data
         assert self.trained is True, 'Model not yet trained'
-        prediction = self.model.predict(x)
+        prediction = self.model.predict(X)
 
         # Parse into most-likely class
         if len(prediction.shape) == 2:
@@ -89,10 +89,10 @@ class LGBMClassifier:
             # BINARY
             return np.round(prediction)
 
-    def predict_proba(self, x):
+    def predict_proba(self, X):
         # todo check input data
         assert self.trained is True, 'Model not yet trained'
-        prediction = self.model.predict(x)
+        prediction = self.model.predict(X)
 
         # Parse into probabilities
         if len(prediction.shape) == 2:
