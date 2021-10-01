@@ -38,64 +38,7 @@ from .Documenting.RegressionDocumenting import RegressionDocumenting
 
 class Pipeline:
 
-    def __init__(self,
-                 target: str = '',
-                 name: str = '',
-                 version: int = None,
-                 mode: str = None,
-                 objective: str = None,
-
-                 # Data Processing
-                 num_cols: list = None,
-                 int_cols: list = None,
-                 float_cols: list = None,
-                 date_cols: list = None,
-                 cat_cols: list = None,
-                 missing_values: str = 'zero',
-                 outlier_removal: str = 'clip',
-                 z_score_threshold: int = 4,
-                 include_output: bool = False,
-
-                 # Feature Processing
-                 max_lags: int = 0,
-                 max_diff: int = 0,
-                 information_threshold: float = 0.99,
-                 extract_features: bool = True,
-                 feature_timeout: int = 3600,
-
-                 # Sequencing
-                 sequence: bool = False,
-                 seq_back: Union[int, list] = 1,
-                 seq_forward: Union[int, list] = 1,
-                 seq_shift: Union[int, list] = 0,
-                 seq_diff: str = 'none',
-                 seq_flat: bool = True,
-
-                 # Initial Modelling
-                 standardize: bool = False,
-                 shuffle: bool = True,
-                 cv_splits: int = 10,
-                 store_models: bool = False,
-
-                 # Grid Search
-                 grid_search_type: str = 'optuna',
-                 grid_search_time_budget: int = 3600,
-                 grid_search_candidates: int = 250,
-                 grid_search_iterations: int = 3,
-
-                 # Stacking
-                 stacking: bool = False,
-
-                 # Production
-                 preprocess_function: str = None,
-
-                 # Flags
-                 plot_eda: bool = True,
-                 process_data: bool = True,
-                 document_results: bool = True,
-                 verbose: int = 1,
-                 no_dirs: bool = False,
-                 **args):
+    def __init__(self, **kwargs):
         """
         Automated Machine Learning Pipeline for tabular data.
         Designed for predictive maintenance applications, failure identification, failure prediction, condition
@@ -103,11 +46,14 @@ class Pipeline:
 
         Parameters
         ----------
+        Main Parameters:
         target [str]: Column name of the output/dependent/regressand variable.
         name [str]: Name of the project (for documentation)
         version [int]: Pipeline version (set automatically)
         mode [str]: 'classification' or 'regression'
         objective [str]: from sklearn metrics and scoring
+
+        Data Processor:
         int_cols [list[str]]: Column names of integer columns
         float_cols [list[str]]: Column names of float columns
         date_cols [list[str]]: Column names of datetime columns
@@ -116,114 +62,134 @@ class Pipeline:
         outlier_removal [str]: [DataProcessing] - 'clip', 'boxplot', 'z-score' or 'none'
         z_score_threshold [int]: [DataProcessing] If outlier_removal = 'z-score', the threshold is adaptable
         include_output [bool]: Whether to include output in the training data (sensible only with sequencing)
+
+        Feature Processor:
+        extract_features [bool]: Whether or not to use FeatureProcessing module
+        information_threshold : [FeatureProcessing] Threshold for removing co-linear features
+        feature_timeout [int]: [FeatureProcessing] Time budget for feature processing
         max_lags [int]: [FeatureProcessing] Maximum lags for lagged features to analyse
         max_diff [int]: [FeatureProcessing] Maximum differencing order for differencing features
-        information_threshold : [FeatureProcessing] Threshold for removing co-linear features
-        extract_features [bool]: Whether or not to use FeatureProcessing module
-        feature_timeout [int]: [FeatureProcessing] Time budget for feature processing
+
+        Sequencing:
         sequence [bool]: [Sequencing] Whether or not to use Sequence module
-        back [int or list[int]]: Input time indices
-        If list -> includes all integers within the list
-        If int -> includes that many samples back
-        forward [int or list[int]: Output time indices
-        If list -> includes all integers within the list.
-        If int -> includes that many samples forward.
-        shift [int]: Shift input / output samples in time
-        diff [int]:  Difference the input & output, 'none', 'diff' or 'log_diff'
+        seq_back [int or list[int]]: Input time indices
+            If list -> includes all integers within the list
+            If int -> includes that many samples back
+        seq_forward [int or list[int]: Output time indices
+            If list -> includes all integers within the list.
+            If int -> includes that many samples forward.
+        seq_shift [int]: Shift input / output samples in time
+        seq_diff [int]:  Difference the input & output, 'none', 'diff' or 'log_diff'
+        seq_flat [bool]: Whether to return a matrix (True) or Tensor (Flat)
+
+        Modelling:
         standardize [bool]: Whether to standardize input/output data
         shuffle [bool]: Whether to shuffle the samples during cross-validation
         cv_splits [int]: How many cross-validation splits to make
         store_models [bool]: Whether to store all trained model files
+
+        Grid Search:
         grid_search_type [str]: Which method to use 'optuna', 'halving', 'base'
         grid_search_time_budget : Time budget for grid search
         grid_search_candidates : Parameter evaluation budget for grid search
         grid_search_iterations : Model evaluation budget for grid search
+
+        Stacking:
         stacking [bool]: Whether to create a stacking model at the end
-        custom_code [str]: Add custom code for the prediction function, useful for production. Will be executed with
-        exec, can be multiline. Uses data as input.
+
+        Production:
+        preprocess_function [str]: Add custom code for the prediction function, useful for production. Will be executed
+            with exec, can be multiline. Uses data as input.
+
+        Flags:
         plot_eda [bool]: Whether or not to run Exploratory Data Analysis
         process_data [bool]: Whether or not to force data processing
         document_results [bool]: Whether or not to force documenting
+        no_dirs [bool]: Whether to create files or not
         verbose [int]: Level of verbosity
         """
         # Production initiation
         self.bestModel = None
         self.settings = None
-
-        # Parsing input
         self.mainDir = 'AutoML/'
-        self.target = re.sub('[^a-z0-9]', '_', target.lower())
-        self.verbose = verbose
-        self.preprocessFunction = preprocess_function
-        self.name = name
+
+        # Copy arguments
+        ##################
+        # Main Settings
+        self.target = re.sub('[^a-z0-9]', '_', kwargs.get('target', '').lower())
+        self.name = kwargs.get('name', 'AutoML')
+        self.version = kwargs.get('version', None)
+        self.mode = kwargs.get('mode', None)
+        self.objective = kwargs.get('objective', None)
+
+        # Data Processor
+        self.intCols = kwargs.get('int_cols', [])
+        self.floatCols = kwargs.get('float_cols', [])
+        self.dateCols = kwargs.get('date_cols', [])
+        self.catCols = kwargs.get('cat_cols', [])
+        self.missingValues = kwargs.get('missing_values', 'zero')
+        self.outlierRemoval = kwargs.get('outlier_removal', 'clip')
+        self.zScoreThreshold = kwargs.get('z_score_threshold', 4)
+        self.includeOutput = kwargs.get('include_output', False)
+
+        # Feature Processor
+        self.extractFeatures = kwargs.get('extract_features', True)
+        self.informationThreshold = kwargs.get('information_threshold', 0.999)
+        self.featureTimeout = kwargs.get('feature_timeout', 3600)
+        self.maxLags = kwargs.get('max_lags', 0)
+        self.maxDiff = kwargs.get('max_diff', 0)
+
+        # Sequencer
+        self.sequence = kwargs.get('sequence', False)
+        self.sequenceBack = kwargs.get('seq_back', 1)
+        self.sequenceForward = kwargs.get('seq_forward', 1)
+        self.sequenceShift = kwargs.get('seq_shift', 0)
+        self.sequenceDiff = kwargs.get('seq_diff', 'none')
+        self.sequenceFlat = kwargs.get('seq_flat', True)
+
+        # Modelling
+        self.standardize = kwargs.get('standardize', False)
+        self.shuffle = kwargs.get('shuffle', True)
+        self.cvSplits = kwargs.get('cv_shuffle', 10)
+        self.storeModels = kwargs.get('store_models', False)
+
+        # Grid Search Parameters
+        self.gridSearchType = kwargs.get('grid_search_type', 'optuna')
+        self.gridSearchTimeout = kwargs.get('grid_search_time_budget', 3600)
+        self.gridSearchCandidates = kwargs.get('grid_search_candidates', 250)
+        self.gridSearchIterations = kwargs.get('grid_search_iterations', 3)
+
+        # Stacking
+        self.stacking = kwargs.get('stacking', False)
+
+        # Production
+        self.preprocessFunction = kwargs.get('preprocess_function', None)
+
+        # Flags
+        self.plotEDA = kwargs.get('plot_eda', False)
+        self.processData = kwargs.get('process_data', True)
+        self.documentResults = kwargs.get('document_results', True)
+        self.verbose = kwargs.get('verbose', 0)
+        self.noDirs = kwargs.get('no_dirs', False)
 
         # Checks
-        if mode is not None:
-            assert mode == 'regression' or mode == 'classification', 'Supported modes: regression, classification.'
-        assert max_lags < 50, 'Max_lags too big. Max 50.'
-        assert 0 < information_threshold < 1, 'Information threshold needs to be within [0, 1'
-        assert max_diff < 5, 'Max diff too big. Max 5.'
-        assert grid_search_type.lower() in ['base', 'halving', 'optuna'], 'Grid Search Type must be Base, Halving or ' \
-                                                                          'Optuna'
+        assert self.mode in [None, 'regression', 'classification'], 'Supported modes: regression, classification.'
+        assert 0 < self.informationThreshold < 1, 'Information threshold needs to be within [0, 1]'
+        assert self.maxLags < 50, 'Max_lags too big. Max 50.'
+        assert self.maxDiff < 5, 'Max diff too big. Max 5.'
+        assert self.gridSearchType.lower() in ['base', 'halving', 'optuna'], 'Grid Search Type must be Base, Halving ' \
+                                                                             'or Optuna'
 
         # Advices
-        if include_output and not sequence:
+        if self.includeOutput and not self.sequence:
             warnings.warn('[AutoML] IMPORTANT: strongly advices to not include output without sequencing.')
 
         # Objective & Scorer
         self.scorer = None
-        if objective is not None:
-            assert isinstance(objective, str), 'Objective needs to be a string, not type {}'.format(type(objective))
-            assert objective in metrics.SCORERS.keys(), 'Metric not supported, look at sklearn.metrics.SCORERS.keys()'
-            self.scorer = metrics.SCORERS[objective]
-
-        # Pipeline Params
-        self.mode = mode
-        self.objective = objective
-        self.version = version
-        self.includeOutput = include_output
-        self.plotEDA = plot_eda
-        self.processData = process_data
-        self.documentResults = document_results
-
-        # Data Processing params
-        self.intCols = [] if int_cols is None else int_cols
-        self.floatCols = [] if float_cols is None else float_cols
-        self.dateCols = [] if date_cols is None else date_cols
-        self.catCols = [] if cat_cols is None else cat_cols
-        self.missingValues = missing_values
-        self.outlierRemoval = outlier_removal
-        self.zScoreThreshold = z_score_threshold
-
-        # Feature Processing params
-        self.extractFeatures = extract_features
-        self.maxLags = max_lags
-        self.maxDiff = max_diff
-        self.informationThreshold = information_threshold
-        self.featureTimeout = feature_timeout
-
-        # Sequence Params
-        self.sequence = sequence
-        self.sequenceBack = seq_back
-        self.sequenceForward = seq_forward
-        self.sequenceShift = seq_shift
-        self.sequenceDiff = seq_diff
-        self.sequenceFlat = seq_flat
-
-        # Modelling Params
-        self.standardize = standardize
-        self.shuffle = shuffle
-        self.cvSplits = cv_splits
-        self.storeModels = store_models
-
-        # Grid Search params
-        self.gridSearchType = grid_search_type.lower()
-        self.gridSearchTimeout = grid_search_time_budget
-        self.gridSearchCandidates = grid_search_candidates
-        self.gridSearchIterations = grid_search_iterations
-
-        # Stacking
-        self.stacking = stacking
+        if self.objective is not None:
+            assert isinstance(self.objective, str), 'Objective needs to be a string'
+            assert self.objective in metrics.SCORERS.keys(), 'Metric not supported, look at sklearn.metrics'
+            self.scorer = metrics.SCORERS[self.objective]
 
         # Instance initiating
         self.x = None
@@ -233,36 +199,20 @@ class Pipeline:
         self.n_classes = None
         self.is_fitted = False
 
-        # Flags
-        self._set_flags()
-
-        # Directories
-        if not no_dirs:
-            print('exec')
-            # Create Directories
-            self._create_dirs()
-
-            # Load Version
-            self._load_version()
-
         # Required sub-classes
         self.dataSampler = DataSampler()
         self.dataProcesser = DataProcesser()
         self.dataSequencer = Sequencer()
         self.featureProcesser = FeatureProcesser()
 
-        # Store Pipeline Settings
-        args = locals()
-        args.pop('self')
-        self.settings = {'pipeline': args, 'validation': {}}
+        # Create dirs
+        if not self.noDirs:
+            print('Creating Dirs & Loading')
+            self._create_dirs()
+            self._load_version()
 
-    def _set_flags(self):
-        if self.plotEDA is None:
-            self.plotEDA = Utils.boolean_input('Make all EDA graphs?')
-        if self.processData is None:
-            self.processData = Utils.boolean_input('Process/prepare data?')
-        if self.documentResults is None:
-            self.documentResults = Utils.boolean_input('Validate results?')
+        # Store Pipeline Settings
+        self.settings = {'pipeline': kwargs, 'validation': {}}
 
     def _load_version(self):
         """
@@ -315,6 +265,7 @@ class Pipeline:
         settings [dict]: Pipeline settings
         """
         # Set parameters
+        settings['pipeline']['no_dirs'] = True
         self.__init__(**settings['pipeline'])
         self.settings = settings
         self.dataProcesser.load_settings(settings['data_processing'])
@@ -331,10 +282,8 @@ class Pipeline:
     def _create_dirs(self):
         folders = ['', 'EDA', 'Data', 'Features', 'Documentation', 'Production', 'Settings']
         for folder in folders:
-            try:
+            if not os.path.exists(self.mainDir + folder):
                 os.makedirs(self.mainDir + folder)
-            except FileExistsError:
-                continue
 
     def sort_results(self, results: pd.DataFrame) -> pd.DataFrame:
         return self._sort_results(results)
@@ -420,28 +369,6 @@ class Pipeline:
         assert self.settings['standardize'], "Standardize settings not found"
         return y * self.settings['standardize']['output']['std'] + self.settings['standardize']['output']['mean']
 
-    def prep_data(self, feature_set: str):
-        """
-        We don't want to store standardized, sequenced data --> why again?
-        """
-        # Copy
-        x, y = copy.deepcopy(self.x), copy.deepcopy(self.y)
-
-        # Standardize
-        if self.standardize:
-            x, y = self._transform_standardize(x, y)
-
-        # Select Features
-        x = x[self.featureSets[feature_set]]
-
-        # Sequence
-        if self.sequence:
-            sequencer = Sequencer(back=self.sequenceBack, forward=self.sequenceForward,
-                                  shift=self.sequenceShift, diff=self.sequenceDiff)
-            x, y = sequencer.convert(x, y)
-
-        return x, y
-
     @staticmethod
     def _sort_results(results: pd.DataFrame) -> pd.DataFrame:
         return results.sort_values('worst_case', ascending=False)
@@ -463,7 +390,7 @@ class Pipeline:
         # Parse & return best parameters (regardless of if it's optimized)
         return Utils.parse_json(results.iloc[0]['params'])
 
-    def fit(self, data: pd.DataFrame):
+    def fit(self, *args, **kwargs):
         """
         Fit the full autoML pipeline.
 
@@ -490,10 +417,8 @@ class Pipeline:
         # Starting
         print('\n\n*** Starting Amplo AutoML - {} ***\n\n'.format(self.name))
 
-        # Tests
-        assert len(data) > 0, 'Data has length zero'
-        assert self.target != '', "Empty target string."
-        assert self.target in Utils.clean_keys(data).keys(), 'Target missing in data'
+        # Reading data
+        data = self._read_data(*args, **kwargs)
 
         # Detect mode (classification / regression)
         self._mode_detector(data)
@@ -530,6 +455,55 @@ class Pipeline:
 
         self.is_fitted = True
         print('[AutoML] All done :)')
+
+    def _read_data(self, *args, **kwargs) -> pd.DataFrame:
+        """
+        To support Pandas & Numpy, with just data and x, y, this function reads the data and loads into desired format.
+        """
+        assert len(args) + len(kwargs) != 0, "No data provided."
+
+        # Handle args
+        if len(args) + len(kwargs) == 1:
+            if len(args) == 1:
+                data = args[0]
+            elif len(kwargs) == 1:
+                assert 'data' in kwargs, "'data' argument missing"
+                data = args['data']
+
+            # Test data
+            assert isinstance(data, pd.DataFrame), "With only 1 argument, data must be a Pandas Dataframe."
+            assert self.target != '', 'No target string provided'
+            assert self.target in Utils.clean_keys(data).keys(), 'Target column missing'
+
+        elif len(args) + len(kwargs) == 2:
+            if len(args) == 2:
+                x, y = args
+            elif len(kwargs) == 2:
+                assert 'x' in kwargs and 'y' in kwargs, "'x' or 'y' argument missing"
+                x, y = kwargs['x'], kwargs['y']
+            else:
+                raise ValueError('Cannot understand halfly named arguments...')
+
+            # Parse data
+            assert isinstance(x, (np.ndarray, pd.Series, pd.DataFrame)), "Unsupported data type for 'x'"
+            if isinstance(x, pd.Series):
+                data = pd.DataFrame(x)
+            elif isinstance(x, np.ndarray):
+                data = pd.DataFrame(x)
+            else:
+                data = x
+
+            # Check (and update) target
+            if self.target == '':
+                self.target = 'target'
+
+            # Add target
+            data[self.target] = y
+
+        else:
+            raise ValueError('Incorrect number of arguments.')
+
+        return data
 
     def _mode_detector(self, data: pd.DataFrame):
         """

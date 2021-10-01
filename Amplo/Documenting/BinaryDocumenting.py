@@ -100,7 +100,7 @@ class BinaryDocumenting(FPDF):
         @return:
         @rtype:
         """
-        x, y = self.p.prep_data(self.feature_set)
+        x, y = self.p.x, self.p.y
         self.x, self.y = x.to_numpy(), y.to_numpy()
 
     def analyse(self):

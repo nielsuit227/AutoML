@@ -49,6 +49,7 @@ class TestPipeline(unittest.TestCase):
             shutil.rmtree('AutoML')
         pipeline = Pipeline(target='target', grid_search_candidates=1,
                             stacking=True, feature_timeout=5)
+        print(self.c_data.keys())
         pipeline.fit(self.c_data)
         pipeline._prepare_production_files(model='StackingClassifier')
         shutil.rmtree('AutoML')
@@ -68,7 +69,7 @@ class TestPipeline(unittest.TestCase):
         if os.path.exists('AutoML'):
             shutil.rmtree('AutoML')
 
-        pipeline = Pipeline('target',
+        pipeline = Pipeline(target='target',
                             name='AutoReg',
                             mode='regression',
                             objective='r2',
@@ -106,7 +107,7 @@ class TestPipeline(unittest.TestCase):
         # Settings prediction
         settings = json.load(open('AutoML/Production/v1/Settings.json', 'r'))
         model = joblib.load('AutoML/Production/v1/Model.joblib')
-        p = Pipeline()
+        p = Pipeline(no_dirs=True)
         p.load_settings(settings)
         p.load_model(model)
         assert np.allclose(p.predict(self.r_data), prediction)
@@ -117,7 +118,7 @@ class TestPipeline(unittest.TestCase):
     def test_classification(self):
         if os.path.exists('AutoML'):
             shutil.rmtree('AutoML')
-        pipeline = Pipeline('target',
+        pipeline = Pipeline(target='target',
                             name='AutoClass',
                             mode='classification',
                             objective='neg_log_loss',
@@ -147,7 +148,8 @@ class TestPipeline(unittest.TestCase):
         # Settings prediction
         settings = json.load(open('AutoML/Production/v1/Settings.json', 'r'))
         model = joblib.load('AutoML/Production/v1/Model.joblib')
-        p = Pipeline()
+        p = Pipeline(no_dirs=True)
+        print(settings)
         p.load_settings(settings)
         p.load_model(model)
         assert np.allclose(p.predict_proba(self.c_data), prediction)

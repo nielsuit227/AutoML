@@ -21,23 +21,37 @@ The easiest way is to install our Python package through [PyPi](https://pypi.org
 pip install Amplo
 ```
 
-# 2. Amplo AutoML Features
+# 2. Usage
+Usage is very simple with Amplo's AutoML Pipeline. 
+```python
+from Amplo import Pipeline
+from sklearn.datasets import make_classification
+from sklearn.datasets import make_regression
+
+
+x, y = make_classification()
+pipeline = Pipeline()
+pipeline.fit(x, y)
+
+x, y = make_regression()
+pipeline = Pipeline()
+pipeline.fit(x, y)
+```
+
+# 3. Amplo AutoML Features
 
 ## Interval Analyser
 `from Amplo.AutoML import IntervalAnalyser`
 
-Interval Analyser for Log file classification. When log files have to be classifier, and there is not enough
+Interval Analyser for Log file classification. When log files have to be classified, and there is not enough
 data for time series methods (such as LSTMs, ROCKET or Weasel, Boss, etc), one needs to fall back to classical
-machine learning models which work better with lower samples. But this raises the problem of which samples to
+machine learning models which work better with lower samples. This raises the problem of which samples to
 classify. You shouldn't just simply classify on every sample and accumulate, that may greatly disrupt
-classification performance. Therefore, we introduce this interval analyser. By using K-Nearest Neighbors,
-one can estimate the strength of correlation for every sample inside a log. Using this allows for better
-interval selection for classical machine learning models.
+classification performance. Therefore, we introduce this interval analyser. By using an approximate K-Nearest 
+Neighbors algorithm, one can estimate the strength of correlation for every sample inside a log. Using this 
+allows for better interval selection for classical machine learning models.
 
-To use this interval analyser, make sure:
-- That your logs are of equal length
-- That your logs have identical keys
-- That your logs are located in a folder of their class, with one parent folder with all classes, e.g.:
+To use this interval analyser, make sure that your logs are located in a folder of their class, with one parent folder with all classes, e.g.:
 
 ```
 +-- Parent Folder
@@ -49,6 +63,7 @@ To use this interval analyser, make sure:
 ```
 ## Exploratory Data Analysis
 `from Amplo.AutoML import DataExplorer`
+
 Automated Exploratory Data Analysis. Covers binary classification and regression.
 It generates:
 - Missing Values Plot
@@ -59,7 +74,7 @@ It generates:
 - Random Forest Feature Importance
 - Predictive Power Score
 
-Additionally fFor Regression:
+Additional plots for Regression:
 - Seasonality Plots
 - Differentiated Variance Plot
 - Auto Correlation Function Plot
@@ -69,16 +84,41 @@ Additionally fFor Regression:
 
 ## Data Processing
 `from Amplo.AutoML import DataProcesser`
-Automated Data Cleaning. Handles the following items:
-- Cleans Column Names
-- Duplicate Columns and Rows
-- Data Types
-- Missing Values
-- Outliers
-- Constant Columns
+
+Automated Data Cleaning:
+- Infers & converts data types (integer, floats, categorical, datetime)
+- Reformats column names
+- Removes duplicates columns and rows
+- Handles missing values by:
+  - Removing columns
+  - Removing rows
+  - Interpolating
+  - Filling with zero's
+- Removes outliers using:
+  - Clipping
+  - Z-score
+  - Quantiles 
+- Removes constant columns
+
+## Data Sampler
+`from Amplo.AutoML import DataSampler`
+
+This pipeline is designed to handle unbalanced classification problems. 
+Aside weighted loss functions, under sampling the majority class or down sampling the 
+minority class helps. Various algorithms are analysed:
+- SMOTE
+- Borderline SMOTE
+- Random Over Sampler
+- Tomek Links
+- One Sided Selection
+- Random Under Sampler
+- Edited Nearest Neighbours
+- SMOTE Tomek
+- SMOTE Edited Nearest Neighbours
 
 ## Feature Processing
 `from Amplo.AutoML import FeatureProcesser`
+
 Automatically extracts and selects features. Removes Co-Linear Features.
 Included Feature Extraction algorithms:
 - Multiplicative Features
@@ -95,16 +135,17 @@ Included Feature Extraction algorithms:
 Included Feature Selection algorithms:
 - Random Forest Feature Importance (Threshold and Increment)
 - Predictive Power Score
-- Boruta
 
 ## Sequencing
 `from Amplo.AutoML import Sequencer`
-For timeseries regression problems, it is often useful to include multiple previous samples instead of just the latest. 
+
+For time series regression problems, it is often useful to include multiple previous samples instead of just the latest. 
 This class sequences the data, based on which time steps you want included in the in- and output. 
 This is also very useful when working with tensors, as a tensor can be returned which directly fits into a Recurrent Neural Network. 
 
 ## Modelling
 `from Amplo.AutoML import Modeller`
+
 Runs various regression or classification models.
 Includes:
 - Scikit's Linear Model
@@ -115,15 +156,20 @@ Includes:
 - DMLC's XGBoost
 - Catboost's Catboost
 - Microsoft's LightGBM
+- Stacking Models
 
 ## Grid Search
 `from Amplo.GridSearch import *`
-Contains three hyperparameter optimizers, a basic `GridSearch`, an implementation of Scikit's `RandomHalvingSearch` and 
-an implementation of Optuna's Tree-structured Parzen Estimator. Generally we advice to use Optuna.  
+
+Contains three hyper parameter optimizers with extended predefined model parameters:
+- Grid Search
+- Halving Random Search
+- `Optuna`'s Tree-Parzen-Estimator
 
 ## Automatic Documntation
 `from Amplo.AutoML import Documenter`
-Contains a documenter for classification (`binary` and `multiclass` prolems), as well as for regression. 
+
+Contains a documenter for classification (`binary` and `multiclass` problems), as well as for regression. 
 Creates a pdf report for a Pipeline, including metrics, data processing steps, and everything else to recreate the result.
 
 
