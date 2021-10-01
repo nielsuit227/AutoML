@@ -207,7 +207,6 @@ class Pipeline:
 
         # Create dirs
         if not self.noDirs:
-            print('Creating Dirs & Loading')
             self._create_dirs()
             self._load_version()
 
@@ -560,10 +559,7 @@ class Pipeline:
                                                               .format(self.version), 'r'))
             self.dataProcesser.load_settings(self.settings['data_processing'])
 
-        # Clean
         else:
-            print('[AutoML] Starting Data Processor')
-
             # Cleaning
             data = self.dataProcesser.fit_transform(data)
 

@@ -270,7 +270,7 @@ class DataProcesser:
             data = self._transform_cat_cols(data)
 
         # We need everything to become numeric, so all that is not mentioned will be handled as numeric
-        all_cols = self.float_cols + self.int_cols + self.date_cols + self.cat_cols
+        all_cols = self.float_cols + self.int_cols + self.date_cols + self.cat_cols + [self.target]
         for key in data.keys():
             if key not in all_cols:
                 data.loc[:, key] = pd.to_numeric(data[key], errors='coerce')

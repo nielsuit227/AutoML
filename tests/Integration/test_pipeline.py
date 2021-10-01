@@ -49,7 +49,6 @@ class TestPipeline(unittest.TestCase):
             shutil.rmtree('AutoML')
         pipeline = Pipeline(target='target', grid_search_candidates=1,
                             stacking=True, feature_timeout=5)
-        print(self.c_data.keys())
         pipeline.fit(self.c_data)
         pipeline._prepare_production_files(model='StackingClassifier')
         shutil.rmtree('AutoML')
