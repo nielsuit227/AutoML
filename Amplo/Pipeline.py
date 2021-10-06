@@ -1158,7 +1158,9 @@ class Pipeline:
 
         # Custom code
         if self.preprocessFunction is not None:
-            exec(self.preprocessFunction)
+            ex_globals = {'data': data}
+            exec(self.preprocessFunction, ex_globals)
+            data = ex_globals['data']
 
         # Convert
         x, y = self.convert_data(data)
@@ -1187,7 +1189,9 @@ class Pipeline:
 
         # Custom code
         if self.preprocessFunction is not None:
-            exec(self.preprocessFunction)
+            ex_globals = {'data': data}
+            exec(self.preprocessFunction, ex_globals)
+            data = ex_globals['data']
 
         # Print
         if self.verbose > 0:
