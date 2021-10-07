@@ -1051,10 +1051,16 @@ class Pipeline:
         params = Utils.parse_json(params)
 
         # Update pipeline settings
+        self.settings['pipeline']['verbose'] = 0
         self.settings['model'] = model  # The string
         self.settings['params'] = params
         self.settings['feature_set'] = feature_set
         self.settings['features'] = self.featureSets[feature_set]
+
+        # Prune Data Processor
+        required_features = self.featureProcesser._get_required_features(feature_set)
+        self.dataProcesser._prune_features(required_features)
+        self.settings['data_processing'] = self.dataProcesser.get_settings()
 
         # Printing action
         if self.verbose > 0:
