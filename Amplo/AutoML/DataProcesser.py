@@ -191,9 +191,9 @@ class DataProcesser:
         self.int_cols = settings['int_cols'] if 'int_cols' in settings else []
         self.cat_cols = settings['cat_cols'] if 'cat_cols' in settings else []
         self.date_cols = settings['date_cols'] if 'date_cols' in settings else []
-        self.missing_values = settings['missing_values'] if 'num_cols' in settings else []
-        self.outlier_removal = settings['outlier_removal'] if 'num_cols' in settings else []
-        self.z_score_threshold = settings['z_score_threshold'] if 'num_cols' in settings else []
+        self.missing_values = settings['missing_values'] if 'missing_values' in settings else []
+        self.outlier_removal = settings['outlier_removal'] if 'outlier_removal' in settings else []
+        self.z_score_threshold = settings['z_score_threshold'] if 'z_score_threshold' in settings else []
         self._means = None if settings['_means'] is None else pd.read_json(settings['_means'])
         self._stds = None if settings['_stds'] is None else pd.read_json(settings['_stds'])
         self._q1 = None if settings['_q1'] is None else pd.read_json(settings['_q1'])
