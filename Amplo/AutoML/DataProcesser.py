@@ -489,3 +489,20 @@ class DataProcesser:
         if len(imputed) > 0:
             warnings.warn(f'Imputed {len(imputed)} missing columns! {imputed}')
         return data
+
+    def _prune_features(self, features: list):
+        """
+        For use with AutoML.Pipeline. We practically never use all features. Yet this processor imputes any missing
+        features. This causes redundant operations, memory, and warnings. This function prunes the features to avoid
+        that.
+
+        parameters
+        ----------
+        features [list]: List with required features (NOTE: include required features for extracted)
+        """
+        hash_features = dict([(k, 0) for k in features])
+        self.date_cols = [f for f in self.date_cols if f in hash_features]
+        self.num_cols = [f for f in self.num_cols if f in hash_features]
+        self.int_cols = [f for f in self.int_cols if f in hash_features]
+        self.float_cols = [f for f in self.float_cols if f in hash_features]
+        self.cat_cols = [f for f in self.cat_cols if f in hash_features]
