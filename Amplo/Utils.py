@@ -12,6 +12,20 @@ def getModel(model_str, **args):
         raise IndexError('Model not found.')
 
 
+def histSearch(array, value):
+    low = 0
+    high = len(array) - 1
+    while low < high:
+        middle = low + (high - low) // 2
+        if value > array[middle + 1]:
+            low = middle + 1
+        elif value < array[middle]:
+            high = middle
+        else:
+            return middle
+    return -1
+
+
 def boolean_input(question: str) -> bool:
     x = input(question + ' [y / n]')
     if x.lower() == 'n' or x.lower() == 'no':
