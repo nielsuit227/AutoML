@@ -164,30 +164,7 @@ class FeatureProcesser:
 
         # Get original features
         features = self.featureSets[feature_set]
-        self.linearFeatures = [k for k in features if '__sub__' in k or '__add__' in k]
-        self.crossFeatures = [k for k in features if '__x__' in k or '__d__' in k]
-        self.trigonometricFeatures = [k for k in features if 'sin__' in k or 'cos__' in k]
-        self.inverseFeatures = [k for k in features if 'inv__' in k]
-        self.kMeansFeatures = [k for k in features if 'dist__' in k]
-        self.diffFeatures = [k for k in features if '__diff__' in k]
-        self.laggedFeatures = [k for k in features if '__lag__' in k]
-        self.datetimeFeatures = [k for k in features if '__dt__' in k]
-        original_features = [k for k in features if '__' not in k]
-
-        # Fill missing features for normalization
-        required = copy.copy(original_features)
-        required += list(itertools.chain.from_iterable([s.split('__')[::2] for s in self.linearFeatures]))
-        required += list(itertools.chain.from_iterable([s.split('__')[::2] for s in self.crossFeatures]))
-        required += [s.split('__')[1] for s in self.trigonometricFeatures]
-        required += [s[5:] for s in self.inverseFeatures]
-        required += [s.split('__diff__')[0] for s in self.diffFeatures]
-        required += [s.split('__lag__')[0] for s in self.laggedFeatures]
-        required += [s.split('__dt__')[0] for s in self.datetimeFeatures]
-        if len(self.kMeansFeatures) != 0:
-            required += list(self._centers.keys())
-
-        # Remove duplicates from required
-        required = list(set(required))
+        required = self._get_required_features(features)
 
         # Impute missing keys
         missing_keys = [k for k in required if k not in data.keys()]
@@ -760,7 +737,7 @@ class FeatureProcesser:
     def _sel_predictive_power_score(self):
         """
         Calculates the Predictive Power Score (https://github.com/8080labs/ppscore)
-        Assymmetric correlation based on single decision trees trained on 5.000 samples with 4-Fold validation.
+        Asymmetric correlation based on single decision trees trained on 5.000 samples with 4-Fold validation.
         """
         if self.verbosity > 0:
             print('[AutoML] Determining features with PPS')
@@ -827,3 +804,33 @@ class FeatureProcesser:
         if self.verbosity > 0:
             print('[AutoML] Selected {} features with Boruta'.format(len(bp_cols)))
         return bp_cols
+
+    def _get_required_features(self, features: list):
+        """
+        Generate a list of required input features from a list of extracted features.
+        """
+        # Identify type of features and set class variables
+        self.linearFeatures = [k for k in features if '__sub__' in k or '__add__' in k]
+        self.crossFeatures = [k for k in features if '__x__' in k or '__d__' in k]
+        self.trigonometricFeatures = [k for k in features if 'sin__' in k or 'cos__' in k]
+        self.inverseFeatures = [k for k in features if 'inv__' in k]
+        self.kMeansFeatures = [k for k in features if 'dist__' in k]
+        self.diffFeatures = [k for k in features if '__diff__' in k]
+        self.laggedFeatures = [k for k in features if '__lag__' in k]
+        self.datetimeFeatures = [k for k in features if '__dt__' in k]
+        original_features = [k for k in features if '__' not in k]
+
+        # Fill missing features for normalization
+        required = copy.copy(original_features)
+        required += list(itertools.chain.from_iterable([s.split('__')[::2] for s in self.linearFeatures]))
+        required += list(itertools.chain.from_iterable([s.split('__')[::2] for s in self.crossFeatures]))
+        required += [s.split('__')[1] for s in self.trigonometricFeatures]
+        required += [s[5:] for s in self.inverseFeatures]
+        required += [s.split('__diff__')[0] for s in self.diffFeatures]
+        required += [s.split('__lag__')[0] for s in self.laggedFeatures]
+        required += [s.split('__dt__')[0] for s in self.datetimeFeatures]
+        if len(self.kMeansFeatures) != 0:
+            required += list(self._centers.keys())
+
+        # Remove duplicates from required
+        return list(set(required))
