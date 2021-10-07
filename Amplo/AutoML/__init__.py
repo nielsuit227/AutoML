@@ -4,5 +4,6 @@ from .Documenter import Documenter
 from .DataSampler import DataSampler
 from .DataExplorer import DataExplorer
 from .DataProcesser import DataProcesser
+from .DriftDetector import DriftDetector
 from .FeatureProcesser import FeatureProcesser
 from .IntervalAnalyser import IntervalAnalyser
