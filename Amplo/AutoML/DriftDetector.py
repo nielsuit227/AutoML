@@ -58,6 +58,29 @@ class DriftDetector:
 
         return violations
 
+    def get_weights(self) -> dict:
+        """
+        Gets the weights of the fitted object.
+        Useful to save :)
+        """
+        return {
+            'bins': self.bins,
+            'distributions': self.distributions
+        }
+
+    def load_weights(self, weights: dict):
+        """
+        Sets the weights of the object to recreate a previously fitted object.
+
+        Parameters
+        ----------
+        weights:
+            bins (dict): Bins dictionary with bins and quantities for all numeric keys
+            distributions (dict): Dictionary with fitted distributions for all numeric keys.
+        """
+        self.bins = weights['bins']
+        self.distributions = weights['distributions']
+
     def _fit_bins(self, data: pd.DataFrame):
         """
         Fits a histogram on each numerical column.
