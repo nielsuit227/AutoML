@@ -164,7 +164,7 @@ class FeatureProcesser:
 
         # Get original features
         features = self.featureSets[feature_set]
-        required = self._get_required_features(features)
+        required = self.get_required_features(features)
 
         # Impute missing keys
         missing_keys = [k for k in required if k not in data.keys()]
@@ -805,7 +805,7 @@ class FeatureProcesser:
             print('[AutoML] Selected {} features with Boruta'.format(len(bp_cols)))
         return bp_cols
 
-    def _get_required_features(self, features: list):
+    def get_required_features(self, features: list):
         """
         Generate a list of required input features from a list of extracted features.
         """

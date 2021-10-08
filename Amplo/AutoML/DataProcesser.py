@@ -490,7 +490,7 @@ class DataProcesser:
             warnings.warn(f'Imputed {len(imputed)} missing columns! {imputed}')
         return data
 
-    def _prune_features(self, features: list):
+    def prune_features(self, features: list):
         """
         For use with AutoML.Pipeline. We practically never use all features. Yet this processor imputes any missing
         features. This causes redundant operations, memory, and warnings. This function prunes the features to avoid
