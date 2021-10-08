@@ -148,10 +148,23 @@ class TestPipeline(unittest.TestCase):
         settings = json.load(open('AutoML/Production/v1/Settings.json', 'r'))
         model = joblib.load('AutoML/Production/v1/Model.joblib')
         p = Pipeline(no_dirs=True)
-        print(settings)
         p.load_settings(settings)
         p.load_model(model)
         assert np.allclose(p.predict_proba(self.c_data), prediction)
 
         # Cleanup
+        shutil.rmtree('AutoML')
+
+    def test_no_args(self):
+        x, y = make_regression()
+        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline.fit(x, y)
+        assert pipeline.mode == 'regression'
+        shutil.rmtree('AutoML')
+        x, y = make_classification()
+        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline.fit(x, y)
+        assert pipeline.mode == 'classification'
+        pipeline.fit(self.c_data)
+        pipeline.fit(self.r_data)
         shutil.rmtree('AutoML')

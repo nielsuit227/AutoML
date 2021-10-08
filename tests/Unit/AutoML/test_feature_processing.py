@@ -4,7 +4,6 @@ import pandas as pd
 from sklearn.datasets import make_classification
 from sklearn.datasets import make_regression
 from Amplo.AutoML import FeatureProcesser
-from Amplo.Utils import check_dataframe_quality
 
 
 class TestDataProcessing(unittest.TestCase):
@@ -82,7 +81,6 @@ class TestDataProcessing(unittest.TestCase):
         x = pd.DataFrame({'a': y, 'b': np.random.randint(0, 100, 100)})
         fp = FeatureProcesser(mode='regression')
         xt, sets = fp.fit_transform(x, y)
-        print(sets)
         assert all([len(i) == 1 for i in sets.values()]), "Random Feature Selected"
 
     def test_settings(self):

@@ -9,7 +9,6 @@ import warnings
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from typing import Union
 from datetime import datetime
 
 from sklearn import metrics
@@ -23,6 +22,7 @@ from Amplo.AutoML.Modeller import Modeller
 from Amplo.AutoML.DataSampler import DataSampler
 from Amplo.AutoML.DataExplorer import DataExplorer
 from Amplo.AutoML.DataProcesser import DataProcesser
+from Amplo.AutoML.DriftDetector import DriftDetector
 from Amplo.AutoML.FeatureProcesser import FeatureProcesser
 from Amplo.Regressors.StackingRegressor import StackingRegressor
 from Amplo.Classifiers.StackingClassifier import StackingClassifier
@@ -211,43 +211,9 @@ class Pipeline:
             self._load_version()
 
         # Store Pipeline Settings
-        self.settings = {'pipeline': kwargs, 'validation': {}}
+        self.settings = {'pipeline': kwargs, 'validation': {}, 'feature_set': ''}
 
-    def _load_version(self):
-        """
-        Upon start, loads version
-        """
-        # No need if version is set
-        if self.version is not None:
-            return
-
-        # Read changelog (if existent)
-        if os.path.exists(self.mainDir + 'changelog.txt'):
-            with open(self.mainDir + 'changelog.txt', 'r') as f:
-                changelog = f.read()
-        else:
-            changelog = ''
-
-        # Find production folders
-        completed_versions = len(os.listdir(self.mainDir + 'Production'))
-        started_versions = len(changelog.split('\n')) - 1
-
-        # For new runs
-        if started_versions == 0:
-            with open(self.mainDir + 'changelog.txt', 'w') as f:
-                f.write('v1: Initial Run\n')
-            self.version = 1
-
-        # If last run was completed and we start a new
-        elif started_versions == completed_versions and self.processData:
-            self.version = started_versions + 1
-            with open(self.mainDir + 'changelog.txt', 'a') as f:
-                f.write('v{}: {}'.format(self.version, input('Changelog v{}:\n'.format(self.version))))
-
-        # If no new run is started (either continue or rerun)
-        else:
-            self.version = started_versions
-
+    # User Pointing Functions
     def get_settings(self) -> dict:
         """
         Get settings to recreate fitted object.
@@ -277,117 +243,6 @@ class Pipeline:
         assert type(model).__name__ == self.settings['model']
         self.bestModel = model
         self.is_fitted = True
-
-    def _create_dirs(self):
-        folders = ['', 'EDA', 'Data', 'Features', 'Documentation', 'Production', 'Settings']
-        for folder in folders:
-            if not os.path.exists(self.mainDir + folder):
-                os.makedirs(self.mainDir + folder)
-
-    def sort_results(self, results: pd.DataFrame) -> pd.DataFrame:
-        return self._sort_results(results)
-
-    def _fit_standardize(self, x: pd.DataFrame, y: pd.Series) -> [pd.DataFrame, pd.Series]:
-        """
-        Fits a standardization parameters and returns the transformed data
-        """
-        # Check if existing
-        if os.path.exists(self.mainDir + 'Settings/Standardize_{}.json'.format(self.version)):
-            self.settings['standardize'] = json.load(open(self.mainDir + 'Settings/Standardize_{}.json'
-                                                          .format(self.version), 'r'))
-            return
-
-        # Fit Input
-        cat_cols = [k for lst in self.settings['data_processing']['dummies'].values() for k in lst]
-        features = [k for k in x.keys() if k not in self.dateCols and k not in cat_cols]
-        means_ = x[features].mean(axis=0)
-        stds_ = x[features].std(axis=0)
-        stds_[stds_ == 0] = 1
-        settings = {
-            'input': {
-                'features': features,
-                'means': means_.to_list(),
-                'stds': stds_.to_list(),
-            }
-        }
-
-        # Fit Output
-        if self.mode == 'regression':
-            std = y.std()
-            settings['output'] = {
-                'mean': y.mean(),
-                'std': std if std != 0 else 1,
-            }
-
-        self.settings['standardize'] = settings
-
-    def _transform_standardize(self, x: pd.DataFrame, y: pd.Series) -> [pd.DataFrame, pd.Series]:
-        """
-        Standardizes the input and output with values from settings.
-
-        Parameters
-        ----------
-        x [pd.DataFrame]: Input data
-        y [pd.Series]: Output data
-        """
-        # Input
-        assert self.settings['standardize'], "Standardize settings not found."
-
-        # Pull from settings
-        features = self.settings['standardize']['input']['features']
-        means = self.settings['standardize']['input']['means']
-        stds = self.settings['standardize']['input']['stds']
-
-        # Filter if not all features are present
-        if len(x.keys()) < len(features):
-            indices = [[i for i, j in enumerate(features) if j == k][0] for k in x.keys()]
-            features = [features[i] for i in indices]
-            means = [means[i] for i in indices]
-            stds = [stds[i] for i in indices]
-
-        # Transform Input
-        x[features] = (x[features] - means) / stds
-
-        # Transform output (only with regression)
-        if self.mode == 'regression':
-            y = (y - self.settings['standardize']['output']['mean']) / self.settings['standardize']['output']['std']
-
-        return x, y
-
-    def _inverse_standardize(self, y: pd.Series) -> pd.Series:
-        """
-        For predictions, transform them back to application scales.
-        Parameters
-        ----------
-        y [pd.Series]: Standardized output
-
-        Returns
-        -------
-        y [pd.Series]: Actual output
-        """
-        assert self.settings['standardize'], "Standardize settings not found"
-        return y * self.settings['standardize']['output']['std'] + self.settings['standardize']['output']['mean']
-
-    @staticmethod
-    def _sort_results(results: pd.DataFrame) -> pd.DataFrame:
-        return results.sort_values('worst_case', ascending=False)
-
-    def _get_best_params(self, model, feature_set: str) -> dict:
-        # Filter results for model and version
-        results = self.results[np.logical_and(
-            self.results['model'] == type(model).__name__,
-            self.results['version'] == self.version,
-        )]
-
-        # Filter results for feature set & sort them
-        results = self._sort_results(results[results['dataset'] == feature_set])
-
-        # Warning for unoptimized results
-        if 'Hyper Parameter' not in results['type'].values:
-            warnings.warn('Hyper parameters not optimized for this combination')
-
-        # Parse & return best parameters (regardless of if it's optimized)
-        return Utils.parse_json(results.iloc[0]['params'])
 
     def fit(self, *args, **kwargs):
         """
@@ -438,6 +293,8 @@ class Pipeline:
         self._feature_processing()
 
         # Standardize
+        # Standardizing assures equal scales, equal gradients and no clipping.
+        # Therefore it needs to be after sequencing & feature processing, as this alters scales
         self._standardizing()
 
         # Run initial models
@@ -455,9 +312,112 @@ class Pipeline:
         self.is_fitted = True
         print('[AutoML] All done :)')
 
+    def convert_data(self, x: pd.DataFrame) -> [pd.DataFrame, pd.Series]:
+        """
+        Function that uses the same process as the pipeline to clean data.
+        Useful if pipeline is pickled for production
+
+        Parameters
+        ----------
+        data [pd.DataFrame]: Input features
+        """
+        # Process data
+        x = self.dataProcesser.transform(x)
+        if x.astype('float32').replace([np.inf, -np.inf], np.nan).isna().sum().sum() != 0:
+            raise ValueError(f"Column(s) with NaN: {list(x.keys()[x.isna().sum() > 0])}")
+
+        # Split output
+        y = None
+        if self.target in x.keys():
+            y = x[self.target]
+            if not self.includeOutput:
+                x = x.drop(self.target, axis=1)
+
+        # Sequence
+        if self.sequence:
+            x, y = self.dataSequencer.convert(x, y)
+
+        # Convert Features
+        x = self.featureProcesser.transform(x, self.settings['feature_set'])
+
+        # Standardize
+        if self.standardize:
+            x, y = self._transform_standardize(x, y)
+
+        # Return
+        return x, y
+
+    def predict(self, data: pd.DataFrame) -> np.ndarray:
+        """
+        Full script to make predictions. Uses 'Production' folder with defined or latest version.
+
+        Parameters
+        ----------
+        data [pd.DataFrame]: data to do prediction on
+        """
+        assert self.is_fitted, "Pipeline not yet fitted."
+        # Feature Extraction, Selection and Normalization
+        if self.verbose > 0:
+            print('[AutoML] Predicting with {}, v{}'.format(type(self.bestModel).__name__, self.version))
+
+        # Custom code
+        if self.preprocessFunction is not None:
+            ex_globals = {'data': data}
+            exec(self.preprocessFunction, ex_globals)
+            data = ex_globals['data']
+
+        # Convert
+        x, y = self.convert_data(data)
+
+        # Predict
+        if self.mode == 'regression' and self.standardize:
+            predictions = self._inverse_standardize(self.bestModel.predict(x))
+        else:
+            predictions = self.bestModel.predict(x)
+
+        return predictions
+
+    def predict_proba(self, data: pd.DataFrame) -> np.ndarray:
+        """
+        Returns probabilistic prediction, only for classification.
+
+        Parameters
+        ----------
+        data [pd.DataFrame]: data to do prediction on
+        """
+        assert self.is_fitted, "Pipeline not yet fitted."
+        # Tests
+        assert self.mode == 'classification', 'Predict_proba only available for classification'
+        assert hasattr(self.bestModel, 'predict_proba'), '{} has no attribute predict_proba'.format(
+            type(self.bestModel).__name__)
+
+        # Custom code
+        if self.preprocessFunction is not None:
+            ex_globals = {'data': data}
+            exec(self.preprocessFunction, ex_globals)
+            data = ex_globals['data']
+
+        # Print
+        if self.verbose > 0:
+            print('[AutoML] Predicting with {}, v{}'.format(type(self.bestModel).__name__, self.version))
+
+        # Convert data
+        x, y = self.convert_data(data)
+
+        # Predict
+        return self.bestModel.predict_proba(x)
+
+    # Fit functions
     def _read_data(self, *args, **kwargs) -> pd.DataFrame:
         """
         To support Pandas & Numpy, with just data and x, y, this function reads the data and loads into desired format.
+
+        Parameters
+        ----------
+        args / kwargs:
+            x (pd.DataFrame): input
+            y (pd.Series): output
+            data (pd.DataFrame): data
         """
         assert len(args) + len(kwargs) != 0, "No data provided."
 
@@ -467,7 +427,9 @@ class Pipeline:
                 data = args[0]
             elif len(kwargs) == 1:
                 assert 'data' in kwargs, "'data' argument missing"
-                data = args['data']
+                data = kwargs['data']
+            else:
+                raise ValueError('No data provided')
 
             # Test data
             assert isinstance(data, pd.DataFrame), "With only 1 argument, data must be a Pandas Dataframe."
@@ -527,16 +489,11 @@ class Pipeline:
             # Copy to settings
             self.settings['pipeline']['mode'] = self.mode
             self.settings['pipeline']['objective'] = self.objective
-        return
 
-    def _eda(self):
-        if self.plotEDA:
-            print('[AutoML] Starting Exploratory Data Analysis')
-            eda = DataExplorer(self.x, y=self.y,
-                               mode=self.mode,
-                               folder=self.mainDir,
-                               version=self.version)
-            eda.run()
+            # Print
+            if self.verbose > 0:
+                print(f"[AutoML] Setting mode to {self.mode} & objective to {self.objective}.")
+        return
 
     def _data_processing(self, data: pd.DataFrame):
         """
@@ -594,6 +551,15 @@ class Pipeline:
                 warnings.warn('More than 20 classes, you may want to reconsider classification mode')
             if set(self.y) != set([i for i in range(len(set(self.y)))]):
                 raise ValueError('Classes should be [0, 1, ...]')
+
+    def _eda(self):
+        if self.plotEDA:
+            print('[AutoML] Starting Exploratory Data Analysis')
+            eda = DataExplorer(self.x, y=self.y,
+                               mode=self.mode,
+                               folder=self.mainDir,
+                               version=self.version)
+            eda.run()
 
     def _data_sampling(self):
         """
@@ -862,36 +828,6 @@ class Pipeline:
             if self.documentResults:
                 self.document(model.set_params(**params), feature_set)
 
-    def _grid_search_iteration(self, model, parameter_set: str, feature_set: str):
-        """
-        INTERNAL | Grid search for defined model, parameter set and feature set.
-        """
-        print('\n[AutoML] Starting Hyper Parameter Optimization for {} on {} features ({} samples, {} features)'.format(
-            type(model).__name__, feature_set, len(self.x), len(self.featureSets[feature_set])))
-
-        # Cross-Validator
-        cv = StratifiedKFold(n_splits=self.cvSplits, shuffle=self.shuffle)
-        if self.mode == 'regression':
-            cv = KFold(n_splits=self.cvSplits, shuffle=self.shuffle)
-
-        # Select right hyper parameter optimizer
-        if self.gridSearchType == 'base':
-            grid_search = BaseGridSearch(model, params=parameter_set, cv=cv, scoring=self.objective,
-                                         candidates=self.gridSearchCandidates, timeout=self.gridSearchTimeout,
-                                         verbose=self.verbose)
-        elif self.gridSearchType == 'halving':
-            grid_search = HalvingGridSearch(model, params=parameter_set, cv=cv, scoring=self.objective,
-                                            candidates=self.gridSearchCandidates, verbose=self.verbose)
-        elif self.gridSearchType == 'optuna':
-            grid_search = OptunaGridSearch(model, timeout=self.gridSearchTimeout, cv=cv,
-                                           candidates=self.gridSearchCandidates, scoring=self.objective,
-                                           verbose=self.verbose)
-        else:
-            raise NotImplementedError('Only Base, Halving and Optuna are implemented.')
-        # Get results
-        results = grid_search.fit(self.x[self.featureSets[feature_set]], self.y)
-        return results.sort_values('worst_case', ascending=False)
-
     def _create_stacking(self):
         """
         Based on the best performing models, in addition to cheap models based on very different assumptions,
@@ -1050,18 +986,6 @@ class Pipeline:
         feature_set = results.iloc[0]['dataset']
         params = Utils.parse_json(params)
 
-        # Update pipeline settings
-        self.settings['pipeline']['verbose'] = 0
-        self.settings['model'] = model  # The string
-        self.settings['params'] = params
-        self.settings['feature_set'] = feature_set
-        self.settings['features'] = self.featureSets[feature_set]
-
-        # Prune Data Processor
-        required_features = self.featureProcesser._get_required_features(feature_set)
-        self.dataProcesser._prune_features(required_features)
-        self.settings['data_processing'] = self.dataProcesser.get_settings()
-
         # Printing action
         if self.verbose > 0:
             print('[AutoML] Preparing Production files for {}, {}, {}'.format(model, feature_set, params))
@@ -1102,6 +1026,27 @@ class Pipeline:
             if self.verbose > 0:
                 print('[AutoML] Loading existing model file.')
 
+        # Update pipeline settings
+        self.settings['pipeline']['verbose'] = 0
+        self.settings['model'] = model  # The string
+        self.settings['params'] = params
+        self.settings['feature_set'] = feature_set
+        self.settings['features'] = self.featureSets[feature_set]
+
+        # Prune Data Processor
+        required_features = self.featureProcesser.get_required_features(feature_set)
+        self.dataProcesser.prune_features(required_features)
+        self.settings['data_processing'] = self.dataProcesser.get_settings()
+
+        # Fit Drift Detector
+        self.driftDetector = DriftDetector(
+            num_cols=self.dataProcesser.float_cols + self.dataProcesser.int_cols,
+            cat_cols=self.dataProcesser.cat_cols,
+            date_cols=self.dataProcesser.date_cols
+        )
+        self.driftDetector.fit(self.x[self.featureSets[feature_set]])
+        self.settings['drift_detector'] = self.driftDetector.get_weights()
+
         # Report
         if not os.path.exists('{}Documentation/v{}/{}_{}.pdf'.format(self.mainDir, self.version, model, feature_set)):
             self.document(self.bestModel, feature_set)
@@ -1114,97 +1059,179 @@ class Pipeline:
 
         return self
 
-    def convert_data(self, x: pd.DataFrame) -> [pd.DataFrame, pd.Series]:
+    # Support Functions
+    def _load_version(self):
         """
-        Function that uses the same process as the pipeline to clean data.
-        Useful if pipeline is pickled for production
+        Upon start, loads version
+        """
+        # No need if version is set
+        if self.version is not None:
+            return
+
+        # Read changelog (if existent)
+        if os.path.exists(self.mainDir + 'changelog.txt'):
+            with open(self.mainDir + 'changelog.txt', 'r') as f:
+                changelog = f.read()
+        else:
+            changelog = ''
+
+        # Find production folders
+        completed_versions = len(os.listdir(self.mainDir + 'Production'))
+        started_versions = len(changelog.split('\n')) - 1
+
+        # For new runs
+        if started_versions == 0:
+            with open(self.mainDir + 'changelog.txt', 'w') as f:
+                f.write('v1: Initial Run\n')
+            self.version = 1
+
+        # If last run was completed and we start a new
+        elif started_versions == completed_versions and self.processData:
+            self.version = started_versions + 1
+            with open(self.mainDir + 'changelog.txt', 'a') as f:
+                f.write('v{}: {}'.format(self.version, input('Changelog v{}:\n'.format(self.version))))
+
+        # If no new run is started (either continue or rerun)
+        else:
+            self.version = started_versions
+
+    def _create_dirs(self):
+        folders = ['', 'EDA', 'Data', 'Features', 'Documentation', 'Production', 'Settings']
+        for folder in folders:
+            if not os.path.exists(self.mainDir + folder):
+                os.makedirs(self.mainDir + folder)
+
+    def sort_results(self, results: pd.DataFrame) -> pd.DataFrame:
+        return self._sort_results(results)
+
+    def _fit_standardize(self, x: pd.DataFrame, y: pd.Series):
+        """
+        Fits a standardization parameters and returns the transformed data
+        """
+        # Check if existing
+        if os.path.exists(self.mainDir + 'Settings/Standardize_{}.json'.format(self.version)):
+            self.settings['standardize'] = json.load(open(self.mainDir + 'Settings/Standardize_{}.json'
+                                                          .format(self.version), 'r'))
+            return
+
+        # Fit Input
+        cat_cols = [k for lst in self.settings['data_processing']['dummies'].values() for k in lst]
+        features = [k for k in x.keys() if k not in self.dateCols and k not in cat_cols]
+        means_ = x[features].mean(axis=0)
+        stds_ = x[features].std(axis=0)
+        stds_[stds_ == 0] = 1
+        settings = {
+            'input': {
+                'features': features,
+                'means': means_.to_list(),
+                'stds': stds_.to_list(),
+            }
+        }
+
+        # Fit Output
+        if self.mode == 'regression':
+            std = y.std()
+            settings['output'] = {
+                'mean': y.mean(),
+                'std': std if std != 0 else 1,
+            }
+
+        self.settings['standardize'] = settings
+
+    def _transform_standardize(self, x: pd.DataFrame, y: pd.Series) -> [pd.DataFrame, pd.Series]:
+        """
+        Standardizes the input and output with values from settings.
 
         Parameters
         ----------
-        data [pd.DataFrame]: Input features
+        x [pd.DataFrame]: Input data
+        y [pd.Series]: Output data
         """
-        # Process data
-        x = self.dataProcesser.transform(x)
-        if x.astype('float32').replace([np.inf, -np.inf], np.nan).isna().sum().sum() != 0:
-            raise ValueError(f"Column(s) with NaN: {list(x.keys()[x.isna().sum() > 0])}")
+        # Input
+        assert self.settings['standardize'], "Standardize settings not found."
 
-        # Split output
-        y = None
-        if self.target in x.keys():
-            y = x[self.target]
-            if not self.includeOutput:
-                x = x.drop(self.target, axis=1)
+        # Pull from settings
+        features = self.settings['standardize']['input']['features']
+        means = self.settings['standardize']['input']['means']
+        stds = self.settings['standardize']['input']['stds']
 
-        # Sequence
-        if self.sequence:
-            x, y = self.dataSequencer.convert(x, y)
+        # Filter if not all features are present
+        if len(x.keys()) < len(features):
+            indices = [[i for i, j in enumerate(features) if j == k][0] for k in x.keys()]
+            features = [features[i] for i in indices]
+            means = [means[i] for i in indices]
+            stds = [stds[i] for i in indices]
 
-        # Convert Features
-        x = self.featureProcesser.transform(x, self.settings['feature_set'])
+        # Transform Input
+        x[features] = (x[features] - means) / stds
 
-        # Standardize
-        if self.standardize:
-            x, y = self._transform_standardize(x, y)
+        # Transform output (only with regression)
+        if self.mode == 'regression':
+            y = (y - self.settings['standardize']['output']['mean']) / self.settings['standardize']['output']['std']
 
-        # Return
         return x, y
 
-    def predict(self, data: pd.DataFrame) -> np.ndarray:
+    def _inverse_standardize(self, y: pd.Series) -> pd.Series:
         """
-        Full script to make predictions. Uses 'Production' folder with defined or latest version.
-
+        For predictions, transform them back to application scales.
         Parameters
         ----------
-        data [pd.DataFrame]: data to do prediction on
+        y [pd.Series]: Standardized output
+
+        Returns
+        -------
+        y [pd.Series]: Actual output
         """
-        assert self.is_fitted, "Pipeline not yet fitted."
-        # Feature Extraction, Selection and Normalization
-        if self.verbose > 0:
-            print('[AutoML] Predicting with {}, v{}'.format(type(self.bestModel).__name__, self.version))
+        assert self.settings['standardize'], "Standardize settings not found"
+        return y * self.settings['standardize']['output']['std'] + self.settings['standardize']['output']['mean']
 
-        # Custom code
-        if self.preprocessFunction is not None:
-            ex_globals = {'data': data}
-            exec(self.preprocessFunction, ex_globals)
-            data = ex_globals['data']
+    @staticmethod
+    def _sort_results(results: pd.DataFrame) -> pd.DataFrame:
+        return results.sort_values('worst_case', ascending=False)
 
-        # Convert
-        x, y = self.convert_data(data)
+    def _get_best_params(self, model, feature_set: str) -> dict:
+        # Filter results for model and version
+        results = self.results[np.logical_and(
+            self.results['model'] == type(model).__name__,
+            self.results['version'] == self.version,
+        )]
 
-        # Predict
-        if self.mode == 'regression' and self.standardize:
-            predictions = self._inverse_standardize(self.bestModel.predict(x))
+        # Filter results for feature set & sort them
+        results = self._sort_results(results[results['dataset'] == feature_set])
+
+        # Warning for unoptimized results
+        if 'Hyper Parameter' not in results['type'].values:
+            warnings.warn('Hyper parameters not optimized for this combination')
+
+        # Parse & return best parameters (regardless of if it's optimized)
+        return Utils.parse_json(results.iloc[0]['params'])
+
+    def _grid_search_iteration(self, model, parameter_set: str, feature_set: str):
+        """
+        INTERNAL | Grid search for defined model, parameter set and feature set.
+        """
+        print('\n[AutoML] Starting Hyper Parameter Optimization for {} on {} features ({} samples, {} features)'.format(
+            type(model).__name__, feature_set, len(self.x), len(self.featureSets[feature_set])))
+
+        # Cross-Validator
+        cv = StratifiedKFold(n_splits=self.cvSplits, shuffle=self.shuffle)
+        if self.mode == 'regression':
+            cv = KFold(n_splits=self.cvSplits, shuffle=self.shuffle)
+
+        # Select right hyper parameter optimizer
+        if self.gridSearchType == 'base':
+            grid_search = BaseGridSearch(model, params=parameter_set, cv=cv, scoring=self.objective,
+                                         candidates=self.gridSearchCandidates, timeout=self.gridSearchTimeout,
+                                         verbose=self.verbose)
+        elif self.gridSearchType == 'halving':
+            grid_search = HalvingGridSearch(model, params=parameter_set, cv=cv, scoring=self.objective,
+                                            candidates=self.gridSearchCandidates, verbose=self.verbose)
+        elif self.gridSearchType == 'optuna':
+            grid_search = OptunaGridSearch(model, timeout=self.gridSearchTimeout, cv=cv,
+                                           candidates=self.gridSearchCandidates, scoring=self.objective,
+                                           verbose=self.verbose)
         else:
-            predictions = self.bestModel.predict(x)
-
-        return predictions
-
-    def predict_proba(self, data: pd.DataFrame) -> np.ndarray:
-        """
-        Returns probabilistic prediction, only for classification.
-
-        Parameters
-        ----------
-        data [pd.DataFrame]: data to do prediction on
-        """
-        assert self.is_fitted, "Pipeline not yet fitted."
-        # Tests
-        assert self.mode == 'classification', 'Predict_proba only available for classification'
-        assert hasattr(self.bestModel, 'predict_proba'), '{} has no attribute predict_proba'.format(
-            type(self.bestModel).__name__)
-
-        # Custom code
-        if self.preprocessFunction is not None:
-            ex_globals = {'data': data}
-            exec(self.preprocessFunction, ex_globals)
-            data = ex_globals['data']
-
-        # Print
-        if self.verbose > 0:
-            print('[AutoML] Predicting with {}, v{}'.format(type(self.bestModel).__name__, self.version))
-
-        # Convert data
-        x, y = self.convert_data(data)
-
-        # Predict
-        return self.bestModel.predict_proba(x)
+            raise NotImplementedError('Only Base, Halving and Optuna are implemented.')
+        # Get results
+        results = grid_search.fit(self.x[self.featureSets[feature_set]], self.y)
+        return results.sort_values('worst_case', ascending=False)
