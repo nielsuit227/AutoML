@@ -215,6 +215,6 @@ class Modeller:
         return self.results
 
     def print_results(self, result):
-        print('[AutoML] {} {}: {:.4f} \u00B1 {:.4f}, training time: {:.1f} s'.format(
-            result['model'].ljust(30), self.objective, result['mean_objective'],
-            result['std_objective'], result['mean_time']))
+        print('[AutoML] {} {}: {} \u00B1 {}, training time: {:.1f} s'.format(
+            result['model'].ljust(30), self.objective, f"{result['mean_objective']:.4f}".ljust(15),
+            f"{result['std_objective']:.4f}".ljust(15), result['mean_time']))
