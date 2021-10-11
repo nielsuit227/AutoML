@@ -7,6 +7,8 @@ from Amplo.Utils import histSearch
 
 
 class DriftDetector:
+    # todo add second order pdf fit
+    # todo add subsequence drift detection
 
     def __init__(self,
                  num_cols: list = None,
@@ -80,6 +82,7 @@ class DriftDetector:
         """
         self.bins = weights['bins']
         self.distributions = weights['distributions']
+        return self
 
     def _fit_bins(self, data: pd.DataFrame):
         """
@@ -112,7 +115,7 @@ class DriftDetector:
                     violations.append(key)
 
         if len(violations) > 0:
-            print(f"[AutoML] Found {len(violations)} features outside training bins.")
+            logging.warning(f"[AutoML] Drift detected!  {len(violations)} features outside training bins: {violations}")
 
         return violations
 
@@ -171,6 +174,7 @@ class DriftDetector:
                     continue
 
             if len(violations) > 0:
-                print(f"[AutoML] Found {len(violations)} features outside training distribution.")
+                logging.warning(f"[AutoML] Drift detected!  {len(violations)} features outside training bins: "
+                                f"{violations}")
 
             return violations
