@@ -192,6 +192,7 @@ class Pipeline:
             self.scorer = metrics.SCORERS[self.objective]
 
         # Instance initiating
+        self.data = None
         self.x = None
         self.y = None
         self.featureSets = None
@@ -204,6 +205,7 @@ class Pipeline:
         self.dataProcesser = DataProcesser()
         self.dataSequencer = Sequencer()
         self.featureProcesser = FeatureProcesser()
+        self.driftDetector = DriftDetector()
 
         # Create dirs
         if not self.noDirs:
@@ -235,6 +237,12 @@ class Pipeline:
         self.settings = settings
         self.dataProcesser.load_settings(settings['data_processing'])
         self.featureProcesser.load_settings(settings['feature_processing'])
+        if 'drift_detector' in settings:
+            self.driftDetector = DriftDetector(
+                num_cols=self.dataProcesser.float_cols + self.dataProcesser.int_cols,
+                cat_cols=self.dataProcesser.cat_cols,
+                date_cols=self.dataProcesser.date_cols
+            ).load_weights(settings['drift_detector'])
 
     def load_model(self, model: object):
         """
@@ -325,6 +333,9 @@ class Pipeline:
         x = self.dataProcesser.transform(x)
         if x.astype('float32').replace([np.inf, -np.inf], np.nan).isna().sum().sum() != 0:
             raise ValueError(f"Column(s) with NaN: {list(x.keys()[x.isna().sum() > 0])}")
+
+        # Drift Check
+        self.driftDetector.check(x)
 
         # Split output
         y = None
@@ -539,6 +550,7 @@ class Pipeline:
             self.catCols = self.settings['data_processing']['cat_cols']
 
         # Split and store in memory
+        self.data = data
         self.y = data[self.target]
         self.x = data
         if self.includeOutput is False:
@@ -1044,7 +1056,7 @@ class Pipeline:
             cat_cols=self.dataProcesser.cat_cols,
             date_cols=self.dataProcesser.date_cols
         )
-        self.driftDetector.fit(self.x[self.featureSets[feature_set]])
+        self.driftDetector.fit(self.data)
         self.settings['drift_detector'] = self.driftDetector.get_weights()
 
         # Report
