@@ -3,6 +3,7 @@
 [![PyPI - License](https://img.shields.io/pypi/l/virtualenv?style=flat-square)](https://opensource.org/licenses/MIT)
 ![](https://img.shields.io/badge/python-%3E%3D3.6%2C%3C4.0-blue)
 ![](https://tokei.rs/b1/github/nielsuit227/automl)
+![](https://img.shields.io/pypi/dm/amplo)
 
 Welcome to the Automated Machine Learning package `Amplo`. Amplo's AutoML is designed specifically for machine data and 
 works very well with tabular time series data (especially unbalanced classification!).
