@@ -90,7 +90,7 @@ class DriftDetector:
         """
         for key in self.num_cols:
             y, x = np.histogram(data[key], bins=self.n_bins)
-            self.bins[key] = (x, y)
+            self.bins[key] = (x.tolist(), y.tolist())
 
     def _check_bins(self, data: pd.DataFrame):
         """

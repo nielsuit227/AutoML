@@ -8,13 +8,14 @@
 Welcome to the Automated Machine Learning package `Amplo`. Amplo's AutoML is designed specifically for machine data and 
 works very well with tabular time series data (especially unbalanced classification!).
 
-Though this is a standalone Python package, Amplo's AutoML is also available on Amplo's ML Developer Platform. 
+Though this is a standalone Python package, Amplo's AutoML is also available on Amplo's Smart Maintenance Platform. 
 With a graphical user interface and various data connectors, it is the ideal place for service engineers to get started 
-on Predictive Maintenance development. 
+on Predictive. 
 
 Amplo's AutoML Pipeline contains the entire Machine Learning development cycle, including exploratory data analysis, 
 data cleaning, feature extraction, feature selection, model selection, hyper parameter optimization, stacking, 
-version control, production-ready models and documentation. 
+version control, production-ready models and documentation. It comes with additional tools such as interval analysers, 
+drift detectors, data quality checks, etc. 
 
 # Downloading Amplo
 The easiest way is to install our Python package through [PyPi](https://pypi.org/project/amplo/):

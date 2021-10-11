@@ -329,6 +329,16 @@ class Pipeline:
         ----------
         data [pd.DataFrame]: Input features
         """
+        # Convert to Pandas
+        if isinstance(x, np.ndarray):
+            x = pd.DataFrame(x, columns=[f"Feature_{i}" for i in range(x.shape[1])])
+
+        # Custom code
+        if self.preprocessFunction is not None:
+            ex_globals = {'data': x}
+            exec(self.preprocessFunction, ex_globals)
+            x = ex_globals['data']
+
         # Process data
         x = self.dataProcesser.transform(x)
         if x.astype('float32').replace([np.inf, -np.inf], np.nan).isna().sum().sum() != 0:
@@ -367,15 +377,10 @@ class Pipeline:
         data [pd.DataFrame]: data to do prediction on
         """
         assert self.is_fitted, "Pipeline not yet fitted."
-        # Feature Extraction, Selection and Normalization
+
+        # Print
         if self.verbose > 0:
             print('[AutoML] Predicting with {}, v{}'.format(type(self.bestModel).__name__, self.version))
-
-        # Custom code
-        if self.preprocessFunction is not None:
-            ex_globals = {'data': data}
-            exec(self.preprocessFunction, ex_globals)
-            data = ex_globals['data']
 
         # Convert
         x, y = self.convert_data(data)
@@ -397,16 +402,9 @@ class Pipeline:
         data [pd.DataFrame]: data to do prediction on
         """
         assert self.is_fitted, "Pipeline not yet fitted."
-        # Tests
         assert self.mode == 'classification', 'Predict_proba only available for classification'
         assert hasattr(self.bestModel, 'predict_proba'), '{} has no attribute predict_proba'.format(
             type(self.bestModel).__name__)
-
-        # Custom code
-        if self.preprocessFunction is not None:
-            ex_globals = {'data': data}
-            exec(self.preprocessFunction, ex_globals)
-            data = ex_globals['data']
 
         # Print
         if self.verbose > 0:
@@ -454,14 +452,14 @@ class Pipeline:
                 assert 'x' in kwargs and 'y' in kwargs, "'x' or 'y' argument missing"
                 x, y = kwargs['x'], kwargs['y']
             else:
-                raise ValueError('Cannot understand halfly named arguments...')
+                raise ValueError('Cannot understand partially named arguments...')
 
             # Parse data
             assert isinstance(x, (np.ndarray, pd.Series, pd.DataFrame)), "Unsupported data type for 'x'"
             if isinstance(x, pd.Series):
                 data = pd.DataFrame(x)
             elif isinstance(x, np.ndarray):
-                data = pd.DataFrame(x)
+                data = pd.DataFrame(x, columns=[f"Feature_{i}" for i in range(x.shape[1])])
             else:
                 data = x
 
@@ -1046,7 +1044,7 @@ class Pipeline:
         self.settings['features'] = self.featureSets[feature_set]
 
         # Prune Data Processor
-        required_features = self.featureProcesser.get_required_features(feature_set)
+        required_features = self.featureProcesser.get_required_features(self.featureSets[feature_set])
         self.dataProcesser.prune_features(required_features)
         self.settings['data_processing'] = self.dataProcesser.get_settings()
 

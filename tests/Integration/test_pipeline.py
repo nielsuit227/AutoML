@@ -168,3 +168,7 @@ class TestPipeline(unittest.TestCase):
         pipeline.fit(self.c_data)
         pipeline.fit(self.r_data)
         shutil.rmtree('AutoML')
+
+    def test_drift(self):
+        # todo connect with logger
+        pass
