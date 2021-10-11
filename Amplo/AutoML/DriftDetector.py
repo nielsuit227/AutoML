@@ -26,9 +26,9 @@ class DriftDetector:
         Datetime simply checks whether the date is recent
         """
         # Copy kwargs
-        self.num_cols = num_cols
-        self.cat_cols = cat_cols
-        self.date_cols = date_cols
+        self.num_cols = [] if num_cols is None else num_cols
+        self.cat_cols = [] if cat_cols is None else cat_cols
+        self.date_cols = [] if date_cols is None else date_cols
         self.n_bins = n_bins
         self.with_pdf = with_pdf
         self.sigma = sigma
