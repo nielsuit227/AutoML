@@ -34,10 +34,12 @@ from sklearn.datasets import make_regression
 x, y = make_classification()
 pipeline = Pipeline()
 pipeline.fit(x, y)
+yp = pipeline.predict_proba(x)
 
 x, y = make_regression()
 pipeline = Pipeline()
 pipeline.fit(x, y)
+yp = pipeline.predict(x)
 ```
 
 # 3. Amplo AutoML Features
