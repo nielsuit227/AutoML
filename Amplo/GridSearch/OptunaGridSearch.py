@@ -241,11 +241,13 @@ class OptunaGridSearch:
                 "boosting_type": "gbdt",
                 "lambda_l1": trial.suggest_loguniform("lambda_l1", 1e-8, 10.0),
                 "lambda_l2": trial.suggest_loguniform("lambda_l2", 1e-8, 10.0),
-                "num_leaves": trial.suggest_int("num_leaves", 2, 256),
+                "num_leaves": trial.suggest_int("num_leaves", 10, 5000),
+                "max_depth": trial.suggest_int("max_depth", 5, 20),
+                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 1, min(1000, int(self.samples / 10))),
+                "min_gain_to_split": trial.suggest_uniform("min_gain_to_split", 0, 5),
                 "feature_fraction": trial.suggest_uniform("feature_fraction", 0.4, 1.0),
                 "bagging_fraction": trial.suggest_uniform("bagging_fraction", 0.4, 1.0),
                 "bagging_freq": trial.suggest_int("bagging_freq", 1, 7),
-                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 1, min(1000, int(self.samples / 10))),
                 'callbacks': optuna.integration.LightGBMPruningCallback(trial, "neg_log_loss", "valid_1"),
             }
         else:
