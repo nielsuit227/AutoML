@@ -69,8 +69,10 @@ class TestIntervalAnalyser(unittest.TestCase):
         assert np.min(sens) >= 0
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(autouse=True)
 def teardown():
     yield
     if os.path.exists('IA'):
         shutil.rmtree('IA')
+    if os.path.exists('tests/Unit/AutoML/IA'):
+        shutil.rmtree('tests/Unit/AutoML/IA')

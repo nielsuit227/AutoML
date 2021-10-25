@@ -51,57 +51,11 @@ class IntervalAnalyser:
         # Initializers
         self.n_files = 0
         self.n_folders = 0
+        self.means = None
+        self.stds = None
 
         # Test
         assert norm in ['euclidean', 'manhattan', 'angular', 'hamming', 'dot']
-
-    def _check_length(self) -> [int, int]:
-        """
-        Detects the extension from the log files
-        """
-        # Read first log
-        folder = os.listdir(self.folder)[0]
-        file = os.listdir(self.folder + folder)[0]
-        df = self._read(f"{self.folder}{folder}/{file}")
-
-        # Set lengths
-        length, keys = len(df), len(df.keys())
-
-        # Check all log files
-        for folder in os.listdir(self.folder):
-            for file in os.listdir(self.folder + folder):
-                # Read file
-                df = self._read(f"{self.folder}{folder}/{file}")
-
-                # Check keys & length
-                if len(df) != length:
-                    raise ValueError(f'Log length not the same: \nFile: {folder}/{file} ({len(df)} / {length})')
-                if len(df.keys()) != keys:
-                    raise ValueError(f'Log keys not the same: \nFile: {folder}/{file} ({len(df.keys())} / {keys})')
-
-        return length, keys
-
-    def _read(self, path: str) -> pd.DataFrame:
-        """
-        Wrapper for various read functions
-        """
-        f_ext = path[path.rfind('.'):]
-        if f_ext == '.csv':
-            return pd.read_csv(path)
-        elif f_ext == '.json':
-            return pd.read_json(path)
-        elif f_ext == '.xml':
-            return pd.read_xml(path)
-        elif f_ext == '.feather':
-            return pd.read_feather(path)
-        elif f_ext == '.parquet':
-            return pd.read_parquet(path)
-        elif f_ext == '.stata':
-            return pd.read_stata(path)
-        elif f_ext == '.pickle':
-            return pd.read_pickle(path)
-        else:
-            raise NotImplementedError('File format not supported.')
 
     def analyse(self) -> np.ndarray:
         """
@@ -126,6 +80,48 @@ class IntervalAnalyser:
 
         # Return distribution
         return self._make_distribution(engine, df, labels)
+
+    def save(self, path):
+        pass
+
+    def load(self, path):
+        pass
+
+    def _check_length(self) -> [int, int]:
+        """
+        Detects the extension from the log files
+        """
+        # Read first log
+        folder = os.listdir(self.folder)[0]
+        file = os.listdir(self.folder + folder)[0]
+        df = self._read(f"{self.folder}{folder}/{file}")
+
+        # Set lengths
+        length, keys = len(df), len(df.keys())
+
+        return length, keys
+
+    def _read(self, path: str) -> pd.DataFrame:
+        """
+        Wrapper for various read functions
+        """
+        f_ext = path[path.rfind('.'):]
+        if f_ext == '.csv':
+            return pd.read_csv(path)
+        elif f_ext == '.json':
+            return pd.read_json(path)
+        elif f_ext == '.xml':
+            return pd.read_xml(path)
+        elif f_ext == '.feather':
+            return pd.read_feather(path)
+        elif f_ext == '.parquet':
+            return pd.read_parquet(path)
+        elif f_ext == '.stata':
+            return pd.read_stata(path)
+        elif f_ext == '.pickle':
+            return pd.read_pickle(path)
+        else:
+            raise NotImplementedError('File format not supported.')
 
     def _parse_data(self) -> [pd.DataFrame, pd.Series]:
         """
@@ -174,16 +170,22 @@ class IntervalAnalyser:
         Given a build K-Nearest Neighbors, returns the label distribution
         """
         # Result setup
-        distribution = np.zeros((self.n_files, self.n_samples))
+        distribution = [[] for _ in range(self.n_files)]
 
         # Iterate through samples
         for (log, sample), data in df.iterrows():
-
-            # Get neighbor indeces
+            # Get neighbor indices
             neighbor_inds = engine.get_nns_by_vector(data.values, self.n_neighbors)
 
             # Set percentage
-            distribution[log, sample] = (classes.iloc[neighbor_inds] == classes[(log, sample)]).sum() / self.n_neighbors
+            distribution[log].append((classes.iloc[neighbor_inds] == classes[(log, sample)]).sum() / self.n_neighbors)
+
+        # Mask
+        lens = np.array([len(item) for item in distribution])
+        mask = lens[:, None] > np.arange(lens.max())
+        out = np.full(mask.shape, 0)
+        out[mask] = np.concatenate(distribution)
+        distribution = np.array(out)
 
         # Average over logs
         return np.mean(distribution * 100, axis=0)
