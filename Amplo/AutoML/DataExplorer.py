@@ -1,6 +1,5 @@
 import os
 import copy
-import ppscore
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -152,8 +151,6 @@ class DataExplorer:
             self.shap()
             print('[AutoML] Generating Feature Ranking Plot')
             self.feature_ranking()
-            print('[AutoML] Predictive Power Score Plot')
-            self.predictive_power_score()
 
         # Mode specific functions
         if self.mode == 'classification':
@@ -500,33 +497,33 @@ class DataExplorer:
             results = pd.DataFrame({'x': self.data.keys(), 'score': model.feature_importances_})
             results.to_csv(self.folder + 'Features/v{}/'.format(self.version) + self.tag + 'RF.csv')
 
-    def predictive_power_score(self):
-        if self.plotFeatureImportance:
-            # Create folder
-            if not os.path.exists(self.folder + 'Features/v{}/'.format(self.version)):
-                os.mkdir(self.folder + 'Features/v{}/'.format(self.version))
-
-            # Skip if existing
-            if self.tag + 'PPScore.png' in os.listdir(self.folder + 'Features/v{}/'.format(self.version)):
-                return
-
-            # Calculate PPS
-            data = self.data.copy()
-            if isinstance(self.Y, pd.core.series.Series):
-                data.loc[:, 'target'] = self.Y
-            elif isinstance(self.Y, pd.DataFrame):
-                data.loc[:, 'target'] = self.Y.loc[:, self.Y.keys()[0]]
-            pp_score = ppscore.predictors(data, 'target').sort_values('ppscore')
-
-            # Plot
-            fig, ax = plt.subplots(figsize=[4, 6])
-            plt.subplots_adjust(left=0.5, top=1, bottom=0)
-            ax.spines['right'].set_visible(False)
-            ax.spines['bottom'].set_visible(False)
-            ax.spines['top'].set_visible(False)
-            plt.barh(pp_score['x'][-15:], width=pp_score['ppscore'][-15:], color='#2369ec')
-            fig.savefig(self.folder + 'Features/v{}/'.format(self.version) + self.tag + 'Ppscore.png', format='png', dpi=400)
-            plt.close()
-
-            # Store results
-            pp_score.to_csv(self.folder + 'Features/v{}/pp_score.csv'.format(self.version))
+    # def predictive_power_score(self):
+    #     if self.plotFeatureImportance:
+    #         # Create folder
+    #         if not os.path.exists(self.folder + 'Features/v{}/'.format(self.version)):
+    #             os.mkdir(self.folder + 'Features/v{}/'.format(self.version))
+    #
+    #         # Skip if existing
+    #         if self.tag + 'PPScore.png' in os.listdir(self.folder + 'Features/v{}/'.format(self.version)):
+    #             return
+    #
+    #         # Calculate PPS
+    #         data = self.data.copy()
+    #         if isinstance(self.Y, pd.core.series.Series):
+    #             data.loc[:, 'target'] = self.Y
+    #         elif isinstance(self.Y, pd.DataFrame):
+    #             data.loc[:, 'target'] = self.Y.loc[:, self.Y.keys()[0]]
+    #         pp_score = ppscore.predictors(data, 'target').sort_values('ppscore')
+    #
+    #         # Plot
+    #         fig, ax = plt.subplots(figsize=[4, 6])
+    #         plt.subplots_adjust(left=0.5, top=1, bottom=0)
+    #         ax.spines['right'].set_visible(False)
+    #         ax.spines['bottom'].set_visible(False)
+    #         ax.spines['top'].set_visible(False)
+    #         plt.barh(pp_score['x'][-15:], width=pp_score['ppscore'][-15:], color='#2369ec')
+    #         fig.savefig(self.folder + 'Features/v{}/'.format(self.version) + self.tag + 'Ppscore.png', format='png', dpi=400)
+    #         plt.close()
+    #
+    #         # Store results
+    #         pp_score.to_csv(self.folder + 'Features/v{}/pp_score.csv'.format(self.version))

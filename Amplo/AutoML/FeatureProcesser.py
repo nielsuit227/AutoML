@@ -1,6 +1,5 @@
 import time
 import copy
-import ppscore
 import warnings
 import itertools
 import numpy as np
@@ -140,7 +139,7 @@ class FeatureProcesser:
             self._add_lagged_features()
 
         # Select
-        self.featureSets['PPS'] = self._sel_predictive_power_score()
+        # self.featureSets['PPS'] = self._sel_predictive_power_score()
         self.featureSets['RFT'], self.featureSets['RFI'] = self._sel_gini_impurity()
 
         # Set fitted
@@ -734,27 +733,27 @@ class FeatureProcesser:
         if self.verbosity > 0:
             print('[AutoML] Added {} lagged features'.format(len(self.laggedFeatures)))
 
-    def _sel_predictive_power_score(self):
-        """
-        Calculates the Predictive Power Score (https://github.com/8080labs/ppscore)
-        Asymmetric correlation based on single decision trees trained on 5.000 samples with 4-Fold validation.
-        """
-        if self.verbosity > 0:
-            print('[AutoML] Determining features with PPS')
-
-        # Copy data
-        data = self.x.copy()
-        data['target'] = self.y.copy()
-
-        # Get Predictive Power Score
-        pp_score = ppscore.predictors(data, "target")
-
-        # Select columns
-        pp_cols = pp_score['x'][pp_score['ppscore'] != 0].to_list()
-
-        if self.verbosity > 0:
-            print('[AutoML] Selected {} features with Predictive Power Score'.format(len(pp_cols)))
-        return pp_cols
+    # def _sel_predictive_power_score(self):
+    #     """
+    #     Calculates the Predictive Power Score (https://github.com/8080labs/ppscore)
+    #     Asymmetric correlation based on single decision trees trained on 5.000 samples with 4-Fold validation.
+    #     """
+    #     if self.verbosity > 0:
+    #         print('[AutoML] Determining features with PPS')
+    #
+    #     # Copy data
+    #     data = self.x.copy()
+    #     data['target'] = self.y.copy()
+    #
+    #     # Get Predictive Power Score
+    #     pp_score = ppscore.predictors(data, "target")
+    #
+    #     # Select columns
+    #     pp_cols = pp_score['x'][pp_score['ppscore'] != 0].to_list()
+    #
+    #     if self.verbosity > 0:
+    #         print('[AutoML] Selected {} features with Predictive Power Score'.format(len(pp_cols)))
+    #     return pp_cols
 
     def _sel_gini_impurity(self):
         """
