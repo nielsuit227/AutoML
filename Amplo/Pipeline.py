@@ -514,9 +514,7 @@ class Pipeline:
                                            missing_values=self.missingValues,
                                            outlier_removal=self.outlierRemoval, z_score_threshold=self.zScoreThreshold)
 
-        if os.path.exists(self.mainDir + 'Data/Cleaned_v{}.csv'.format(self.version)):
-            print('[AutoML] Loading Cleaned Data')
-
+        try:
             # Load data
             data = pd.read_csv(self.mainDir + 'Data/Cleaned_v{}.csv'.format(self.version), index_col='index')
 
@@ -525,7 +523,10 @@ class Pipeline:
                                                               .format(self.version), 'r'))
             self.dataProcesser.load_settings(self.settings['data_processing'])
 
-        else:
+            if self.verbose > 0:
+                print('[AutoML] Loaded Cleaned Data')
+
+        except FileNotFoundError:
             # Cleaning
             data = self.dataProcesser.fit_transform(data)
 
@@ -581,9 +582,8 @@ class Pipeline:
                                        fast_run=False, objective=self.objective)
         if self.mode == 'classification':
             # Check if exists
-            if os.path.exists(self.mainDir + 'Data/Balanced_v{}.csv'.format(self.version)):
+            try:
                 # Load
-                print('[AutoML] Loading Balanced data')
                 data = pd.read_csv(self.mainDir + 'Data/Balanced_v{}.csv'.format(self.version), index_col='index')
 
                 # Split
@@ -592,7 +592,10 @@ class Pipeline:
                 if self.includeOutput is False:
                     self.x = self.x.drop(self.target, axis=1)
 
-            else:
+                if self.verbose > 0:
+                    print('[AutoML] Loaded Balanced data')
+
+            except FileNotFoundError:
                 # Fit & Resample
                 self.x, self.y = self.dataSampler.fit_resample(self.x, self.y)
 
@@ -609,9 +612,7 @@ class Pipeline:
         self.dataSequencer = Sequencer(back=self.sequenceBack, forward=self.sequenceForward,
                                        shift=self.sequenceShift, diff=self.sequenceDiff)
         if self.sequence:
-            if os.path.exists(self.mainDir + 'Data/Sequence_v{}.csv'.format(self.version)):
-                print('[AutoML] Loading Sequenced Data')
-
+            try:
                 # Load data
                 data = pd.read_csv(self.mainDir + 'Data/Sequence_v{}.csv'.format(self.version), index_col='index')
 
@@ -621,7 +622,10 @@ class Pipeline:
                 if not self.includeOutput:
                     self.x = self.x.drop(self.target, axis=1)
 
-            else:
+                if self.verbose > 0:
+                    print('[AutoML] Loaded Extracted Features')
+
+            except FileNotFoundError:
                 print('[AutoML] Sequencing data')
                 self.x, self.y = self.dataSequencer.convert(self.x, self.y)
 
@@ -639,9 +643,7 @@ class Pipeline:
                                                  extract_features=self.extractFeatures, timeout=self.featureTimeout,
                                                  information_threshold=self.informationThreshold)
         # Check if exists
-        if os.path.exists(self.mainDir + 'Data/Extracted_v{}.csv'.format(self.version)):
-            print('[AutoML] Loading Extracted Features')
-
+        try:
             # Loading data
             self.x = pd.read_csv(self.mainDir + 'Data/Extracted_v{}.csv'.format(self.version), index_col='index')
 
@@ -651,7 +653,9 @@ class Pipeline:
             self.featureProcesser.load_settings(self.settings['feature_processing'])
             self.featureSets = self.settings['feature_processing']['featureSets']
 
-        else:
+            if self.verbose > 0:
+                print('[AutoML] Loaded Extracted Features')
+        except FileNotFoundError:
             print('[AutoML] Starting Feature Processor')
 
             # Transform data
@@ -674,12 +678,12 @@ class Pipeline:
             return
 
         # Load if exists
-        if os.path.exists(self.mainDir + 'Settings/Standardize_v{}.json'.format(self.version)):
+        try:
             self.settings['standardize'] = json.load(open(self.mainDir + 'Settings/Standardize_v{}.json'
                                                           .format(self.version), 'r'))
 
         # Otherwise fits
-        else:
+        except FileNotFoundError:
             self._fit_standardize(self.x, self.y)
 
             # Store Settings
@@ -1099,7 +1103,7 @@ class Pipeline:
         elif started_versions == completed_versions and self.processData:
             self.version = started_versions + 1
             with open(self.mainDir + 'changelog.txt', 'a') as f:
-                f.write('v{}: {}'.format(self.version, input('Changelog v{}:\n'.format(self.version))))
+                f.write('v{}: {}\n'.format(self.version, input('Changelog v{}:\n'.format(self.version))))
 
         # If no new run is started (either continue or rerun)
         else:
