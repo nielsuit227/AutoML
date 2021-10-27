@@ -221,9 +221,9 @@ class FeatureProcesser:
             'laggedFeatures': self.laggedFeatures,
             'diffFeatures': self.diffFeatures,
             'featureSets': self.featureSets,
-            '_means': [] if self._means is None else self._means.to_json(),
-            '_stds': [] if self._stds is None else self._stds.to_json(),
-            '_centers': [] if self._centers is None else self._centers.to_json(),
+            '_means': '[]' if self._means is None else self._means.to_json(),
+            '_stds': '[]' if self._stds is None else self._stds.to_json(),
+            '_centers': '[]' if self._centers is None else self._centers.to_json(),
         }
 
     def load_settings(self, settings: dict) -> None:
