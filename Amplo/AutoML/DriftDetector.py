@@ -111,7 +111,7 @@ class DriftDetector:
                         break
             elif isinstance(data, pd.Series):
                 ind = histSearch(x, data[key])
-                if ind == -1 or (y[ind] <= 0 and y[ind - 1] <= 0 and y[ind + 1] <= 0):
+                if ind == -1 or (y[ind] <= 0 and y[min(0, ind - 1)] <= 0 and y[max(self.n_bins, ind + 1)] <= 0):
                     violations.append(key)
 
         if len(violations) > 0:
