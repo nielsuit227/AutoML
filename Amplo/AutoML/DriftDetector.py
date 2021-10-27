@@ -16,8 +16,8 @@ class DriftDetector:
                  date_cols: list = None,
                  n_bins: int = 500,
                  sigma: int = 3,
-                 with_pdf: bool = False,
-                 **kwargs):
+                 with_pdf: bool = False
+                 ):
         """
         Detects data drift in streamed input data.
         Supports numerical, categorical and datetime variables.
@@ -111,7 +111,7 @@ class DriftDetector:
                         break
             elif isinstance(data, pd.Series):
                 ind = histSearch(x, data[key])
-                if ind == -1 or y[ind] <= 0:
+                if ind == -1 or (y[ind] <= 0 and y[ind - 1] <= 0 and y[ind + 1] <= 0):
                     violations.append(key)
 
         if len(violations) > 0:
@@ -139,7 +139,6 @@ class DriftDetector:
                     dist = getattr(stats, distribution)
 
                     # Multiple order fit
-                    fit = {}
                     params = dist.fit(data[key])
                     fitted_pdf = dist.pdf(x, loc=params[-2], scale=params[-1], *params[:-2])
 
