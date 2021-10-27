@@ -291,7 +291,8 @@ class DataProcesser:
         """
         Converts categorical variables according to fitted scheme.
         """
-        for key, value in self.dummies.items():
+        for key in self.cat_cols:
+            value = self.dummies[key]
             dummies = [i[len(key) + 1:] for i in value]
             data[value] = np.equal.outer(data[key].values, dummies) * 1
             data = data.drop(key, axis=1)
