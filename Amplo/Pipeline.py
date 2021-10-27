@@ -1109,6 +1109,9 @@ class Pipeline:
         else:
             self.version = started_versions
 
+        if self.verbose > 0:
+            print(f'[AutoML] Setting Version {self.version}')
+
     def _create_dirs(self):
         folders = ['', 'EDA', 'Data', 'Features', 'Documentation', 'Production', 'Settings']
         for folder in folders:
