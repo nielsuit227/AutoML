@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from ..Utils import getModel
 from sklearn.svm import SVR
@@ -27,6 +28,8 @@ class StackingRegressor:
         self.stack = []
         self.n_samples = 0
         self.n_features = 0
+        self.mean = None
+        self.std = None
         self.set_params(**params)
 
     def _add_default_models(self, stack: list) -> list:
@@ -49,6 +52,12 @@ class StackingRegressor:
         # Set info
         self.n_samples = x.shape[0]
         self.n_features = x.shape[1]
+        self.mean = np.mean(x, axis=0)
+        self.std = np.std(x, axis=0)
+        self.std[self.std == 0] = 1
+
+        # Normalize
+        x = (x - np.mean(x)) / np.std(x)
 
         # Create stack
         self.level_one = LinearRegression()
@@ -103,4 +112,4 @@ class StackingRegressor:
 
     def predict(self, x):
         assert self.trained
-        return self.model.predict(x).reshape(-1)
+        return self.model.predict((x - np.mean(x)) / np.std(x)).reshape(-1)

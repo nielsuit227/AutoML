@@ -28,6 +28,8 @@ class StackingClassifier:
         self.classes_ = None
         self.params = params
         self.stack = []
+        self.mean = None
+        self.std = None
         self.n_samples = 0
         self.n_features = 0
         self.set_params(**params)
@@ -55,6 +57,12 @@ class StackingClassifier:
         self.n_samples = x.shape[0]
         self.n_features = x.shape[1]
         self.classes_ = np.unique(y)
+        self.mean = np.mean(x, axis=0)
+        self.std = np.std(x, axis=0)
+        self.std[self.std == 0] = 1
+
+        # Normalize
+        x = (x - self.mean) / np.std
 
         # Set level one
         solver = 'lbfgs'
@@ -116,8 +124,8 @@ class StackingClassifier:
 
     def predict(self, x):
         assert self.trained
-        return self.model.predict(x).reshape(-1)
+        return self.model.predict((x - self.mean) / self.std).reshape(-1)
 
     def predict_proba(self, x):
         assert self.trained
-        return self.model.predict_proba(x)
+        return self.model.predict_proba((x - self.mean) / self.std)
