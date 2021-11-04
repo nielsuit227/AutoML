@@ -62,7 +62,7 @@ class StackingClassifier:
         self.std[self.std == 0] = 1
 
         # Normalize
-        x = (x - self.mean) / np.std
+        x = (x - self.mean) / self.std
 
         # Set level one
         solver = 'lbfgs'

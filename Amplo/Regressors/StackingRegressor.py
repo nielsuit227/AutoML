@@ -57,7 +57,7 @@ class StackingRegressor:
         self.std[self.std == 0] = 1
 
         # Normalize
-        x = (x - np.mean(x)) / np.std(x)
+        x = (x - self.mean) / self.std
 
         # Create stack
         self.level_one = LinearRegression()
@@ -112,4 +112,4 @@ class StackingRegressor:
 
     def predict(self, x):
         assert self.trained
-        return self.model.predict((x - np.mean(x)) / np.std(x)).reshape(-1)
+        return self.model.predict((x - self.mean) / self.std).reshape(-1)
