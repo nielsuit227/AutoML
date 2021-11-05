@@ -4,6 +4,16 @@ import pandas as pd
 from typing import Union
 
 
+def influx_query_to_df(result):
+    df = []
+    for table in result:
+        parsed_records = []
+        for record in table.records:
+            parsed_records.append((record.get_time(), record.get_value()))
+        df.append(pd.DataFrame(parsed_records, columns=['ts', record.get_field()]))
+    return pd.concat(df).set_index('ts').groupby(level=0).sum()
+
+
 def getModel(model_str, **args):
     from Amplo.AutoML.Modeller import Modeller
     try:
