@@ -213,22 +213,41 @@ class DataProcesser:
             if not self.includeOutput and self.target is not None and self.target in data:
                 data = data.drop(self.target, axis=1)
 
-            # All numeric, floats or ints
-            self.int_cols = data.keys()[data.dtypes == int].tolist()
-            self.float_cols = data.keys()[data.dtypes == float].tolist()
+            # Iterate through keys
+            for key in data.keys():
+                # Integer
+                if pd.api.types.is_integer_dtype(data[key]):
+                    self.int_cols.append(key)
+
+                # Float
+                if pd.api.types.is_float_dtype(data[key]):
+                    self.float_cols.append(key)
+
+                # Datetime
+                if pd.api.types.is_datetime64_any_dtype(data[key]):
+                    self.date_cols.append(key)
+
+                # Booleans
+                if pd.api.types.is_bool_dtype(data[key]):
+                    self.int_cols.append(key)
+
+                # Strings / Objects
+                if pd.api.types.is_object_dtype(data[key]):
+                    is_date = data[key].astype('str').apply(pd.to_datetime, errors='coerce').isna.sum() < 0.3 * len(data)
+                    if is_date:
+                        self.date_cols.append(key)
+                    else:
+                        self.cat_cols.append(key)
+
+            # Set num cols for reverse compatibility
             self.num_cols = self.int_cols + self.float_cols
+
+            # Check if float keys are secretly not integers
             for key in self.float_cols:
                 forced_int = pd.to_numeric(data[key].fillna(0), errors='coerce', downcast='integer')
                 if pd.api.types.is_integer_dtype(forced_int):
                     self.float_cols.remove(key)
                     self.int_cols.append(key)
-
-            # String are either datetime or categorical, we check datetime
-            object_keys = data.keys()[data.dtypes == object]
-            object_is_date = data[object_keys].astype('str').apply(pd.to_datetime, errors='coerce')\
-                .isna().sum() < 0.3 * len(data)
-            self.date_cols = object_keys[object_is_date].tolist()
-            self.cat_cols = object_keys[~object_is_date].tolist()
 
             # Print
             print(f"[AutoML] Found {len(self.num_cols)} numerical, {len(self.cat_cols)} categorical and "
