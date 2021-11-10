@@ -4,14 +4,17 @@ import warnings
 import itertools
 import numpy as np
 import pandas as pd
-from boruta import BorutaPy
 from tqdm import tqdm
+from boruta import BorutaPy
+from shap import TreeExplainer
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.cluster import MiniBatchKMeans
 from Amplo.Utils import clean_keys
+from Amplo.Classifiers import CatBoostClassifier
+from Amplo.Regressors import CatBoostRegressor
 
 
 class FeatureProcesser:
@@ -21,6 +24,8 @@ class FeatureProcesser:
                  max_diff: int = 2,
                  date_cols: list = None,
                  information_threshold: float = 0.99,
+                 selection_cutoff: float = 0.85,
+                 selection_increment: float = 0.005,
                  extract_features: bool = True,
                  mode: str = 'classification',
                  timeout: int = 900,
@@ -91,6 +96,8 @@ class FeatureProcesser:
         self.maxLags = max_lags
         self.maxDiff = max_diff
         self.informationThreshold = information_threshold
+        self.selectionCutoff = selection_cutoff
+        self.selectionIncrement = selection_increment
         self.extractFeatures = extract_features
         self.verbosity = verbosity
 
@@ -141,6 +148,7 @@ class FeatureProcesser:
         # Select
         # self.featureSets['PPS'] = self._sel_predictive_power_score()
         self.featureSets['RFT'], self.featureSets['RFI'] = self._sel_gini_impurity()
+        self.featureSets['ShapThreshold'], self.featureSets['ShapIncrement'] = self._sel_shap()
 
         # Set fitted
         self.is_fitted = True
@@ -777,16 +785,46 @@ class FeatureProcesser:
         ind = np.flip(np.argsort(fi))
 
         # Info Threshold
-        ind_keep = [ind[i] for i in range(len(ind)) if fi[ind[:i]].sum() <= 0.85 * sfi]
+        ind_keep = [ind[i] for i in range(len(ind)) if fi[ind[:i]].sum() <= self.selectionCutoff * sfi]
         threshold = self.x.keys()[ind_keep].to_list()
 
         # Info increment
-        ind_keep = [ind[i] for i in range(len(ind)) if fi[i] > sfi / 200]
+        ind_keep = [ind[i] for i in range(len(ind)) if fi[i] > sfi * self.selectionIncrement]
         increment = self.x.keys()[ind_keep].to_list()
 
         if self.verbosity > 0:
             print('[AutoML] Selected {} features with 85% RF threshold'.format(len(threshold)))
             print('[AutoML] Selected {} features with 0.5% RF increment'.format(len(increment)))
+        return threshold, increment
+
+    def _sel_shap(self):
+        """
+        Calculates Shapely values, which can be used as a measure of feature importance.
+        """
+        # Get base model
+        base = None
+        if self.mode == 'regression':
+            base = CatBoostRegressor()
+        elif self.mode == 'classification' or self.mode == 'multiclass':
+            base = CatBoostClassifier()
+
+        # Fit
+        base.fit(self.x, self.y)
+
+        # Get SHAP values
+        explainer = TreeExplainer(base.model)
+        values = np.mean(np.abs(explainer.shap_values(self.x, self.y)), axis=0)
+        values_sum = np.sum(values)
+        ind = np.flip(np.argsort(values))
+
+        # Threshold
+        ind_keep = [ind[i] for i in range(len(ind)) if values[ind[:i]].sum() <= self.selectionCutoff * values_sum]
+        threshold = self.x.keys()[ind_keep].to_list()
+
+        # Increment
+        ind_keep = [ind[i] for i in range(len(ind)) if values[ind[i]] > values_sum * self.selectionIncrement]
+        increment = self.x.keys()[ind_keep].to_list()
+
         return threshold, increment
 
     def _borutapy(self):
