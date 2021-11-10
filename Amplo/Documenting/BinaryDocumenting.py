@@ -38,6 +38,7 @@ class BinaryDocumenting(FPDF):
         self.cv = None
         self.x = None
         self.y = None
+        self.featureImportances = {}
 
     def header(self):
         try:        # No problem if not possible due lack of internet

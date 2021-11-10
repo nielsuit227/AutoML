@@ -233,7 +233,8 @@ class DataProcesser:
 
                 # Strings / Objects
                 if pd.api.types.is_object_dtype(data[key]):
-                    is_date = data[key].astype('str').apply(pd.to_datetime, errors='coerce').isna.sum() < 0.3 * len(data)
+                    is_date = data[key].astype('str').apply(pd.to_datetime, errors='coerce').isna().sum() < 0.3 * \
+                              len(data)
                     if is_date:
                         self.date_cols.append(key)
                     else:
