@@ -74,7 +74,7 @@ class RegressionDocumenting(BinaryDocumenting):
         print('[AutoML] R2 Score:                       {:.2f} \u00B1 {:.2f}'.format(np.mean(r2), np.std(r2)))
         print('[AutoML] Max Error:                      {:.2f} \u00B1 {:.2f}'.format(
             np.mean(max_error), np.std(max_error)))
-        print('[AutoML] Mean Absolute Relative Error:   {:.2f} \u00B1 {:.2f}'.format(
+        print('[AutoML] Mean Absolute Percentage Error: {:.2f} \u00B1 {:.2f}'.format(
             np.mean(rel_error), np.std(rel_error)))
 
         # Feature Importance
