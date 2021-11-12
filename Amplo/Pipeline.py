@@ -320,7 +320,7 @@ class Pipeline:
         self.is_fitted = True
         print('[AutoML] All done :)')
 
-    def convert_data(self, x: pd.DataFrame) -> [pd.DataFrame, pd.Series]:
+    def convert_data(self, x: pd.DataFrame, preprocess: bool = True) -> [pd.DataFrame, pd.Series]:
         """
         Function that uses the same process as the pipeline to clean data.
         Useful if pipeline is pickled for production
@@ -334,7 +334,7 @@ class Pipeline:
             x = pd.DataFrame(x, columns=[f"Feature_{i}" for i in range(x.shape[1])])
 
         # Custom code
-        if self.preprocessFunction is not None:
+        if self.preprocessFunction is not None and preprocess:
             ex_globals = {'data': x}
             exec(self.preprocessFunction, ex_globals)
             x = ex_globals['data']

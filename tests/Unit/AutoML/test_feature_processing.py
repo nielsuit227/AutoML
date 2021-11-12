@@ -81,7 +81,7 @@ class TestDataProcessing(unittest.TestCase):
         x = pd.DataFrame({'a': y, 'b': np.random.randint(0, 100, 100)})
         fp = FeatureProcesser(mode='regression')
         xt, sets = fp.fit_transform(x, y)
-        assert all([len(i) == 1 for i in sets.values()]), "Random Feature Selected"
+        assert all([len(i) == 1 for i in sets.values()]), f"Random Feature Selected: {sets}"
 
     def test_settings(self):
         y = pd.Series(np.random.randint(1, 100, 100))
