@@ -584,7 +584,7 @@ class FeatureProcesser:
 
         scores = {}
         for i, key in enumerate(self.originalInput.keys()):
-            inv_feature = 1 / self.x[key]
+            inv_feature = (1 / self.x[key]).clip(lower=-1e12, upper=1e12)
             score = self._analyse_feature(inv_feature)
             if self._accept_feature(score):
                 scores['inv__' + key] = score
@@ -598,7 +598,7 @@ class FeatureProcesser:
         # Add features
         for k in self.inverseFeatures:
             key = k[5:]
-            self.x[k] = 1 / self.x[key]
+            self.x[k] = (1 / self.x[key]).clip(lower=-1e12, upper=1e12)
 
         # Store
         if self.verbosity > 0:
