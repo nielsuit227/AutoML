@@ -35,11 +35,11 @@ class IntervalAnalyser:
 
         Parameters
         ----------
-        folder [str]:       Parent folder of classes
-        index_col [str]:    For reading the log files
-        norm [str]:         Optimization metric for K-Nearest Neighbors
+        folder [str]:         Parent folder of classes
+        index_col [str]:      For reading the log files
+        norm [str]:           Optimization metric for K-Nearest Neighbors
         n_neighbors [int]:    Quantity of neighbors, default to 3 * log length
-        n_trees [int]:      Quantity of trees
+        n_trees [int]:        Quantity of trees
         """
         # Parameters
         self.folder = folder + '/' if len(folder) == 0 or folder[-1] != '/' else folder
@@ -161,6 +161,10 @@ class IntervalAnalyser:
         dfs = dfs.drop('class', axis=1)
         dp = DataProcesser(missing_values='zero')
         dfs = dp.fit_transform(dfs)
+
+        # Remove datetime columns
+        if len(dp.date_cols) != 0:
+            dfs = dfs.drop(dp.date_cols, axis=1)
 
         # Return
         return dfs, classes
