@@ -789,7 +789,7 @@ class FeatureProcesser:
         ind = np.flip(np.argsort(fi))
 
         # Add to class attribute
-        self.featureImportance['rf'] = (self.x.keys()[ind], fi[ind])
+        self.featureImportance['rf'] = (self.x.keys()[ind].to_list(), fi[ind].tolist())
 
         # Info Threshold
         ind_keep = [ind[i] for i in range(len(ind)) if fi[ind[:i]].sum() <= self.selectionCutoff * sfi]
