@@ -260,8 +260,8 @@ class DataProcesser:
 
             # Print
             if self.verbosity > 0:
-                print(f"[AutoML] Found {len(self.num_cols)} numerical, {len(self.cat_cols)} categorical and "
-                      f"{len(self.date_cols)} datetime columns")
+                print(f"[AutoML] Found {len(self.int_cols)} integer, {len(self.float_cols)} float, {len(self.cat_cols)} "
+                      f"categorical and {len(self.date_cols)} datetime columns")
 
         return
 
