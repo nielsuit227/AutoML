@@ -6,7 +6,7 @@ from fpdf import FPDF
 from datetime import datetime
 import matplotlib.pyplot as plt
 from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import plot_roc_curve
+from sklearn.metrics import RocCurveDisplay
 from sklearn.metrics import auc
 from urllib.error import URLError
 
@@ -149,7 +149,7 @@ class BinaryDocumenting(FPDF):
             cm[i] = np.array([[tp, fp], [fn, tn]])
 
             # ROC calculations
-            viz = plot_roc_curve(model, xv, yv, name='ROC fold {}'.format(i + 1), alpha=0.3, ax=ax2)
+            viz = RocCurveDisplay.from_predictions(yv, predictions, name='ROC fold {}'.format(i + 1), ax=ax2)
             interp_tpr = np.interp(mean_fpr, viz.fpr, viz.tpr)
             interp_tpr[0] = 0.0
             true_positive_rates.append(interp_tpr)
