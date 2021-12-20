@@ -3,6 +3,7 @@ import os
 import time
 import copy
 import json
+import Amplo
 import joblib
 import shutil
 import warnings
@@ -1046,6 +1047,7 @@ class Pipeline:
         self.settings['params'] = params
         self.settings['feature_set'] = feature_set
         self.settings['features'] = self.featureSets[feature_set]
+        self.settings['amplo_version'] = Amplo.__version__
 
         # Prune Data Processor
         required_features = self.featureProcesser.get_required_features(self.featureSets[feature_set])
