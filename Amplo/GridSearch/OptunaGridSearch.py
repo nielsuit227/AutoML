@@ -270,7 +270,7 @@ class OptunaGridSearch:
         self.x, self.y = x, y
 
         # Set up study
-        study = optuna.create_study(sampler=optuna.samplers.TPESampler(), direction='maximize')
+        study = optuna.create_study(sampler=optuna.samplers.TPESampler(seed=236868), direction='maximize')
         study.optimize(self.objective, timeout=self.timeout, n_trials=self.nTrials)
 
         # Parse results
