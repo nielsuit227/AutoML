@@ -72,6 +72,7 @@ class DataProcesser:
 
         # Info for Documenting
         self.is_fitted = False
+        self.verbosity = verbosity
         self.removedDuplicateRows = 0
         self.removedDuplicateColumns = 0
         self.removedOutliers = 0
