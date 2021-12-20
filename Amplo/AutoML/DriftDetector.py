@@ -119,9 +119,9 @@ class DriftDetector:
             bins (dict): Bins dictionary with bins and quantities for all numeric keys
             distributions (dict): Dictionary with fitted distributions for all numeric keys.
         """
-        self.bins = weights['bins']
-        self.output_bins = weights['output_bins']
-        self.distributions = weights['distributions']
+        self.bins = weights['bins'] if 'bins' in weights else dict()
+        self.output_bins = weights['output_bins'] if 'output_bins' in weights else (None, None)
+        self.distributions = weights['distributions'] if 'distributions' in weights else dict()
         return self
 
     def _fit_bins(self, data: pd.DataFrame):
