@@ -104,4 +104,4 @@ class TestDataProcessing(unittest.TestCase):
         x = pd.DataFrame({'a': y / b, 'b': b, 'c': b / 2})
         fp = FeatureProcesser(mode='regression')
         xt, sets = fp.fit_transform(x, y)
-        assert fp.get_r`equired_features(['a__x__b']) == ['b', 'a']
+        assert fp.get_required_features(['a__x__b']) == ['b', 'a']
