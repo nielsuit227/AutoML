@@ -380,19 +380,12 @@ class DataProcesser:
         if self.outlier_removal == 'quantiles':
             self._q1 = data[self.num_cols].quantile(0.25)
             self._q3 = data[self.num_cols].quantile(0.75)
-            return (data[self.num_cols] > self._q3).sum().sum() + (data[self.num_cols] < self._q1).sum().sum()
 
         # By z-score
         elif self.outlier_removal == 'z-score':
             self._means = data[self.num_cols].mean(skipna=True, numeric_only=True)
             self._stds = data[self.num_cols].std(skipna=True, numeric_only=True)
             self._stds[self._stds == 0] = 1
-            z_score = (data[self.num_cols] - self._means) / self._stds
-            return (z_score > self.z_score_threshold).sum().sum()
-
-        # By clipping
-        elif self.outlier_removal == 'clip':
-            return (data[self.num_cols] > 1e12).sum().sum() + (data[self.num_cols] < -1e12).sum().sum()
 
     def remove_outliers(self, data: pd.DataFrame, fit: bool = True) -> pd.DataFrame:
         """
@@ -400,22 +393,25 @@ class DataProcesser:
         """
         # Check if needs fitting
         if fit:
-            self.removedOutliers = self.fit_outliers(data)
+            self.fit_outliers(data)
         else:
             assert self.is_fitted, ".remove_outliers() is called with fit=False, yet the object isn't fitted yet."
 
         # With Quantiles
         if self.outlier_removal == 'quantiles':
+            self.removedOutliers = (data[self.num_cols] > self._q3).sum().sum() + (data[self.num_cols] < self._q1).sum().sum()
             data[self.num_cols] = data[self.num_cols].mask(data[self.num_cols] < self._q1)
             data[self.num_cols] = data[self.num_cols].mask(data[self.num_cols] > self._q3)
 
         # With z-score
         elif self.outlier_removal == 'z-score':
             z_score = abs((data[self.num_cols] - self._means) / self._stds)
+            self.removedOutliers = (z_score > self.z_score_threshold).sum().sum()
             data[self.num_cols] = data[self.num_cols].mask(z_score > self.z_score_threshold)
 
         # With clipping
         elif self.outlier_removal == 'clip':
+            self.removedOutliers = (data[self.num_cols] > 1e12).sum().sum() + (data[self.num_cols] < -1e12).sum().sum()
             data[self.num_cols] = data[self.num_cols].clip(lower=-1e12, upper=1e12)
         return data
 
