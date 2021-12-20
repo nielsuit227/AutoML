@@ -1059,6 +1059,7 @@ class Pipeline:
             date_cols=self.dataProcesser.date_cols
         )
         self.driftDetector.fit(self.data)
+        self.driftDetector.fit_output(self.bestModel, self.x[self.featureSets[feature_set]])
         self.settings['drift_detector'] = self.driftDetector.get_weights()
 
         # Report
