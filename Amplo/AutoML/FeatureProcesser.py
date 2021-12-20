@@ -776,10 +776,11 @@ class FeatureProcesser:
             print('[AutoML] Determining features with RF')
 
         # Set model
+        rng = np.random.default_rng(236868)
         if self.mode == 'regression':
-            rf = RandomForestRegressor().fit(self.x, self.y)
+            rf = RandomForestRegressor(random_state=rng).fit(self.x, self.y)
         elif self.mode == 'classification' or self.mode == 'multiclass':
-            rf = RandomForestClassifier().fit(self.x, self.y)
+            rf = RandomForestClassifier(random_state=rng).fit(self.x, self.y)
         else:
             raise ValueError('Method not implemented')
 
