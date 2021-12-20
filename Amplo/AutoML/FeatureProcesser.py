@@ -91,6 +91,7 @@ class FeatureProcesser:
         self._means = None
         self._stds = None
         self._centers = None
+        self.featureImportance = {}
 
         # Parameters
         self.maxLags = max_lags
@@ -232,6 +233,7 @@ class FeatureProcesser:
             '_means': '[]' if self._means is None else self._means.to_json(),
             '_stds': '[]' if self._stds is None else self._stds.to_json(),
             '_centers': '[]' if self._centers is None else self._centers.to_json(),
+            'featureImportance': self.featureImportance
         }
 
     def load_settings(self, settings: dict) -> None:
@@ -249,6 +251,7 @@ class FeatureProcesser:
         self._means = pd.read_json(settings['_means'], typ='series') if 'v' in settings else []
         self._stds = pd.read_json(settings['_stds'], typ='series') if '_stds' in settings else []
         self._centers = pd.read_json(settings['_centers']) if '_centers' in settings else []
+        self.featureImportance = settings['featureImportance']
         self.is_fitted = True
         self.verbosity = 0
 
@@ -785,6 +788,9 @@ class FeatureProcesser:
         sfi = fi.sum()
         ind = np.flip(np.argsort(fi))
 
+        # Add to class attribute
+        self.featureImportance['rf'] = (self.x.keys()[ind], fi[ind])
+
         # Info Threshold
         ind_keep = [ind[i] for i in range(len(ind)) if fi[ind[:i]].sum() <= self.selectionCutoff * sfi]
         threshold = self.x.keys()[ind_keep].to_list()
@@ -817,6 +823,9 @@ class FeatureProcesser:
         values = np.mean(np.abs(explainer.shap_values(self.x, self.y)), axis=0)
         values_sum = np.sum(values)
         ind = np.flip(np.argsort(values))
+
+        # Add to class attribute
+        self.featureImportance['shap'] = (self.x.keys()[ind], values[ind])
 
         # Threshold
         ind_keep = [ind[i] for i in range(len(ind)) if values[ind[:i]].sum() <= self.selectionCutoff * values_sum]
