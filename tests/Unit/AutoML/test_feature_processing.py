@@ -99,9 +99,9 @@ class TestDataProcessing(unittest.TestCase):
             assert np.allclose(xt[v], xtn), 'Transformed data not consistent for {} set'.format(k)
 
     def test_get_required(self):
-    y = pd.Series(np.linspace(2, 100, 100))
-    b = pd.Series(np.linspace(-4, 4, 100) ** 2)
-    x = pd.DataFrame({'a': y / b, 'b': b, 'c': b / 2})
-    fp = FeatureProcesser(mode='regression')
-    xt, sets = fp.fit_transform(x, y)
-    assert fp.get_required_features(['a__x__b']) == list('b', 'a')
+        y = pd.Series(np.linspace(2, 100, 100))
+        b = pd.Series(np.linspace(-4, 4, 100) ** 2)
+        x = pd.DataFrame({'a': y / b, 'b': b, 'c': b / 2})
+        fp = FeatureProcesser(mode='regression')
+        xt, sets = fp.fit_transform(x, y)
+        assert fp.get_r`equired_features(['a__x__b']) == ['b', 'a']
