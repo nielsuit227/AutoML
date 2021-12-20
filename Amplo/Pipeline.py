@@ -173,6 +173,9 @@ class Pipeline:
         self.verbose = kwargs.get('verbose', 0)
         self.noDirs = kwargs.get('no_dirs', False)
 
+        # Monitoring
+        self._prediction_time = None
+
         # Checks
         assert self.mode in [None, 'regression', 'classification'], 'Supported modes: regression, classification.'
         assert 0 < self.informationThreshold < 1, 'Information threshold needs to be within [0, 1]'
@@ -377,6 +380,7 @@ class Pipeline:
         ----------
         data [pd.DataFrame]: data to do prediction on
         """
+        start_time = time.time()
         assert self.is_fitted, "Pipeline not yet fitted."
 
         # Print
@@ -392,6 +396,7 @@ class Pipeline:
         else:
             predictions = self.bestModel.predict(x)
 
+        self._prediction_time = time.time() - start_time
         return predictions
 
     def predict_proba(self, data: pd.DataFrame) -> np.ndarray:
@@ -402,6 +407,7 @@ class Pipeline:
         ----------
         data [pd.DataFrame]: data to do prediction on
         """
+        start_time = time.time()
         assert self.is_fitted, "Pipeline not yet fitted."
         assert self.mode == 'classification', 'Predict_proba only available for classification'
         assert hasattr(self.bestModel, 'predict_proba'), '{} has no attribute predict_proba'.format(
@@ -415,7 +421,10 @@ class Pipeline:
         x, y = self.convert_data(data)
 
         # Predict
-        return self.bestModel.predict_proba(x)
+        prediction = self.bestModel.predict_proba(x)
+
+        self._prediction_time = time.time() - start_time
+        return prediction
 
     # Fit functions
     def _read_data(self, *args, **kwargs) -> pd.DataFrame:
