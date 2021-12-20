@@ -35,6 +35,7 @@ class DriftDetector:
 
         # Initialize
         self.bins = {}
+        self.output_bins = (None, None)
         self.distributions = {}
 
     def fit(self, data: pd.DataFrame) -> object:
@@ -59,6 +60,43 @@ class DriftDetector:
         violations.extend(self._check_bins(data))
 
         return violations
+
+    def fit_output(self, model, data: pd.DataFrame):
+        """
+        Additionally to detecting input drift, we should also detect output drift. When the distribution of predicted
+        outcomes change, it's often a sign that some under laying dynamics are shifting.
+        """
+        assert hasattr(model, 'predict'), "Model does not have 'predict' attribute."
+
+        # If it's a classifier and has predict_proba, we use that :)
+        if hasattr(model, 'predict_proba'):
+            prediction = model.predict_proba(data)
+        else:
+            prediction = model.predict(data)
+
+        y, x = np.histogram(prediction, bins=self.n_bins)
+        self.output_bins = (x.tolist(), y.tolist())
+
+    def check_output(self, model, data: pd.DataFrame):
+        """
+        Checks the predictions of a model.
+        """
+        assert hasattr(model, 'predict'), "Model does not have 'predict' attribute."
+
+        # If it's a classifier and has predict_proba, we use that :)
+        if hasattr(model, 'predict_proba'):
+            prediction = model.predict_proba(data)
+        else:
+            prediction = model.predict(data)
+
+        # Check all predictions
+        violated = False
+        x, y = self.output_bins
+        for value in prediction:
+            ind = histSearch(x, value)
+            if ind == -1 or y[ind] <= 0:
+                logging.warning(f"[AutoML] Output drift detected!")
+                return
 
     def get_weights(self) -> dict:
         """
