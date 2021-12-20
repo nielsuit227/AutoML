@@ -18,6 +18,7 @@ class DataProcesser:
                  outlier_removal: str = 'clip',
                  z_score_threshold: int = 4,
                  version: int = 1,
+                 verbosity: int = 0,
                  ):
         """
         Preprocessing Class. Cleans a dataset into a workable format.
@@ -90,7 +91,8 @@ class DataProcesser:
         -------
         data [pd.DataFrame]: Cleaned input data
         """
-        print('[AutoML] Data Cleaning Started, ({} x {}) samples'.format(len(data), len(data.keys())))
+        if self.verbosity > 0:
+            print('[AutoML] Data Cleaning Started, ({} x {}) samples'.format(len(data), len(data.keys())))
 
         # Clean Keys
         data = clean_keys(data)
@@ -121,7 +123,8 @@ class DataProcesser:
 
         # Finish
         self.is_fitted = True
-        print('[AutoML] Processing completed, ({} x {}) samples returned'.format(len(data), len(data.keys())))
+        if self.verbosity > 0:
+            print('[AutoML] Processing completed, ({} x {}) samples returned'.format(len(data), len(data.keys())))
         return data
 
     def transform(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -255,8 +258,9 @@ class DataProcesser:
                     self.int_cols.append(key)
 
             # Print
-            print(f"[AutoML] Found {len(self.num_cols)} numerical, {len(self.cat_cols)} categorical and "
-                  f"{len(self.date_cols)} datetime columns")
+            if self.verbosity > 0:
+                print(f"[AutoML] Found {len(self.num_cols)} numerical, {len(self.cat_cols)} categorical and "
+                      f"{len(self.date_cols)} datetime columns")
 
         return
 
@@ -345,8 +349,9 @@ class DataProcesser:
         # Note
         self.removedDuplicateColumns = n_columns - len(data.keys())
         self.removedDuplicateRows = n_rows - len(data)
-        print(f'[AutoML] Removed {self.removedDuplicateColumns} duplicate columns and {self.removedDuplicateRows} '
-              f'duplicate rows')
+        if self.verbosity > 0 or (self.removedDuplicateColumns != 0 or self.removedDuplicateRows != 0):
+            print(f'[AutoML] Removed {self.removedDuplicateColumns} duplicate columns and {self.removedDuplicateRows} '
+                  f'duplicate rows')
 
         return data
 
@@ -361,7 +366,8 @@ class DataProcesser:
 
         # Note
         self.removedConstantColumns = columns - len(data.keys())
-        print(f'[AutoML] Removed {self.removedConstantColumns} constant columns.')
+        if self.verbosity > 0 or self.removedConstantColumns != 0:
+            print(f'[AutoML] Removed {self.removedConstantColumns} constant columns.')
 
         return data
 
@@ -421,7 +427,8 @@ class DataProcesser:
 
         # Note
         self.imputedMissingValues = data[self.num_cols].isna().sum().sum()
-        print(f'[AutoML] Imputed {self.imputedMissingValues} missing values.')
+        if self.verbosity > 0 or self.imputedMissingValues != 0:
+            print(f'[AutoML] Imputed {self.imputedMissingValues} missing values.')
 
         # Removes all rows with missing values
         if self.missing_values == 'remove_rows':

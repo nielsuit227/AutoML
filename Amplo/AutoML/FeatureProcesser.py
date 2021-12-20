@@ -250,6 +250,7 @@ class FeatureProcesser:
         self._stds = pd.read_json(settings['_stds'], typ='series') if '_stds' in settings else []
         self._centers = pd.read_json(settings['_centers']) if '_centers' in settings else []
         self.is_fitted = True
+        self.verbosity = 0
 
     def _clean_set(self, x: pd.DataFrame, y: pd.Series) -> None:
         """
