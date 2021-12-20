@@ -233,17 +233,13 @@ class BinaryDocumenting(FPDF):
         if not os.path.exists(self.p.mainDir + 'EDA/Features/v{}/RF.png'.format(self.p.version)):
             if not os.path.exists(self.p.mainDir + 'EDA/Features/v{}'.format(self.p.version)):
                 os.makedirs(self.p.mainDir + 'EDA/Features/v{}/'.format(self.p.version))
-            from sklearn.ensemble import RandomForestClassifier
-            model = RandomForestClassifier()
-            model.fit(self.p.x, self.p.y)
             fig, ax = plt.subplots(figsize=[4, 6], constrained_layout=True)
             plt.subplots_adjust(left=0.5, top=1, bottom=0)
             ax.spines['right'].set_visible(False)
             ax.spines['bottom'].set_visible(False)
             ax.spines['top'].set_visible(False)
-            ind = np.argsort(model.feature_importances_)
-            plt.barh(list(self.p.x.keys()[ind])[-15:], width=model.feature_importances_[ind][-15:],
-                     color='#2369ec')
+            keys, fi = self.p.featureProcesser.featureImportance['rf']
+            plt.barh(keys[:15], width=fi[:15], color='#2369ec')
             fig.savefig(self.p.mainDir + 'EDA/Features/v{}/RF.png'.format(self.p.version), format='png', dpi=200)
 
     def check_new_page(self, margin=220):
