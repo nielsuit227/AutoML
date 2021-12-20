@@ -54,12 +54,7 @@ class DriftDetector:
         """
         Checks a new dataframe for distribution drift.
         """
-        violations = []
-
-        # Numerical
-        violations.extend(self._check_bins(data))
-
-        return violations
+        self._check_bins()
 
     def fit_output(self, model, data: pd.DataFrame):
         """
@@ -74,10 +69,11 @@ class DriftDetector:
         else:
             prediction = model.predict(data)
 
-        y, x = np.histogram(prediction, bins=self.n_bins)
+        ma, mi = max(prediction), min(prediction)
+        y, x = np.histogram(prediction, bins=self.n_bins, range=(mi - (ma - mi) / 10, ma + (ma - mi) / 10))
         self.output_bins = (x.tolist(), y.tolist())
 
-    def check_output(self, model, data: pd.DataFrame):
+    def check_output(self, model, data: pd.DataFrame, add: bool = True):
         """
         Checks the predictions of a model.
         """
@@ -85,18 +81,24 @@ class DriftDetector:
 
         # If it's a classifier and has predict_proba, we use that :)
         if hasattr(model, 'predict_proba'):
-            prediction = model.predict_proba(data)
+            prediction = model.predict_proba(data)[:, 1]
         else:
             prediction = model.predict(data)
 
         # Check all predictions
-        violated = False
         x, y = self.output_bins
-        for value in prediction:
-            ind = histSearch(x, value)
-            if ind == -1 or y[ind] <= 0:
-                logging.warning(f"[AutoML] Output drift detected!")
-                return
+        no_drift = True
+        while no_drift:
+            for value in prediction:
+                ind = histSearch(x, value)
+                if ind == -1 or y[ind] <= 0:
+                    logging.warning(f"[AutoML] Output drift detected!")
+                    no_drift = False
+
+        # Add new output
+        if add:
+            y += np.histogram(prediction, bins=x)
+            return y
 
     def get_weights(self) -> dict:
         """
@@ -129,10 +131,11 @@ class DriftDetector:
         Fits a histogram on each numerical column.
         """
         for key in self.num_cols:
-            y, x = np.histogram(data[key], bins=self.n_bins)
+            ma, mi = data[key].max(), data[key].min()
+            y, x = np.histogram(data[key], bins=self.n_bins, range=(mi - (ma - mi) / 10, ma + (ma - mi) / 10))
             self.bins[key] = (x.tolist(), y.tolist())
 
-    def _check_bins(self, data: pd.DataFrame):
+    def _check_bins(self, data: pd.DataFrame, add: bool = True):
         """
         Checks if the current data falls into bins
         """
@@ -153,6 +156,11 @@ class DriftDetector:
                 ind = histSearch(x, data[key])
                 if ind == -1 or (y[ind] <= 0 and y[min(0, ind - 1)] <= 0 and y[max(self.n_bins, ind + 1)] <= 0):
                     violations.append(key)
+
+            # Add data
+            if add:
+                y += np.histogram(data[key], bins=x)
+                self.bins[key] = (x, y)
 
         if len(violations) > 0:
             logging.warning(f"[AutoML] Drift detected!  {len(violations)} features outside training bins: {violations}")
