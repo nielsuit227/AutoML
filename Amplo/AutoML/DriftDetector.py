@@ -73,7 +73,7 @@ class DriftDetector:
         y, x = np.histogram(prediction, bins=self.n_bins, range=(mi - (ma - mi) / 10, ma + (ma - mi) / 10))
         self.output_bins = (x.tolist(), y.tolist())
 
-    def check_output(self, model, data: pd.DataFrame, add: bool = True):
+    def check_output(self, model, data: pd.DataFrame, add: bool = False):
         """
         Checks the predictions of a model.
         """
@@ -135,7 +135,7 @@ class DriftDetector:
             y, x = np.histogram(data[key], bins=self.n_bins, range=(mi - (ma - mi) / 10, ma + (ma - mi) / 10))
             self.bins[key] = (x.tolist(), y.tolist())
 
-    def _check_bins(self, data: pd.DataFrame, add: bool = True):
+    def _check_bins(self, data: pd.DataFrame, add: bool = False):
         """
         Checks if the current data falls into bins
         """
@@ -225,3 +225,23 @@ class DriftDetector:
                                 f"{violations}")
 
             return violations
+
+    @staticmethod
+    def add_output_bins(old_bins: tuple, prediction: np.ndarray):
+        """
+        Just a utility, adds new data to an old distribution.
+        """
+        x, y = old_bins
+        y += np.histogram(prediction, bins=x)
+        return x, y
+
+    @staticmethod
+    def add_bins(bins: dict, data: pd.DataFrame):
+        """
+        Just a utility, adds new data to an old distribution.
+        """
+        for key in data.keys():
+            x, y = bins[key]
+            y += np.histogram(data[key], bins=x)
+            bins[key] = (x, y)
+        return bins
