@@ -251,7 +251,7 @@ class FeatureProcesser:
         self._means = pd.read_json(settings['_means'], typ='series') if 'v' in settings else []
         self._stds = pd.read_json(settings['_stds'], typ='series') if '_stds' in settings else []
         self._centers = pd.read_json(settings['_centers']) if '_centers' in settings else []
-        self.featureImportance = settings['featureImportance']
+        self.featureImportance = settings['featureImportance'] if 'featureImportance' in settings else {}
         self.is_fitted = True
         self.verbosity = 0
 
