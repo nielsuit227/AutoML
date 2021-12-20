@@ -105,7 +105,8 @@ class DriftDetector:
         """
         return {
             'bins': self.bins,
-            'distributions': self.distributions
+            'output_bins': self.output_bins,
+            'distributions': self.distributions,
         }
 
     def load_weights(self, weights: dict):
@@ -119,6 +120,7 @@ class DriftDetector:
             distributions (dict): Dictionary with fitted distributions for all numeric keys.
         """
         self.bins = weights['bins']
+        self.output_bins = weights['output_bins']
         self.distributions = weights['distributions']
         return self
 
