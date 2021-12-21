@@ -1056,7 +1056,7 @@ class Pipeline:
         self.settings['params'] = params
         self.settings['feature_set'] = feature_set
         self.settings['features'] = self.featureSets[feature_set]
-        self.settings['amplo_version'] = Amplo.__version__
+        self.settings['amplo_version'] = Amplo.__version__ if hasattr(Amplo, '__version__') else 'dev'
 
         # Prune Data Processor
         required_features = self.featureProcesser.get_required_features(self.featureSets[feature_set])
