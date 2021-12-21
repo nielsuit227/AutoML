@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 import pandas as pd
 from sklearn.datasets import load_iris
-from sklearn.datasets import load_boston
+from sklearn.datasets import fetch_california_housing
 from Amplo.AutoML import DataProcesser
 from Amplo.Utils import check_dataframe_quality
 
@@ -13,7 +13,7 @@ class TestDataProcessing(unittest.TestCase):
     def setUpClass(cls):
         cls.classification, y = load_iris(return_X_y=True, as_frame=True)
         cls.classification['target'] = y
-        x, y = load_boston(return_X_y=True)
+        x, y = fetch_california_housing(return_X_y=True)
         cls.regression = pd.DataFrame({'target': y})
         for i in range(x.shape[1]):
             cls.regression['feature_{}'.format(i)] = x[:, i]
