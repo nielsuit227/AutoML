@@ -54,7 +54,15 @@ class DriftDetector:
         """
         Checks a new dataframe for distribution drift.
         """
-        self._check_bins(data)
+        violations = []
+
+        # Histogram
+        violations.extenls
+        d(self._check_bins(data))
+
+        # todo add distributions
+
+        return violations
 
     def fit_output(self, model, data: pd.DataFrame):
         """
@@ -65,7 +73,7 @@ class DriftDetector:
 
         # If it's a classifier and has predict_proba, we use that :)
         if hasattr(model, 'predict_proba'):
-            prediction = model.predict_proba(data)
+            prediction = model.predict_proba(data)[:, 1]
         else:
             prediction = model.predict(data)
 
