@@ -12,7 +12,7 @@ class TestClassifier:
         self.y = None
 
     def test_set_params(self):
-        self.model.set_params(**{'depth': 10})
+        self.model.set_params(**{'max_depth': 10})
 
     def test_get_params(self):
         self.model.get_params()
@@ -52,7 +52,7 @@ class TestClassifier:
 
     def test_cloneable(self):
         model = clone(self.model)
-        params = {'depth': 5}
+        params = {'max_depth': 5}
         cloned = clone(clone(model).set_params(**params))
         cloned.fit(self.x, self.y)
         prediction = cloned.predict_proba(self.x)
