@@ -294,7 +294,7 @@ class DataExplorer:
             threshold = 0.95
             fig = plt.figure(figsize=[24, 16])
             plt.title('Co-linearity matrix, threshold {:.2f}'.format(threshold))
-            sns.heatmap(abs(self.data.corr()) < threshold, annot=False, cmap='Greys')
+            plt.imshow(abs(self.data.corr()) < threshold, cmap='gray')
             fig.savefig(self.folder + 'CoLinearity/v{}/'.format(self.version) + self.tag + 'Matrix.png',
                         format='png', dpi=300)
 
@@ -304,7 +304,7 @@ class DataExplorer:
             col_drop = [column for column in upper.columns if any(upper[column] > 0.95)]
             minimal_rep = self.data.drop(self.data[col_drop], axis=1)
             fig = plt.figure(figsize=[24, 16])
-            sns.heatmap(abs(minimal_rep.corr()) < threshold, annot=False, cmap='Greys')
+            plt.imshow(abs(minimal_rep.corr()) < threshold, cmap='gray')
             fig.savefig(self.folder + 'CoLinearity/v{}/'.format(self.version) + self.tag + 'Minimum_Representation.png',
                         format='png', dpi=300)
 

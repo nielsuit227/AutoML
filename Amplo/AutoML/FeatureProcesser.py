@@ -844,20 +844,21 @@ class FeatureProcesser:
 
         return threshold, increment
 
-    def _borutapy(self):
-        if self.verbosity > 0:
-            print('[AutoML] Analysing features with Boruta')
-        rf = None
-        if self.mode == 'regression':
-            rf = RandomForestRegressor()
-        elif self.mode == 'classification' or self.mode == 'multiclass':
-            rf = RandomForestClassifier()
-        selector = BorutaPy(rf, n_estimators='auto', verbose=0)
-        selector.fit(self.x.to_numpy(), self.y.to_numpy())
-        bp_cols = self.x.keys()[selector.support_].to_list()
-        if self.verbosity > 0:
-            print('[AutoML] Selected {} features with Boruta'.format(len(bp_cols)))
-        return bp_cols
+    # Deprecated
+    # def _borutapy(self):
+    #     if self.verbosity > 0:
+    #         print('[AutoML] Analysing features with Boruta')
+    #     rf = None
+    #     if self.mode == 'regression':
+    #         rf = RandomForestRegressor()
+    #     elif self.mode == 'classification' or self.mode == 'multiclass':
+    #         rf = RandomForestClassifier()
+    #     selector = BorutaPy(rf, n_estimators='auto', verbose=0)
+    #     selector.fit(self.x.to_numpy(), self.y.to_numpy())
+    #     bp_cols = self.x.keys()[selector.support_].to_list()
+    #     if self.verbosity > 0:
+    #         print('[AutoML] Selected {} features with Boruta'.format(len(bp_cols)))
+    #     return bp_cols
 
     def get_required_features(self, features: list):
         """
