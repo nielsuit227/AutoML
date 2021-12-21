@@ -3,7 +3,7 @@ import pytest
 import shutil
 import unittest
 from sklearn.datasets import load_iris
-from sklearn.datasets import load_boston
+from sklearn.datasets import fetch_california_housing
 from Amplo.AutoML import DataExplorer
 
 
@@ -12,7 +12,7 @@ class TestDataExploring(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.class_x, cls.class_y = load_iris(return_X_y=True, as_frame=True)
-        cls.reg_x, cls.reg_y = load_boston(return_X_y=True)
+        cls.reg_x, cls.reg_y = fetch_california_housing(return_X_y=True)
 
     def test_regression(self):
         eda = DataExplorer(self.reg_x, y=self.reg_y, mode='regression', folder='tmp/')
