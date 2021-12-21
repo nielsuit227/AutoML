@@ -233,22 +233,26 @@ class DriftDetector:
 
             return violations
 
-    @staticmethod
-    def add_output_bins(old_bins: tuple, prediction: np.ndarray):
+    def add_output_bins(self, old_bins: tuple, prediction: np.ndarray):
         """
         Just a utility, adds new data to an old distribution.
         """
-        x, y = old_bins
-        y += np.histogram(prediction, bins=x)
+        if len(old_bins) != 0:
+            x, y = old_bins
+            y += np.histogram(prediction, bins=x)[0]
+        else:
+            y, x = np.histogram(prediction, bins=self.n_bins)
         return x, y
 
-    @staticmethod
-    def add_bins(bins: dict, data: pd.DataFrame):
+    def add_bins(self, bins: dict, data: pd.DataFrame):
         """
         Just a utility, adds new data to an old distribution.
         """
         for key in data.keys():
-            x, y = bins[key]
-            y += np.histogram(data[key], bins=x)
+            if key in bins:
+                x, y = bins[key]
+                y += np.histogram(data[key], bins=x)[0]
+            else:
+                y, x = np.histogram(data[key], bins=self.n_bins)
             bins[key] = (x, y)
         return bins
