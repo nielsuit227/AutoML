@@ -23,7 +23,7 @@ class LGBMClassifier:
         self.set_params(**self.params)
         self.classes_ = None
         self.model = None
-        self.callbacks = None
+        self.callbacks = [lgb.early_stopping(100, verbose=False)]
         self.trained = False
         self._estimator_type = 'classifier'
 
@@ -70,9 +70,7 @@ class LGBMClassifier:
                                d_train,
                                valid_sets=[d_train, d_test],
                                feval=self.eval_function,
-                               verbose_eval=0,
-                               callbacks=[self.callbacks] if self.callbacks is not None else None,
-                               early_stopping_rounds=100,
+                               callbacks=self.callbacks,
                                )
         self.trained = True
 
@@ -107,7 +105,7 @@ class LGBMClassifier:
             if k not in params.keys():
                 params[k] = v
         if 'callbacks' in params.keys():
-            self.callbacks = params['callbacks']
+            self.callbacks.extend(params['callbacks'])
             params.pop('callbacks')
         self.params = params
         return self

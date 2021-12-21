@@ -248,7 +248,7 @@ class OptunaGridSearch:
                 "feature_fraction": trial.suggest_uniform("feature_fraction", 0.4, 1.0),
                 "bagging_fraction": trial.suggest_uniform("bagging_fraction", 0.4, 1.0),
                 "bagging_freq": trial.suggest_int("bagging_freq", 1, 7),
-                'callbacks': optuna.integration.LightGBMPruningCallback(trial, "neg_log_loss", "valid_1"),
+                'callbacks': [optuna.integration.LightGBMPruningCallback(trial, "neg_log_loss", "valid_1")],
             }
         else:
             # Raise error if nothing is returned
