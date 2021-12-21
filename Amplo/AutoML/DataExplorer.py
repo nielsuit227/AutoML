@@ -230,11 +230,11 @@ class DataExplorer:
             if not os.path.exists(self.folder + 'TimePlots/v{}/'.format(self.version)):
                 os.makedirs(self.folder + 'TimePlots/v{}/'.format(self.version))
 
-            # Set matplot limit
+            # Set pyplot limit
             matplotlib.use('Agg')
             matplotlib.rcParams['agg.path.chunksize'] = 200000
 
-            # Undersample
+            # Under sample
             ind = np.linspace(0, len(self.data) - 1, self.maxSamples).astype('int')
             data, y = self.data.iloc[ind], self.Y.iloc[ind]
 
@@ -268,17 +268,16 @@ class DataExplorer:
 
         # Iterate through features
         for key in tqdm(self.data.keys()):
-            for period in self.seasonPeriods:
-                if self.tag + key + '_v{}.png'.format(self.version) in os.listdir(self.folder + 'Seasonality/'):
-                    continue
-                seasonality = STL(self.data[key], period=period).fit()
-                fig = plt.figure(figsize=[24, 16])
-                plt.plot(range(len(self.data)), self.data[key])
-                plt.plot(range(len(self.data)), seasonality)
-                plt.title(key + ', period=' + str(period))
-                fig.savefig(self.folder + 'Seasonality/' + self.tag + str(period)+'/'+key +
-                            '_v{}.png'.format(self.version), format='png', dpi=300)
-                plt.close()
+            if self.tag + key + '_v{}.png'.format(self.version) in os.listdir(self.folder + 'Seasonality/'):
+                continue
+            seasonality = STL(self.data[key], period=self.seasonPeriods).fit()
+            fig = plt.figure(figsize=[24, 16])
+            plt.plot(range(len(self.data)), self.data[key])
+            plt.plot(range(len(self.data)), seasonality)
+            plt.title(key + ', period=' + str(self.seasonPeriods))
+            fig.savefig(self.folder + 'Seasonality/' + self.tag + str(self.seasonPeriods)+'/'+key +
+                        '_v{}.png'.format(self.version), format='png', dpi=300)
+            plt.close()
 
     def co_linearity(self):
         if self.plotCoLinearity:
@@ -522,7 +521,8 @@ class DataExplorer:
     #         ax.spines['bottom'].set_visible(False)
     #         ax.spines['top'].set_visible(False)
     #         plt.barh(pp_score['x'][-15:], width=pp_score['ppscore'][-15:], color='#2369ec')
-    #         fig.savefig(self.folder + 'Features/v{}/'.format(self.version) + self.tag + 'Ppscore.png', format='png', dpi=400)
+    #         fig.savefig(self.folder + 'Features/v{}/'.format(self.version) + self.tag + 'Ppscore.png', format='png',
+    #                     dpi=400)
     #         plt.close()
     #
     #         # Store results
