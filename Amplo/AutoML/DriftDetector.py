@@ -54,7 +54,7 @@ class DriftDetector:
         """
         Checks a new dataframe for distribution drift.
         """
-        self._check_bins()
+        self._check_bins(data)
 
     def fit_output(self, model, data: pd.DataFrame):
         """
