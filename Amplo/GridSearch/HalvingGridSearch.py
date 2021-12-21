@@ -83,7 +83,7 @@ class HalvingGridSearch:
             }
         elif type(self.model).__name__ == 'DecisionTreeRegressor':
             return {
-                'criterion': ['mse', 'friedman_mse', 'mae', 'poisson'],
+                'criterion': ['squared_error', 'friedman_mse', 'absolute_error', 'poisson'],
                 'max_depth': randint(5, 50),
             }
         elif type(self.model).__name__ == 'AdaBoostRegressor':
@@ -115,7 +115,7 @@ class HalvingGridSearch:
             }
         elif type(self.model).__name__ == 'RandomForestRegressor':
             return {
-                'criterion': ['mse', 'mae'],
+                'criterion': ['squared_error', 'absolute_error'],
                 'max_depth': randint(3, min(15, int(np.log2(self.samples)))),
                 'max_features': ['auto', 'sqrt'],
                 'min_samples_split': randint(2, 50),
