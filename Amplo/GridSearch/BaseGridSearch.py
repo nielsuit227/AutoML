@@ -82,7 +82,7 @@ class BaseGridSearch:
                 }
             elif type(self.model).__name__ == 'DecisionTreeRegressor':
                 return {
-                    'criterion': ['mse', 'friedman_mse', 'mae', 'poisson'],
+                    'criterion': ['squared_error', 'friedman_mse', 'absolute_error', 'poisson'],
                     'max_depth': np.linspace(3, min(15, int(np.log2(self.samples))), 4).astype('int').tolist(),
                 }
             elif type(self.model).__name__ == 'AdaBoostRegressor':
@@ -118,7 +118,7 @@ class BaseGridSearch:
                 }
             elif type(self.model).__name__ == 'RandomForestRegressor':
                 return {
-                    'criterion': ['mse', 'mae'],
+                    'criterion': ['squared_error', 'absolute_error'],
                     'max_depth': np.linspace(3, min(15, int(np.log2(self.samples))), 4).astype('int').tolist(),
                     'max_features': ['auto', 'sqrt'],
                     'min_samples_split': [2, 25, 50],

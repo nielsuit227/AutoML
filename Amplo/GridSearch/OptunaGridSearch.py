@@ -76,7 +76,7 @@ class OptunaGridSearch:
         # Regression models
         elif type(self.model).__name__ == 'DecisionTreeRegressor':
             return {
-                'criterion': trial.suggest_categorical('criterion', ['mse', 'friedman_mse', 'mae', 'poisson']),
+                'criterion': trial.suggest_categorical('criterion', ['squared_error', 'friedman_mse', 'absolute_error', 'poisson']),
                 'max_depth': trial.sugest_int('max_depth', 3, min(25, int(np.log2(self.samples)))),
             }
         elif type(self.model).__name__ == 'BaggingRegressor':
@@ -120,7 +120,7 @@ class OptunaGridSearch:
         elif type(self.model).__name__ == 'RandomForestRegressor':
             return {
                 'n_estimators': trial.suggest_int('n_estimators', 50, 1000),
-                'criterion': trial.suggest_categorical('criterion', ['mse', 'mae']),
+                'criterion': trial.suggest_categorical('criterion', ['squared_error', 'absolute_error']),
                 'max_depth': trial.suggest_int('max_depth', 3, min(15, int(np.log2(self.samples)))),
                 'max_features': trial.suggest_categorical('max_features', ['auto', 'sqrt']),
                 'min_samples_split': trial.suggest_int('min_samples_split', 2, 50),
