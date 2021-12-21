@@ -396,7 +396,7 @@ class Pipeline:
         else:
             predictions = self.bestModel.predict(x)
 
-        self._prediction_time = time.time() - start_time
+        self._prediction_time = (time.time() - start_time) / len(data)
         return predictions
 
     def predict_proba(self, data: pd.DataFrame) -> np.ndarray:
@@ -423,7 +423,7 @@ class Pipeline:
         # Predict
         prediction = self.bestModel.predict_proba(x)
 
-        self._prediction_time = time.time() - start_time
+        self._prediction_time = (time.time() - start_time) / len(data)
         return prediction
 
     # Fit functions
