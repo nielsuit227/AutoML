@@ -57,8 +57,7 @@ class DriftDetector:
         violations = []
 
         # Histogram
-        violations.extenls
-        d(self._check_bins(data))
+        violations.extends(self._check_bins(data))
 
         # todo add distributions
 
