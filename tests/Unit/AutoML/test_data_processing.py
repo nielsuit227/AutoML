@@ -129,9 +129,7 @@ class TestDataProcessing(unittest.TestCase):
 
         # Quantiles
         dp = DataProcesser(outlier_removal='quantiles', target='target')
-        print(x.quantile(0.75))
         xt = dp.fit_transform(x)
-        print(dp._q3, xt)
         assert xt.max().max() < 1e15, "Outlier not removed"
         assert not xt.isna().any().any(), "NaN found"
         assert dp.transform(pd.DataFrame({'a': [2], 'b': [-2]})).max().max() == 0
