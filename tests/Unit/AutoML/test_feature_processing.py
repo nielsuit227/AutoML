@@ -6,7 +6,7 @@ from sklearn.datasets import make_regression
 from Amplo.AutoML import FeatureProcesser
 
 
-class TestDataProcessing(unittest.TestCase):
+class TestFeatureProcessing(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -78,7 +78,7 @@ class TestDataProcessing(unittest.TestCase):
 
     def test_select(self):
         y = pd.Series(np.linspace(0, 100, 100))
-        x = pd.DataFrame({'a': y, 'b': np.random.randint(0, 100, 100)})
+        x = pd.DataFrame({'a': y, 'b': np.random.normal(0, 1, 100)})
         fp = FeatureProcesser(mode='regression')
         xt, sets = fp.fit_transform(x, y)
         assert all([len(i) == 1 for i in sets.values()]), f"Random Feature Selected: {sets}"
@@ -104,4 +104,4 @@ class TestDataProcessing(unittest.TestCase):
         x = pd.DataFrame({'a': y / b, 'b': b, 'c': b / 2})
         fp = FeatureProcesser(mode='regression')
         xt, sets = fp.fit_transform(x, y)
-        assert fp.get_required_features(['a__x__b']) == ['b', 'a']
+        assert set(fp.get_required_features(['a__x__b'])) == set(['b', 'a'])
