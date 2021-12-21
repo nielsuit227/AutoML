@@ -1,10 +1,7 @@
-import pytest
 import unittest
 import numpy as np
 import pandas as pd
-from scipy import stats
 from Amplo.AutoML import DriftDetector
-import matplotlib.pyplot as plt
 
 
 def draw(n):
