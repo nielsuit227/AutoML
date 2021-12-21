@@ -54,14 +54,6 @@ class TestFeatureProcessing(unittest.TestCase):
         xt, sets = fp.fit_transform(x, y)
         assert len(fp.trigonometricFeatures) != 0, "Trigonometric feature not spotted"
 
-    # def test_inverse(self): --> Invariant for decision tree
-    #     y = pd.Series(np.random.randint(1, 100, 100))
-    #     x = pd.DataFrame({'a': 1 / y})
-    #     print(y, x)
-    #     fp = FeatureProcessing(mode='regression')
-    #     xt, sets = fp.fit_transform(x, y)
-    #     assert len(fp.inverseFeatures) != 0, "Inverse feature not spotted"
-
     def test_lagged(self):
         y = pd.Series(np.random.randint(0, 100, 100))
         x = pd.DataFrame({'a': np.roll(y, -5)})
@@ -77,8 +69,9 @@ class TestFeatureProcessing(unittest.TestCase):
         assert len(fp.diffFeatures) != 0, "Difference feature not spotted"
 
     def test_select(self):
-        y = pd.Series(np.linspace(0, 100, 100))
-        x = pd.DataFrame({'a': y, 'b': np.random.normal(0, 1, 100)})
+        n = 1000
+        y = pd.Series(np.linspace(0, 100, n))
+        x = pd.DataFrame({'a': y, 'b': np.random.normal(0, 1, n)})
         fp = FeatureProcesser(mode='regression')
         xt, sets = fp.fit_transform(x, y)
         assert all([len(i) == 1 for i in sets.values()]), f"Random Feature Selected: {sets}"

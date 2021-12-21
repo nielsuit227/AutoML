@@ -801,8 +801,8 @@ class FeatureProcesser:
         increment = self.x.keys()[ind_keep].to_list()
 
         if self.verbosity > 0:
-            print('[AutoML] Selected {} features with 85% RF threshold'.format(len(threshold)))
-            print('[AutoML] Selected {} features with 0.5% RF increment'.format(len(increment)))
+            print(f'[AutoML] Selected {len(threshold)} features with {self.selectionCutoff * 100}% RF threshold')
+            print(f'[AutoML] Selected {len(increment)} features with {self.selectionIncrement * 100}% RF increment')
         return threshold, increment
 
     def _sel_shap(self):
@@ -810,7 +810,7 @@ class FeatureProcesser:
         Calculates Shapely values, which can be used as a measure of feature importance.
         """
         if self.verbosity > 0:
-            print('[AutoML] Analysing features with Shapely additive explanations.')
+            print('[AutoML] Analysing features with Shapely Additive Explanations')
         # Get base model
         base = None
         if self.mode == 'regression':
@@ -835,8 +835,12 @@ class FeatureProcesser:
         threshold = self.x.keys()[ind_keep].to_list()
 
         # Increment
-        ind_keep = [ind[i] for i in range(len(ind)) if values[ind[i]] > values_sum * self.selectionIncrement]
+        ind_keep = [ind[i] for i in range(len(ind)) if values[ind[i]] > values_sum * self.selectionIncrement * 10]
         increment = self.x.keys()[ind_keep].to_list()
+
+        if self.verbosity > 0:
+            print(f'[AutoML] Selected {len(threshold)} features with {self.selectionCutoff * 100}% Shap threshold')
+            print(f"[AutoML] Selected {len(increment)} features with {self.selectionIncrement * 1000}% Shap increment")
 
         return threshold, increment
 
