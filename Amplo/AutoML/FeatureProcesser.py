@@ -773,7 +773,7 @@ class FeatureProcesser:
         Symmetric correlation based on multiple features and multiple trees ensemble
         """
         if self.verbosity > 0:
-            print('[AutoML] Determining features with RF')
+            print('[AutoML] Analysing features with a Random Forest')
 
         # Set model
         rs = np.random.RandomState(seed=236868)
@@ -809,6 +809,8 @@ class FeatureProcesser:
         """
         Calculates Shapely values, which can be used as a measure of feature importance.
         """
+        if self.verbosity > 0:
+            print('[AutoML] Analysing features with Shapely additive explanations.')
         # Get base model
         base = None
         if self.mode == 'regression':
@@ -826,7 +828,7 @@ class FeatureProcesser:
         ind = np.flip(np.argsort(values))
 
         # Add to class attribute
-        self.featureImportance['shap'] = (self.x.keys()[ind], values[ind])
+        self.featureImportance['shap'] = (self.x.keys()[ind].to_list(), values[ind].tolist())
 
         # Threshold
         ind_keep = [ind[i] for i in range(len(ind)) if values[ind[:i]].sum() <= self.selectionCutoff * values_sum]
@@ -840,7 +842,7 @@ class FeatureProcesser:
 
     def _borutapy(self):
         if self.verbosity > 0:
-            print('[AutoML] Determining features with Boruta')
+            print('[AutoML] Analysing features with Boruta')
         rf = None
         if self.mode == 'regression':
             rf = RandomForestRegressor()
