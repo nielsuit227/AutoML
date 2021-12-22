@@ -137,10 +137,15 @@ class DriftDetector:
         """
         Fits a histogram on each numerical column.
         """
+        # Fit numerical
         for key in self.num_cols:
             ma, mi = data[key].max(), data[key].min()
             y, x = np.histogram(data[key], bins=self.n_bins, range=(mi - (ma - mi) / 10, ma + (ma - mi) / 10))
             self.bins[key] = (x.tolist(), y.tolist())
+
+        # Fit categorical
+        for key in self.cat_cols:
+            self.bins[key] = data[key].value_counts().to_dict()
 
     def _check_bins(self, data: pd.DataFrame, add: bool = False):
         """
@@ -248,11 +253,20 @@ class DriftDetector:
         """
         Just a utility, adds new data to an old distribution.
         """
-        for key in data.keys():
-            if key in bins:
-                x, y = bins[key]
-                y += np.histogram(data[key], bins=x)[0]
-            else:
-                y, x = np.histogram(data[key], bins=self.n_bins)
-            bins[key] = (x, y)
+        # Add numerical bins
+        for key in self.num_cols:
+            if key in data:
+                if key in bins:
+                    yn = np.histogram(data[key], bins=x)[0]
+                    y = [y[i] + yn[i] for i in range(len(y))]
+                else:
+                    y, x = np.histogram(data[key], bins=self.n_bins)
+                bins[key] = (x.tolist(), y.tolist())
+
+        # Add categorical
+        for key in self.cat_cols:
+            if key in data:
+                counts = data[key].value_counts().to_dict()
+                bins[key] = {k: counts.get(k, 0) + bins[key].get(k, 0) for k in counts.keys() | bins[key].keys()}
+
         return bins
