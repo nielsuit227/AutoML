@@ -1282,7 +1282,9 @@ class Pipeline:
         Using Shapely Additive Explanations, this function calculates the main predictors for a given
         prediction and sets them into the class' memory.
         """
-        if type(self.bestModel).__module__[:5] == 'Amplo':
+        if type(self.bestModel) in ['SVC', 'RidgeClassifier', 'LinearRegression']:
+            return
+        elif type(self.bestModel).__module__[:5] == 'Amplo':
             explainer = TreeExplainer(self.bestModel.model)
         else:
             explainer = TreeExplainer(self.bestModel)
