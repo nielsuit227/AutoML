@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from datetime import datetime
+from shap import TreeExplainer
 
 from sklearn import metrics
 from sklearn.model_selection import KFold
@@ -175,6 +176,7 @@ class Pipeline:
 
         # Monitoring
         self._prediction_time = None
+        self._main_predictors = None
 
         # Checks
         assert self.mode in [None, 'regression', 'classification'], 'Supported modes: regression, classification.'
@@ -396,7 +398,12 @@ class Pipeline:
         else:
             predictions = self.bestModel.predict(x)
 
-        self._prediction_time = (time.time() - start_time) / len(data)
+        # Stop timer
+        self._prediction_time = (time.time() - start_time) / len(x)
+
+        # Calculate main predictors
+        self._get_main_predictors(x)
+
         return predictions
 
     def predict_proba(self, data: pd.DataFrame) -> np.ndarray:
@@ -423,7 +430,12 @@ class Pipeline:
         # Predict
         prediction = self.bestModel.predict_proba(x)
 
-        self._prediction_time = (time.time() - start_time) / len(data)
+        # Stop timer
+        self._prediction_time = (time.time() - start_time) / len(x)
+
+        # Calculate main predictors
+        self._get_main_predictors(x)
+
         return prediction
 
     # Fit functions
@@ -1264,3 +1276,29 @@ class Pipeline:
         # Get results
         results = grid_search.fit(self.x[self.featureSets[feature_set]], self.y)
         return results.sort_values('worst_case', ascending=False)
+
+    def _get_main_predictors(self, data):
+        """
+        Using Shapely Additive Explanations, this function calculates the main predictors for a given
+        prediction and sets them into the class' memory.
+        """
+        if type(self.bestModel).__module__[:5] == 'Amplo':
+            explainer = TreeExplainer(self.bestModel.model)
+        else:
+            explainer = TreeExplainer(self.bestModel)
+
+        # Get values
+        shap_values = np.array(explainer.shap_values(data))
+
+        # Shape them (for multiclass it outputs ndim=3, for binary/regression ndim=2)
+        if shap_values.ndim == 3:
+            shap_values = shap_values[1]
+
+        # Take mean over samples
+        shap_values = np.mean(shap_values, axis=0)
+
+        # Sort them
+        inds = sorted(range(len(shap_values)), key=lambda x: -abs(shap_values[x]))
+
+        # Set class attribute
+        self._main_predictors = dict([(data.keys()[i], float(abs(shap_values[i]))) for i in inds])
