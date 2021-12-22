@@ -42,4 +42,3 @@ class TestDriftDetector(unittest.TestCase):
         drift.fit(df)
         new_bins = drift.add_bins(drift.bins, df)
         assert new_bins['a'] == {'a': 8, 'b': 6, 'c': 4, 'd': 2}
-
