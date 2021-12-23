@@ -419,8 +419,8 @@ class DataProcesser:
 
         # With clipping
         elif self.outlier_removal == 'clip':
-            self.removedOutliers = (data[self.num_cols] > 1e12).sum().sum() + (data[self.num_cols] < -1e12)\
-                .sum().sum().tolist()
+            self.removedOutliers = ((data[self.num_cols] > 1e12).sum().sum() +
+                                    (data[self.num_cols] < -1e12).sum().sum()).tolist()
             data[self.num_cols] = data[self.num_cols].clip(lower=-1e12, upper=1e12)
         return data
 
