@@ -157,6 +157,7 @@ class OptunaGridSearch:
                 'colsample_bytree': trial.suggest_uniform('colsample_bytree', 0, 1),
                 'reg_alpha': trial.suggest_uniform('reg_alpha', 0, 1),
                 'reg_lambda': trial.suggest_uniform('reg_lambda', 0, 1),
+                'callbacks': [optuna.integration.LightGBMPruningCallback(trial, "mean_absolute_error", "valid_1")],
             }
 
         # Classifiers
@@ -285,6 +286,7 @@ class OptunaGridSearch:
             'mean_time': optuna_results['user_attrs_mean_time'],
             'std_time': optuna_results['user_attrs_std_time']
         })
+
         return results
 
     def objective(self, trial):
@@ -308,7 +310,13 @@ class OptunaGridSearch:
             scores.append(self.scoring(model, xv, yv))
             times.append(time.time() - t_start)
 
+        # Set manual metrics
         trial.set_user_attr('mean_time', np.mean(times))
         trial.set_user_attr('std_time', np.std(times))
         trial.set_user_attr('std_value', np.std(scores))
+
+        # Stop trail (avoid overwriting)
+        if trial.number == self.nTrials:
+            trial.study.stop()
+
         return np.mean(scores)
