@@ -1,3 +1,4 @@
+import json
 import unittest
 import numpy as np
 import pandas as pd
@@ -163,6 +164,7 @@ class TestDataProcessing(unittest.TestCase):
         xt = dp.fit_transform(x)
         assert len(xt.keys()) == 2
         settings = dp.get_settings()
+        json.dumps(settings)
         dp2 = DataProcesser()
         dp2.load_settings(settings)
         xt2 = dp2.transform(pd.DataFrame({'a': ['a', 'b'], 'b': [1, 2]}))
