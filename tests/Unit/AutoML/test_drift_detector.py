@@ -1,3 +1,4 @@
+import json
 import unittest
 import numpy as np
 import pandas as pd
@@ -38,7 +39,25 @@ class TestDriftDetector(unittest.TestCase):
 
     def test_add_bins(self):
         df = pd.DataFrame({'a': ['a', 'b', 'c', 'd', 'a', 'b', 'a', 'b', 'c', 'a']})
+        yp = np.random.randint(0, 2, (100))
         drift = DriftDetector(cat_cols=['a'])
         drift.fit(df)
+
+        # Test empty
+        assert drift.add_bins({}, df)
+        assert drift.add_output_bins((), yp)
+
+        # Test actual adding
         new_bins = drift.add_bins(drift.bins, df)
         assert new_bins['a'] == {'a': 8, 'b': 6, 'c': 4, 'd': 2}
+
+    def test_storable(self):
+        df = pd.DataFrame({'a': ['a', 'b', 'c'], 'b': [0, 0.1, 0.2]})
+        drift = DriftDetector(cat_cols=['a'], num_cols=['b'])
+        drift.fit(df)
+        json.dumps(drift.bins)
+        json.dumps(drift.add_bins(drift.bins, df))
+        pred = np.random.randint(0, 2, (100))
+        old = drift.add_output_bins((), pred)
+        drift.add_output_bins(old, pred)
+

@@ -35,6 +35,10 @@ class DriftDetector:
 
         # Initialize
         self.bins = {}
+        for key in self.cat_cols:
+            self.bins[key] = {}
+        for key in self.num_cols:
+            self.bins[key] = (None, None)
         self.output_bins = (None, None)
         self.distributions = {}
 
@@ -244,9 +248,11 @@ class DriftDetector:
         """
         if len(old_bins) != 0:
             x, y = old_bins
-            y += np.histogram(prediction, bins=x)[0]
+            yn = np.histogram(prediction, bins=x)[0].tolist()
+            y = [y[i] + yn[i] for i in range(len(y))]
         else:
             y, x = np.histogram(prediction, bins=self.n_bins)
+            x, y = x.tolist(), y.tolist()
         return x, y
 
     def add_bins(self, bins: dict, data: pd.DataFrame):
@@ -257,16 +263,18 @@ class DriftDetector:
         for key in self.num_cols:
             if key in data:
                 if key in bins:
-                    yn = np.histogram(data[key], bins=x)[0]
+                    x, y = self.bins[key]
+                    yn = np.histogram(data[key], bins=x)[0].tolist()
                     y = [y[i] + yn[i] for i in range(len(y))]
                 else:
                     y, x = np.histogram(data[key], bins=self.n_bins)
-                bins[key] = (x.tolist(), y.tolist())
+                    x, y = x.tolist(), y.tolist()
+                bins[key] = (x, y)
 
         # Add categorical
         for key in self.cat_cols:
             if key in data:
                 counts = data[key].value_counts().to_dict()
-                bins[key] = {k: counts.get(k, 0) + bins[key].get(k, 0) for k in counts.keys() | bins[key].keys()}
-
+                bins[key] = {k: counts.get(k, 0) + bins.get(key, {}).get(k, 0)
+                             for k in counts.keys() | bins.get(key, {}).keys()}
         return bins
