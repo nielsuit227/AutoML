@@ -399,7 +399,7 @@ class Pipeline:
             predictions = self.bestModel.predict(x)
 
         # Stop timer
-        self._prediction_time = (time.time() - start_time) / len(x)
+        self._prediction_time = (time.time() - start_time) / len(x) * 1000
 
         # Calculate main predictors
         self._get_main_predictors(x)
@@ -431,7 +431,7 @@ class Pipeline:
         prediction = self.bestModel.predict_proba(x)
 
         # Stop timer
-        self._prediction_time = (time.time() - start_time) / len(x)
+        self._prediction_time = (time.time() - start_time) / len(x) * 1000
 
         # Calculate main predictors
         self._get_main_predictors(x)
