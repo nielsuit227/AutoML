@@ -406,14 +406,15 @@ class DataProcesser:
 
         # With Quantiles
         if self.outlier_removal == 'quantiles':
-            self.removedOutliers = (data[self.num_cols] > self._q3).sum().sum() + (data[self.num_cols] < self._q1).sum().sum()
+            self.removedOutliers = ((data[self.num_cols] > self._q3).sum().sum() +
+                                    (data[self.num_cols] < self._q1).sum().sum()).tolist()
             data[self.num_cols] = data[self.num_cols].mask(data[self.num_cols] < self._q1)
             data[self.num_cols] = data[self.num_cols].mask(data[self.num_cols] > self._q3)
 
         # With z-score
         elif self.outlier_removal == 'z-score':
             z_score = abs((data[self.num_cols] - self._means) / self._stds)
-            self.removedOutliers = (z_score > self.z_score_threshold).sum().sum()
+            self.removedOutliers = (z_score > self.z_score_threshold).sum().sum().tolist()
             data[self.num_cols] = data[self.num_cols].mask(z_score > self.z_score_threshold)
 
         # With clipping
