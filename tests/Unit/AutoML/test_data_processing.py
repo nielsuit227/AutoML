@@ -164,7 +164,6 @@ class TestDataProcessing(unittest.TestCase):
         xt = dp.fit_transform(x)
         assert len(xt.keys()) == 2
         settings = dp.get_settings()
-        json.dumps(settings)
         dp2 = DataProcesser()
         dp2.load_settings(settings)
         xt2 = dp2.transform(pd.DataFrame({'a': ['a', 'b'], 'b': [1, 2]}))
@@ -177,3 +176,11 @@ class TestDataProcessing(unittest.TestCase):
         dp.prune_features(['b'])
         assert dp.int_cols == ['b']
         assert dp.cat_cols == []
+
+    def test_json_serializable(self):
+        x = pd.DataFrame({'a': ['a', 'b', 'c', 'b', 'c', 'a'], 'b': [1, 'missing', 1, 1, 1, 1]})
+        for o in ['quantiles', 'z-score', 'clip', 'none']:
+            for mv in ['remove_rows', 'remove_cols', 'interpolate', 'mean', 'zero']:
+                dp = DataProcesser(outlier_removal=o, missing_values=mv)
+                dp.fit_transform(x)
+                json.dumps(dp.get_settings())
