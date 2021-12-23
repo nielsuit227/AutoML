@@ -183,7 +183,14 @@ class DataProcesser:
             '_stds': None if self._stds is None else self._stds.to_json(),
             '_q1': None if self._q1 is None else self._q1.to_json(),
             '_q3': None if self._q3 is None else self._q3.to_json(),
-            'dummies': self.dummies
+            'dummies': self.dummies,
+            'fit': {
+                'imputed_missing_values': self.imputedMissingValues,
+                'removed_outliers': self.removedOutliers,
+                'removed_constant_columns': self.removedConstantColumns,
+                'removed_duplicate_rows': self.removedDuplicateRows,
+                'removed_duplicate_columns': self.removedDuplicateColumns,
+            }
         }
 
     def load_settings(self, settings: dict) -> None:
@@ -411,7 +418,8 @@ class DataProcesser:
 
         # With clipping
         elif self.outlier_removal == 'clip':
-            self.removedOutliers = (data[self.num_cols] > 1e12).sum().sum() + (data[self.num_cols] < -1e12).sum().sum()
+            self.removedOutliers = (data[self.num_cols] > 1e12).sum().sum() + (data[self.num_cols] < -1e12)\
+                .sum().sum().tolist()
             data[self.num_cols] = data[self.num_cols].clip(lower=-1e12, upper=1e12)
         return data
 
@@ -423,7 +431,7 @@ class DataProcesser:
         data = data.replace([np.inf, -np.inf], np.nan)
 
         # Note
-        self.imputedMissingValues = data[self.num_cols].isna().sum().sum()
+        self.imputedMissingValues = data[self.num_cols].isna().sum().sum().tolist()
         if self.verbosity > 0 or self.imputedMissingValues != 0:
             print(f'[AutoML] Imputed {self.imputedMissingValues} missing values.')
 
