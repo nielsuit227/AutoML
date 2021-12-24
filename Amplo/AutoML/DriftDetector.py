@@ -263,12 +263,14 @@ class DriftDetector:
         for key in self.num_cols:
             if key in data:
                 if key in bins:
-                    x, y = self.bins[key]
-                    yn = np.histogram(data[key], bins=x)[0].tolist()
-                    y = [y[i] + yn[i] for i in range(len(y))]
+                    x, y = bins[key]
+                elif key in self.bins:
+                    x, _ = self.bins[key]
+                    y = [0 for i in range(len(x) - 1)]
                 else:
-                    y, x = np.histogram(data[key], bins=self.n_bins)
-                    x, y = x.tolist(), y.tolist()
+                    raise ValueError(f'Drift Detector - Adding unfitted feature. {key}')
+                yn = np.histogram(data[key], bins=x)[0].tolist()
+                y = [y[i] + yn[i] for i in range(len(y))]
                 bins[key] = (x, y)
 
         # Add categorical
