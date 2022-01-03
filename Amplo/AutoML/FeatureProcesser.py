@@ -5,7 +5,6 @@ import itertools
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from boruta import BorutaPy
 from shap import TreeExplainer
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.tree import DecisionTreeRegressor
