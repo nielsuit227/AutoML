@@ -3,7 +3,6 @@ import copy
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-import missingno
 import matplotlib
 import matplotlib.pyplot as plt
 from statsmodels.tsa.seasonal import STL
@@ -187,8 +186,12 @@ class DataExplorer:
                 return
 
             # Plot
-            ax = missingno.matrix(self.data, figsize=[24, 16])
-            fig = ax.get_figure()
+            fig, (a0, a1) = plt.subplots(1, 2, gridspec_kw={'width_ratios': [9, 1]})
+            a0.imshow(self.data.isna(), cmap='Greys', aspect='auto', interpolation='none')
+            a0.set_ylabel('Rows')
+            a0.set_xticks(range(len(self.data.keys())), self.data.keys())
+            a1.plot(self.df.isna().sum(axis=1), range(len(df)), c='k')
+            a1.axis('off')
             fig.savefig(self.folder + 'MissingValues/v{}.png'.format(self.version))
 
     def box_plots(self):
