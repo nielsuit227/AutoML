@@ -28,15 +28,16 @@ class DataProcesser:
         Parameters
         ----------
         target str: Column name of target variable
-        num_cols list: Numerical columns, all parsed to integers and floats
+        float_cols list: Float columns
+        int_cols list: Integer columns
         date_cols list: Date columns, all parsed to pd.datetime format
         cat_cols list: Categorical Columns. Currently all one-hot encoded.
+        include_output bool: Whether to include output in the data
         missing_values str: How to deal with missing values ('remove', 'interpolate' or 'mean')
         outlier_removal str: How to deal with outliers ('clip', 'quantiles', 'z-score' or 'none')
         z_score_threshold int: If outlierRemoval='z-score', the threshold is adaptable, default=4.
-        folder str: Directory for storing the output files
         version int: Versioning the output files
-        mode str: classification / regression
+        verbosity int: How much to print
         """
         # Tests
         mis_values_algo = ['remove_rows', 'remove_cols', 'interpolate', 'mean', 'zero']
@@ -45,6 +46,7 @@ class DataProcesser:
         out_rem_algo = ['quantiles', 'z-score', 'clip', 'none']
         assert outlier_removal in out_rem_algo, \
             'Outlier Removal algorithm not implemented, pick from {}'.format(', '.join(out_rem_algo))
+        assert optimize in ['space', 'time'], "Optimize not implemented, pick from 'space', 'time'"
 
         # Arguments
         self.version = version
@@ -254,9 +256,17 @@ class DataProcesser:
                     else:
 
                         # Check numeric
-                        numeric = pd.to_numeric(self.data[key], errors='coerce')
+                        numeric = pd.to_numeric(self.data[key], errors='coerce', downcast='integer')
                         if numeric.isna().sum() < len(self.data) * 0.2:
-                            self.float_cols.append(key)
+                            # Float
+                            if pd.api.types.is_float_dtype(numeric):
+                                self.float_cols.append(key)
+
+                            # Integer
+                            if pd.api.types.is_integer_dtype(numeric):
+                                self.int_cols.append(key)
+
+                            # Update data
                             self.data[key] = numeric
 
                         # Check categorical cardinality
@@ -269,13 +279,6 @@ class DataProcesser:
 
             # Set num cols for reverse compatibility
             self.num_cols = self.int_cols + self.float_cols
-
-            # Check if float keys are secretly not integers
-            for key in self.float_cols:
-                forced_int = pd.to_numeric(self.data[key].fillna(0), errors='coerce', downcast='integer')
-                if pd.api.types.is_integer_dtype(forced_int):
-                    self.float_cols.remove(key)
-                    self.int_cols.append(key)
 
             # Print
             if self.verbosity > 0:
