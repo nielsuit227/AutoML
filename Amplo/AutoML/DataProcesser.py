@@ -64,6 +64,7 @@ class DataProcesser:
         self.z_score_threshold = z_score_threshold
 
         # Fitted Settings
+        self.data = None
         self.dummies = {}
         self._q1 = None
         self._q3 = None
@@ -96,31 +97,31 @@ class DataProcesser:
             print('[AutoML] Data Cleaning Started, ({} x {}) samples'.format(len(data), len(data.keys())))
 
         # Clean Keys
-        data = clean_keys(data)
+        self.data = clean_keys(data)
 
         # Remove Duplicates
-        data = self.remove_duplicates(data)
+        self.remove_duplicates()
 
         # Infer data-types
-        self.infer_data_types(data)
+        self.infer_data_types()
 
         # Convert data types
-        data = self.convert_data_types(data, fit_categorical=True)
+        self.convert_data_types(fit_categorical=True)
 
         # Remove outliers
-        data = self.remove_outliers(data, fit=True)
+        self.remove_outliers(fit=True)
 
         # Remove missing values
-        data = self.remove_missing_values(data)
+        self.remove_missing_values()
 
         # Remove Constants
-        data = self.remove_constants(data)
+        self.remove_constants()
 
         # Convert integer columns
-        data = self.convert_float_int(data)
+        self.convert_float_int()
 
         # Clean target
-        data = self.clean_target(data)
+        self.clean_target()
 
         # Finish
         self.is_fitted = True
@@ -143,25 +144,25 @@ class DataProcesser:
         assert self.is_fitted, "Transform only available for fitted objects, run .fit_transform() first."
 
         # Clean Keys
-        data = clean_keys(data)
+        self.data = clean_keys(data)
 
         # Impute columns
-        data = self._impute_columns(data)
+        self._impute_columns()
 
         # Remove duplicates
-        data = self.remove_duplicates(data, rows=False)
+        self.remove_duplicates(rows=False)
 
         # Convert data types
-        data = self.convert_data_types(data, fit_categorical=False)
+        self.convert_data_types(fit_categorical=False)
 
         # Remove outliers
-        data = self.remove_outliers(data, fit=False)
+        self.remove_outliers(fit=False)
 
         # Remove missing values
-        data = self.remove_missing_values(data)
+        self.remove_missing_values()
 
         # Convert integer columns
-        data = self.convert_float_int(data)
+        self.convert_float_int()
 
         return data
 
@@ -212,46 +213,51 @@ class DataProcesser:
         self.dummies = settings['dummies'] if 'dummies' in settings else {}
         self.is_fitted = True
 
-    def infer_data_types(self, data: pd.DataFrame):
+    def infer_data_types(self, data=None):
         """
         In case no data types are provided, this function infers the most likely data types
         """
         if len(self.cat_cols) == len(self.num_cols) == len(self.date_cols) == 0:
             # First cleanup
-            data = data.infer_objects()
-
-            # Remove target from columns
-            if not self.includeOutput and self.target is not None and self.target in data:
-                data = data.drop(self.target, axis=1)
+            self.data = self.data.infer_objects() if data is None else data.infer_objects()
 
             # Iterate through keys
-            for key in data.keys():
+            for key in self.data.keys():
+                # Skip target
+                if key == self.target:
+                    continue
+
                 # Integer
-                if pd.api.types.is_integer_dtype(data[key]):
+                if pd.api.types.is_integer_dtype(self.data[key]):
                     self.int_cols.append(key)
 
                 # Float
-                if pd.api.types.is_float_dtype(data[key]):
+                if pd.api.types.is_float_dtype(self.data[key]):
                     self.float_cols.append(key)
 
                 # Datetime
-                if pd.api.types.is_datetime64_any_dtype(data[key]):
+                if pd.api.types.is_datetime64_any_dtype(self.data[key]):
                     self.date_cols.append(key)
 
                 # Booleans
-                if pd.api.types.is_bool_dtype(data[key]):
+                if pd.api.types.is_bool_dtype(self.data[key]):
                     self.int_cols.append(key)
 
                 # Strings / Objects
-                if pd.api.types.is_object_dtype(data[key]):
-                    is_date = data[key].astype('str').apply(pd.to_datetime, errors='coerce').isna().sum() < 0.3 * \
-                              len(data)
-                    if is_date:
+                if pd.api.types.is_object_dtype(self.data[key]):
+                    # Check date
+                    date = self.data[key].astype('str').apply(pd.to_datetime, errors='coerce')
+                    if date.isna().sum() < 0.3 * len(self.data):
                         self.date_cols.append(key)
-                    elif pd.to_numeric(data[key], errors='coerce').isna().sum() < len(data) / 25:
-                        self.float_cols.append(key)
+                        self.data[key] = date
                     else:
-                        self.cat_cols.append(key)
+                        # Check numeric
+                        numeric = pd.to_numeric(data[key], errors='coerce')
+                        if numeric.isna().sum() < len(data) / 25:
+                            self.float_cols.append(key)
+                            self.data[key] = numeric
+                        else:
+                            self.cat_cols.append(key)
 
             # Set num cols for reverse compatibility
             self.num_cols = self.int_cols + self.float_cols
@@ -270,7 +276,7 @@ class DataProcesser:
 
         return
 
-    def convert_data_types(self, data: pd.DataFrame, fit_categorical: bool = True) -> pd.DataFrame:
+    def convert_data_types(self, data: pd.DataFrame = None, fit_categorical: bool = True) -> pd.DataFrame:
         """
         Cleans up the data types of all columns.
 
@@ -283,56 +289,66 @@ class DataProcesser:
         -------
         data [pd.DataFrame]: Cleaned input data
         """
+        # Set data
+        if data is not None:
+            self.data = data
+
         # Datetime columns
         for key in self.date_cols:
-            data.loc[:, key] = pd.to_datetime(data[key], errors='coerce', infer_datetime_format=True, utc=True)
+            self.data.loc[:, key] = pd.to_datetime(self.data[key], errors='coerce', infer_datetime_format=True, utc=True)
 
         # Integer columns
         for key in self.int_cols:
-            data.loc[:, key] = pd.to_numeric(data[key], errors='coerce', downcast='integer')
+            self.data.loc[:, key] = pd.to_numeric(self.data[key], errors='coerce', downcast='integer')
 
         # Float columns
         for key in self.float_cols:
-            data.loc[:, key] = pd.to_numeric(data[key], errors='coerce', downcast='float')
+            self.data.loc[:, key] = pd.to_numeric(self.data[key], errors='coerce', downcast='float')
 
         # Categorical columns
         if fit_categorical:
-            data = self._fit_cat_cols(data)
+            self.data = self._fit_cat_cols()
         else:
             assert self.is_fitted, ".convert_data_types() was called with fit_categorical=False, while categorical " \
                                    "encoder is not yet fitted."
-            data = self._transform_cat_cols(data)
+            self.data = self._transform_cat_cols()
 
         # We need everything to become numeric, so all that is not mentioned will be handled as numeric
         all_cols = self.float_cols + self.int_cols + self.date_cols + self.cat_cols + [self.target]
-        for key in data.keys():
+        for key in self.data.keys():
             if key not in all_cols:
-                data.loc[:, key] = pd.to_numeric(data[key], errors='coerce')
+                self.data.loc[:, key] = pd.to_numeric(self.data[key], errors='coerce')
 
-        return data
+        return self.data
 
-    def _fit_cat_cols(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _fit_cat_cols(self, data: pd.DataFrame = None) -> pd.DataFrame:
         """
         Encoding categorical variables always needs a scheme. This fits the scheme.
         """
-        for key in self.cat_cols:
-            dummies = pd.get_dummies(data[key], prefix=key, drop_first=True)
-            data = data.drop(key, axis=1).join(dummies)
-            self.dummies[key] = dummies.keys().tolist()
-        return data
+        if data is not None:
+            self.data = data
 
-    def _transform_cat_cols(self, data: pd.DataFrame) -> pd.DataFrame:
+        for key in self.cat_cols:
+            dummies = pd.get_dummies(self.data[key], prefix=key, drop_first=True)
+            self.data = self.data.drop(key, axis=1).join(dummies)
+            self.dummies[key] = dummies.keys().tolist()
+        return self.data
+
+    def _transform_cat_cols(self, data: pd.DataFrame = None) -> pd.DataFrame:
         """
         Converts categorical variables according to fitted scheme.
         """
+        if data is not None:
+            self.data = data
+
         for key in self.cat_cols:
             value = self.dummies[key]
             dummies = [i[len(key) + 1:] for i in value]
-            data[value] = np.equal.outer(data[key].values, dummies) * 1
-            data = data.drop(key, axis=1)
-        return data
+            self.data[value] = np.equal.outer(self.data[key].values, dummies) * 1
+            self.data = self.data.drop(key, axis=1)
+        return self.data
 
-    def remove_duplicates(self, data: pd.DataFrame, rows: bool = True) -> pd.DataFrame:
+    def remove_duplicates(self, data: pd.DataFrame = None, rows: bool = True) -> pd.DataFrame:
         """
         Removes duplicate columns and rows.
 
@@ -344,187 +360,210 @@ class DataProcesser:
         -------
         data [pd.DataFrame]: Cleaned input data
         """
+        if data is not None:
+            self.data = data
+
         # Note down
-        n_rows, n_columns = len(data), len(data.keys())
+        n_rows, n_columns = len(self.data), len(self.data.keys())
 
         # Remove Duplicates
         if rows:
-            data = data.drop_duplicates()
-        data = data.loc[:, ~data.columns.duplicated()]
+            self.data = self.data.drop_duplicates()
+        self.data = self.data.loc[:, ~self.data.columns.duplicated()]
 
         # Note
-        self.removedDuplicateColumns = n_columns - len(data.keys())
-        self.removedDuplicateRows = n_rows - len(data)
+        self.removedDuplicateColumns = n_columns - len(self.data.keys())
+        self.removedDuplicateRows = n_rows - len(self.data)
         if self.verbosity > 0 or (self.removedDuplicateColumns != 0 or self.removedDuplicateRows != 0):
             print(f'[AutoML] Removed {self.removedDuplicateColumns} duplicate columns and {self.removedDuplicateRows} '
                   f'duplicate rows')
 
-        return data
+        return self.data
 
-    def remove_constants(self, data: pd.DataFrame) -> pd.DataFrame:
+    def remove_constants(self, data: pd.DataFrame = None) -> pd.DataFrame:
         """
         Removes constant columns
         """
-        columns = len(data.keys())
+        if data is not None:
+            self.data = data
+        columns = len(self.data.keys())
 
         # Remove Constants
-        data = data.drop(columns=data.columns[data.nunique() == 1])
+        self.data = self.data.drop(columns=self.data.columns[self.data.nunique() == 1])
 
         # Note
-        self.removedConstantColumns = columns - len(data.keys())
+        self.removedConstantColumns = columns - len(self.data.keys())
         if self.verbosity > 0 or self.removedConstantColumns != 0:
             print(f'[AutoML] Removed {self.removedConstantColumns} constant columns.')
 
-        return data
+        return self.data
 
-    def fit_outliers(self, data: pd.DataFrame) -> int:
+    def fit_outliers(self, data: pd.DataFrame = None):
         """
         Checks outliers
         """
+        if data is not None:
+            self.data = data
+
         # With quantiles
         if self.outlier_removal == 'quantiles':
-            self._q1 = data[self.num_cols].quantile(0.25)
-            self._q3 = data[self.num_cols].quantile(0.75)
+            self._q1 = self.data[self.num_cols].quantile(0.25)
+            self._q3 = self.data[self.num_cols].quantile(0.75)
 
         # By z-score
         elif self.outlier_removal == 'z-score':
-            self._means = data[self.num_cols].mean(skipna=True, numeric_only=True)
-            self._stds = data[self.num_cols].std(skipna=True, numeric_only=True)
+            self._means = self.data[self.num_cols].mean(skipna=True, numeric_only=True)
+            self._stds = self.data[self.num_cols].std(skipna=True, numeric_only=True)
             self._stds[self._stds == 0] = 1
 
-    def remove_outliers(self, data: pd.DataFrame, fit: bool = True) -> pd.DataFrame:
+    def remove_outliers(self, data: pd.DataFrame = None, fit: bool = True) -> pd.DataFrame:
         """
         Removes outliers
         """
+        if data is not None:
+            self.data = data
+
         # Check if needs fitting
         if fit:
-            self.fit_outliers(data)
+            self.fit_outliers(self.data)
         else:
             assert self.is_fitted, ".remove_outliers() is called with fit=False, yet the object isn't fitted yet."
 
         # With Quantiles
         if self.outlier_removal == 'quantiles':
-            self.removedOutliers = ((data[self.num_cols] > self._q3).sum().sum() +
-                                    (data[self.num_cols] < self._q1).sum().sum()).tolist()
-            data[self.num_cols] = data[self.num_cols].mask(data[self.num_cols] < self._q1)
-            data[self.num_cols] = data[self.num_cols].mask(data[self.num_cols] > self._q3)
+            self.removedOutliers = ((self.data[self.num_cols] > self._q3).sum().sum() +
+                                    (self.data[self.num_cols] < self._q1).sum().sum()).tolist()
+            self.data[self.num_cols] = self.data[self.num_cols].mask(self.data[self.num_cols] < self._q1)
+            self.data[self.num_cols] = self.data[self.num_cols].mask(self.data[self.num_cols] > self._q3)
 
         # With z-score
         elif self.outlier_removal == 'z-score':
-            z_score = abs((data[self.num_cols] - self._means) / self._stds)
+            z_score = abs((self.data[self.num_cols] - self._means) / self._stds)
             self.removedOutliers = (z_score > self.z_score_threshold).sum().sum().tolist()
-            data[self.num_cols] = data[self.num_cols].mask(z_score > self.z_score_threshold)
+            self.data[self.num_cols] = self.data[self.num_cols].mask(z_score > self.z_score_threshold)
 
         # With clipping
         elif self.outlier_removal == 'clip':
-            self.removedOutliers = ((data[self.num_cols] > 1e12).sum().sum() +
-                                    (data[self.num_cols] < -1e12).sum().sum()).tolist()
-            data[self.num_cols] = data[self.num_cols].clip(lower=-1e12, upper=1e12)
-        return data
+            self.removedOutliers = ((self.data[self.num_cols] > 1e12).sum().sum() +
+                                    (self.data[self.num_cols] < -1e12).sum().sum()).tolist()
+            self.data[self.num_cols] = self.data[self.num_cols].clip(lower=-1e12, upper=1e12)
+        return self.data
 
-    def remove_missing_values(self, data: pd.DataFrame) -> pd.DataFrame:
+    def remove_missing_values(self, data: pd.DataFrame = None) -> pd.DataFrame:
         """
         Fills missing values (infinities and 'not a number's)
         """
+        if data is not None:
+            self.data = data
+
         # Replace infinities
-        data = data.replace([np.inf, -np.inf], np.nan)
+        self.data = self.data.replace([np.inf, -np.inf], np.nan)
 
         # Note
-        self.imputedMissingValues = data[self.num_cols].isna().sum().sum().tolist()
+        self.imputedMissingValues = self.data[self.num_cols].isna().sum().sum().tolist()
         if self.verbosity > 0 or self.imputedMissingValues != 0:
             print(f'[AutoML] Imputed {self.imputedMissingValues} missing values.')
 
         # Removes all rows with missing values
         if self.missing_values == 'remove_rows':
-            data = data[data.isna().sum(axis=1) == 0]
+            self.data = self.data[self.data.isna().sum(axis=1) == 0]
 
         # Removes all columns with missing values
         elif self.missing_values == 'remove_cols':
-            data = data.loc[:, data.isna().sum(axis=0) == 0]
+            self.data = self.data.loc[:, self.data.isna().sum(axis=0) == 0]
 
         # Fills all missing values with zero
         elif self.missing_values == 'zero':
-            data = data.fillna(0)
+            self.data = self.data.fillna(0)
 
         # Linearly interpolates missing values
         elif self.missing_values == 'interpolate':
 
             # Columns which are present with >10% missing values are not interpolated
-            zero_keys = data.keys()[data.isna().sum() / len(data) > 0.1].tolist()
+            zero_keys = self.data.keys()[self.data.isna().sum() / len(self.data) > 0.1].tolist()
 
             # Get all non-date_cols & interpolate
-            ik = np.setdiff1d(data.keys().to_list(), self.date_cols + zero_keys)
-            data[ik] = data[ik].interpolate(limit_direction='both')
+            ik = np.setdiff1d(self.data.keys().to_list(), self.date_cols + zero_keys)
+            self.data[ik] = self.data[ik].interpolate(limit_direction='both')
 
             # Fill date columns
             for key in self.date_cols:
-                if data[key].isna().sum() != 0:
+                if self.data[key].isna().sum() != 0:
                     # Interpolate
-                    ints = pd.Series(data[key].values.astype('int64'))
+                    ints = pd.Series(self.data[key].values.astype('int64'))
                     ints[ints < 0] = np.nan
-                    data[key] = pd.to_datetime(ints.interpolate(), unit='ns')
+                    self.data[key] = pd.to_datetime(ints.interpolate(), unit='ns')
 
                     # Uses date range (fixed interval)
-                    # dr = pd.date_range(data[key].min(), data[key].max(), len(data))
-                    # if (data[key] == dr).sum() > len(data) - data[key].isna().sum():
-                    #     data[key] = dr
+                    # dr = pd.date_range(self.data[key].min(), self.data[key].max(), len(self.data))
+                    # if (self.data[key] == dr).sum() > len(self.data) - self.data[key].isna().sum():
+                    #     self.data[key] = dr
 
             # Fill rest (date & more missing values cols)
-            if data.isna().sum().sum() != 0:
-                data = data.fillna(0)
+            if self.data.isna().sum().sum() != 0:
+                self.data = self.data.fillna(0)
 
         # Fill missing values with column mean
         elif self.missing_values == 'mean':
-            data = data.fillna(data.mean())
+            self.data = self.data.fillna(self.data.mean())
 
             # Need to be individual for some reason
             for key in self.date_cols:
-                data[key] = data[key].fillna(data[key].mean())
+                self.data[key] = self.data[key].fillna(self.data[key].mean())
 
-        return data
+        return self.data
 
-    def convert_float_int(self, data: pd.DataFrame) -> pd.DataFrame:
+    def convert_float_int(self, data: pd.DataFrame = None) -> pd.DataFrame:
         """
         Integer columns with NaN in them are interpreted as floats.
         In the beginning we check whether some columns should be integers,
         but we rely on different algorithms to take care of the NaN.
         Therefore, we only convert floats to integers at the very end
         """
-        for key in self.int_cols:
-            if key in data:
-                data[key] = pd.to_numeric(data[key], errors='coerce', downcast='integer')
-        return data
+        if data is not None:
+            self.data = data
 
-    def clean_target(self, data: pd.DataFrame) -> pd.DataFrame:
+        for key in self.int_cols:
+            if key in self.data:
+                self.data[key] = pd.to_numeric(self.data[key], errors='coerce', downcast='integer')
+        return self.data
+
+    def clean_target(self, data: pd.DataFrame = None) -> pd.DataFrame:
         """
         Cleans the target column -- missing values already done, just converting classification classes
         """
-        if self.target in data:
+        if data is not None:
+            self.data = data
+
+        if self.target in self.data:
             # Object is for sure classification
-            if data[self.target].dtype == object:
-                data[self.target] = data[self.target].astype('category').cat.codes
+            if self.data[self.target].dtype == object:
+                self.data[self.target] = self.data[self.target].astype('category').cat.codes
 
             # Classification check
-            elif data[self.target].nunique() <= 0.5 * len(data):
-                if sorted(set(data[self.target])) != [i for i in range(data[self.target].nunique())]:
-                    for i, val in enumerate(sorted(set(data[self.target]))):
-                        data.loc[data[self.target] == val, self.target] = i
-        return data
+            elif self.data[self.target].nunique() <= 0.5 * len(self.data):
+                if sorted(set(self.data[self.target])) != [i for i in range(self.data[self.target].nunique())]:
+                    for i, val in enumerate(sorted(set(self.data[self.target]))):
+                        self.data.loc[self.data[self.target] == val, self.target] = i
+        return self.data
 
-    def _impute_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _impute_columns(self, data: pd.DataFrame = None) -> pd.DataFrame:
         """
         *** For production ***
         If a dataset is missing certain columns, this function looks at all registered columns and fills them with
         zeros.
         """
+        if data is not None:
+            self.data = data
+
         imputed = []
         for keys in [self.num_cols, self.date_cols, self.cat_cols]:
-            for key in [k for k in keys if k not in data]:
-                data[key] = np.zeros(len(data))
+            for key in [k for k in keys if k not in self.data]:
+                self.data[key] = np.zeros(len(self.data))
                 imputed.append(key)
         if len(imputed) > 0:
             warnings.warn(f'Imputed {len(imputed)} missing columns! {imputed}')
-        return data
+        return self.data
 
     def prune_features(self, features: list):
         """
