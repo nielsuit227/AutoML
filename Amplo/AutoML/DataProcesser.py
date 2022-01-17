@@ -245,26 +245,34 @@ class DataProcesser:
 
                 # Strings / Objects
                 if pd.api.types.is_object_dtype(self.data[key]):
+
                     # Check date
                     date = self.data[key].astype('str').apply(pd.to_datetime, errors='coerce')
                     if date.isna().sum() < 0.3 * len(self.data):
                         self.date_cols.append(key)
                         self.data[key] = date
                     else:
+
                         # Check numeric
-                        numeric = pd.to_numeric(data[key], errors='coerce')
-                        if numeric.isna().sum() < len(data) / 25:
+                        numeric = pd.to_numeric(self.data[key], errors='coerce')
+                        if numeric.isna().sum() < len(self.data) * 0.2:
                             self.float_cols.append(key)
                             self.data[key] = numeric
-                        else:
+
+                        # Check categorical cardinality
+                        elif self.data[key].nunique() < 100:
                             self.cat_cols.append(key)
+
+                        # Else warn
+                        else:
+                            warnings.warn(f"[AutoML] Couldn't identify feature: {key}")
 
             # Set num cols for reverse compatibility
             self.num_cols = self.int_cols + self.float_cols
 
             # Check if float keys are secretly not integers
             for key in self.float_cols:
-                forced_int = pd.to_numeric(data[key].fillna(0), errors='coerce', downcast='integer')
+                forced_int = pd.to_numeric(self.data[key].fillna(0), errors='coerce', downcast='integer')
                 if pd.api.types.is_integer_dtype(forced_int):
                     self.float_cols.remove(key)
                     self.int_cols.append(key)
