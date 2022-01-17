@@ -101,6 +101,10 @@ class DataProcesser:
         # Clean Keys
         self.data = clean_keys(data)
 
+        # Remove target
+        if not self.includeOutput and self.target is not None and self.target in data:
+            data = data.drop(self.target, axis=1)
+
         # Remove Duplicates
         self.remove_duplicates()
 
