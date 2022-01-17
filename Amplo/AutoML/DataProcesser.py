@@ -248,12 +248,10 @@ class DataProcesser:
                               len(data)
                     if is_date:
                         self.date_cols.append(key)
-                    elif data[key].nunique() < 100:
-                        self.cat_cols.append(key)
+                    elif pd.to_numeric(data[key], errors='coerce').isna().sum() < len(data) / 25:
+                        self.float_cols.append(key)
                     else:
-                        forced_numeric = pd.to_numeric(data[key], errors='coerce')
-                        if forced_numeric.isna().sum() < len(data) / 25:
-                            self.float_cols.append(key)
+                        self.cat_cols.append(key)
 
             # Set num cols for reverse compatibility
             self.num_cols = self.int_cols + self.float_cols
