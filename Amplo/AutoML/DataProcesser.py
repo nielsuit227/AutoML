@@ -46,7 +46,6 @@ class DataProcesser:
         out_rem_algo = ['quantiles', 'z-score', 'clip', 'none']
         assert outlier_removal in out_rem_algo, \
             'Outlier Removal algorithm not implemented, pick from {}'.format(', '.join(out_rem_algo))
-        assert optimize in ['space', 'time'], "Optimize not implemented, pick from 'space', 'time'"
 
         # Arguments
         self.version = version
