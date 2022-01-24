@@ -7,3 +7,4 @@ from .DataProcesser import DataProcesser
 from .DriftDetector import DriftDetector
 from .FeatureProcesser import FeatureProcesser
 from .IntervalAnalyser import IntervalAnalyser
+from .Standardizer import Standardizer
