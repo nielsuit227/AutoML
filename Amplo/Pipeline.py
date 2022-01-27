@@ -174,10 +174,6 @@ class Pipeline:
         self.verbose = kwargs.get('verbose', 0)
         self.noDirs = kwargs.get('no_dirs', False)
 
-        # Monitoring
-        self._prediction_time = None
-        self._main_predictors = None
-
         # Checks
         assert self.mode in [None, 'regression', 'classification'], 'Supported modes: regression, classification.'
         assert 0 < self.informationThreshold < 1, 'Information threshold needs to be within [0, 1]'
@@ -190,12 +186,27 @@ class Pipeline:
         if self.includeOutput and not self.sequence:
             warnings.warn('[AutoML] IMPORTANT: strongly advices to not include output without sequencing.')
 
+        # Create dirs
+        if not self.noDirs:
+            self._create_dirs()
+            self._load_version()
+
+        # Store Pipeline Settings
+        self.settings = {'pipeline': vars(self), 'validation': {}, 'feature_set': ''}
+
         # Objective & Scorer
         self.scorer = None
         if self.objective is not None:
             assert isinstance(self.objective, str), 'Objective needs to be a string'
             assert self.objective in metrics.SCORERS.keys(), 'Metric not supported, look at sklearn.metrics'
             self.scorer = metrics.SCORERS[self.objective]
+
+        # Required sub-classes
+        self.dataSampler = DataSampler()
+        self.dataProcesser = DataProcesser()
+        self.dataSequencer = Sequencer()
+        self.featureProcesser = FeatureProcesser()
+        self.driftDetector = DriftDetector()
 
         # Instance initiating
         self.data = None
@@ -206,20 +217,9 @@ class Pipeline:
         self.n_classes = None
         self.is_fitted = False
 
-        # Required sub-classes
-        self.dataSampler = DataSampler()
-        self.dataProcesser = DataProcesser()
-        self.dataSequencer = Sequencer()
-        self.featureProcesser = FeatureProcesser()
-        self.driftDetector = DriftDetector()
-
-        # Create dirs
-        if not self.noDirs:
-            self._create_dirs()
-            self._load_version()
-
-        # Store Pipeline Settings
-        self.settings = {'pipeline': vars(self), 'validation': {}, 'feature_set': ''}
+        # Monitoring
+        self._prediction_time = None
+        self._main_predictors = None
 
     # User Pointing Functions
     def get_settings(self) -> dict:

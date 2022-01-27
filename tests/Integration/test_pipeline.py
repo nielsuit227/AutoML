@@ -112,8 +112,16 @@ class TestPipeline(unittest.TestCase):
         assert np.allclose(p.predict(self.r_data), prediction)
 
         # Check settings
-        assert 'version' in settings
-        assert 'name' in settings
+        assert 'pipeline' in settings
+        assert 'version' in settings['pipeline']
+        assert 'name' in settings['pipeline']
+        assert 'model' in settings
+        assert 'amplo_version' in settings
+        assert 'params' in settings
+        assert 'drift_detector' in settings
+        assert 'features' in settings
+        assert 'validation' in settings
+        assert 'data_processing' in settings
 
         # Cleanup
         shutil.rmtree('AutoML')
@@ -157,8 +165,16 @@ class TestPipeline(unittest.TestCase):
         assert np.allclose(p.predict_proba(self.c_data), prediction)
 
         # Check settings
-        assert 'version' in settings
-        assert 'name' in settings
+        assert 'pipeline' in settings
+        assert 'version' in settings['pipeline']
+        assert 'name' in settings['pipeline']
+        assert 'model' in settings
+        assert 'amplo_version' in settings
+        assert 'params' in settings
+        assert 'drift_detector' in settings
+        assert 'features' in settings
+        assert 'validation' in settings
+        assert 'data_processing' in settings
 
         # Cleanup
         shutil.rmtree('AutoML')
