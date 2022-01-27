@@ -55,7 +55,7 @@ class TestDataProcessing(unittest.TestCase):
             'b': [1, 2, 3, 4, np.nan],
             'c': ['2020-01-01', np.nan, '2020-01-03', '2020-01-04', '2020-01-05']})
         cleaned = dp.fit_transform(data)
-        assert pd.api.types.is_integer_dtype(cleaned['b'])
+        assert pd.api.types.is_float_dtype(cleaned['b'])
         assert pd.api.types.is_datetime64_any_dtype(cleaned['c'])
         assert 'a_b' in cleaned
         assert 'a_c' in cleaned
