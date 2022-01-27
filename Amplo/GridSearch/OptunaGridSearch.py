@@ -134,7 +134,7 @@ class OptunaGridSearch:
                 "booster": trial.suggest_categorical("booster", ["gbtree", "gblinear", "dart"]),
                 "lambda": trial.suggest_loguniform("lambda", 1e-8, 1.0),
                 "alpha": trial.suggest_loguniform("alpha", 1e-8, 1.0),
-                "callbacks": optuna.integration.XGBoostPruningCallback(trial, "validation-rmse"),
+                # "callbacks": optuna.integration.XGBoostPruningCallback(trial, "validation-rmse"),
                 'learning_rate': trial.suggest_loguniform('learning_rate', 0.001, 0.5),
             }
             if param["booster"] == "gbtree" or param["booster"] == "dart":
@@ -157,7 +157,7 @@ class OptunaGridSearch:
                 'colsample_bytree': trial.suggest_uniform('colsample_bytree', 0, 1),
                 'reg_alpha': trial.suggest_uniform('reg_alpha', 0, 1),
                 'reg_lambda': trial.suggest_uniform('reg_lambda', 0, 1),
-                'callbacks': [optuna.integration.LightGBMPruningCallback(trial, "mean_absolute_error", "valid_1")],
+                # 'callbacks': [optuna.integration.LightGBMPruningCallback(trial, "mean_absolute_error", "valid_1")],
             }
 
         # Classifiers
@@ -218,7 +218,7 @@ class OptunaGridSearch:
                 "booster": trial.suggest_categorical("booster", ["gbtree", "gblinear", "dart"]),
                 "lambda": trial.suggest_loguniform("lambda", 1e-8, 1.0),
                 "alpha": trial.suggest_loguniform("alpha", 1e-8, 1.0),
-                "callbacks": optuna.integration.XGBoostPruningCallback(trial, "validation-logloss"),
+                # "callbacks": optuna.integration.XGBoostPruningCallback(trial, "validation-logloss"),
                 'learning_rate': trial.suggest_loguniform('learning_rate', 0.001, 0.5),
             }
             if param["booster"] == "gbtree" or param["booster"] == "dart":
@@ -249,7 +249,7 @@ class OptunaGridSearch:
                 "feature_fraction": trial.suggest_uniform("feature_fraction", 0.4, 1.0),
                 "bagging_fraction": trial.suggest_uniform("bagging_fraction", 0.4, 1.0),
                 "bagging_freq": trial.suggest_int("bagging_freq", 1, 7),
-                'callbacks': [optuna.integration.LightGBMPruningCallback(trial, "neg_log_loss", "valid_1")],
+                # 'callbacks': [optuna.integration.LightGBMPruningCallback(trial, "neg_log_loss", "valid_1")],
             }
         else:
             # Raise error if nothing is returned
