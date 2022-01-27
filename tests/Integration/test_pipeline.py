@@ -166,8 +166,7 @@ class TestPipeline(unittest.TestCase):
 
         # Check settings
         assert 'pipeline' in settings
-        assert 'version' in settings['pipeline']
-        assert 'name' in settings['pipeline']
+        assert 'version' in settings
         assert 'model' in settings
         assert 'amplo_version' in settings
         assert 'params' in settings

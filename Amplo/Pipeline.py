@@ -110,9 +110,6 @@ class Pipeline:
         no_dirs [bool]: Whether to create files or not
         verbose [int]: Level of verbosity
         """
-        # Production initiation
-        self.bestModel = None
-        self.settings = None
         self.mainDir = 'AutoML/'
 
         # Copy arguments
@@ -192,7 +189,7 @@ class Pipeline:
             self._load_version()
 
         # Store Pipeline Settings
-        self.settings = {'pipeline': vars(self), 'validation': {}, 'feature_set': ''}
+        self.settings = {'pipeline': kwargs, 'validation': {}, 'feature_set': ''}
 
         # Objective & Scorer
         self.scorer = None
@@ -200,6 +197,10 @@ class Pipeline:
             assert isinstance(self.objective, str), 'Objective needs to be a string'
             assert self.objective in metrics.SCORERS.keys(), 'Metric not supported, look at sklearn.metrics'
             self.scorer = metrics.SCORERS[self.objective]
+
+        # Production initiation
+        self.bestModel = None
+        self.settings = None
 
         # Required sub-classes
         self.dataSampler = DataSampler()
@@ -1063,6 +1064,7 @@ class Pipeline:
                 print('[AutoML] Loading existing model file.')
 
         # Update pipeline settings
+        self.settings['version'] = self.version
         self.settings['pipeline']['verbose'] = 0
         self.settings['model'] = model  # The string
         self.settings['params'] = params
@@ -1092,6 +1094,7 @@ class Pipeline:
                     '{}Production/v{}/Report.pdf'.format(self.mainDir, self.version))
 
         # Save settings
+        print(self.settings)
         json.dump(self.settings, open(self.mainDir + 'Production/v{}/Settings.json'
                                       .format(self.version), 'w'), indent=4)
 
