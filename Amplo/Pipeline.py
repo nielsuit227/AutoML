@@ -198,10 +198,6 @@ class Pipeline:
             assert self.objective in metrics.SCORERS.keys(), 'Metric not supported, look at sklearn.metrics'
             self.scorer = metrics.SCORERS[self.objective]
 
-        # Production initiation
-        self.bestModel = None
-        self.settings = None
-
         # Required sub-classes
         self.dataSampler = DataSampler()
         self.dataProcesser = DataProcesser()
@@ -210,6 +206,7 @@ class Pipeline:
         self.driftDetector = DriftDetector()
 
         # Instance initiating
+        self.bestModel = None
         self.data = None
         self.x = None
         self.y = None
@@ -519,6 +516,7 @@ class Pipeline:
             self.scorer = metrics.SCORERS[self.objective]
 
             # Copy to settings
+            print(self.settings)
             self.settings['pipeline']['mode'] = self.mode
             self.settings['pipeline']['objective'] = self.objective
 
