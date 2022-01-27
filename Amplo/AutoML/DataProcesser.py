@@ -132,7 +132,7 @@ class DataProcesser:
         self.is_fitted = True
         if self.verbosity > 0:
             print('[AutoML] Processing completed, ({} x {}) samples returned'.format(len(data), len(data.keys())))
-        return data
+        return self.data
 
     def transform(self, data: pd.DataFrame) -> pd.DataFrame:
         """
@@ -169,7 +169,7 @@ class DataProcesser:
         # Convert integer columns
         self.convert_float_int()
 
-        return data
+        return self.data
 
     def get_settings(self) -> dict:
         """
