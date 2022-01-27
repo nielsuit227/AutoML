@@ -13,7 +13,7 @@ class DataProcesser:
                  int_cols: list = None,
                  date_cols: list = None,
                  cat_cols: list = None,
-                 include_output: bool = False,
+                 include_output: bool = True,
                  missing_values: str = 'interpolate',
                  outlier_removal: str = 'clip',
                  z_score_threshold: int = 4,
