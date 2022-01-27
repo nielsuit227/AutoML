@@ -111,6 +111,10 @@ class TestPipeline(unittest.TestCase):
         p.load_model(model)
         assert np.allclose(p.predict(self.r_data), prediction)
 
+        # Check settings
+        assert 'version' in settings
+        assert 'name' in settings
+
         # Cleanup
         shutil.rmtree('AutoML')
 
@@ -151,6 +155,10 @@ class TestPipeline(unittest.TestCase):
         p.load_settings(settings)
         p.load_model(model)
         assert np.allclose(p.predict_proba(self.c_data), prediction)
+
+        # Check settings
+        assert 'version' in settings
+        assert 'name' in settings
 
         # Cleanup
         shutil.rmtree('AutoML')

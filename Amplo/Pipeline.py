@@ -219,7 +219,7 @@ class Pipeline:
             self._load_version()
 
         # Store Pipeline Settings
-        self.settings = {'pipeline': kwargs, 'validation': {}, 'feature_set': ''}
+        self.settings = {'pipeline': vars(self), 'validation': {}, 'feature_set': ''}
 
     # User Pointing Functions
     def get_settings(self) -> dict:
