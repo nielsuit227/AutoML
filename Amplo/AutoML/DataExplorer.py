@@ -190,7 +190,7 @@ class DataExplorer:
             a0.imshow(self.data.isna(), cmap='Greys', aspect='auto', interpolation='none')
             a0.set_ylabel('Rows')
             a0.set_xticks(range(len(self.data.keys())), self.data.keys())
-            a1.plot(self.df.isna().sum(axis=1), range(len(df)), c='k')
+            a1.plot(self.data.isna().sum(axis=1), range(len(self.data)), c='k')
             a1.axis('off')
             fig.savefig(self.folder + 'MissingValues/v{}.png'.format(self.version))
 
