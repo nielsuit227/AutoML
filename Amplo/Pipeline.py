@@ -345,8 +345,6 @@ class Pipeline:
 
         # Process data
         x = self.dataProcesser.transform(x)
-        if x.astype('float32').replace([np.inf, -np.inf], np.nan).isna().sum().sum() != 0:
-            raise ValueError(f"Column(s) with NaN: {list(x.keys()[x.isna().sum() > 0])}")
 
         # Drift Check
         self.driftDetector.check(x)
@@ -368,6 +366,10 @@ class Pipeline:
         # Standardize
         if self.standardize:
             x, y = self._transform_standardize(x, y)
+
+        # NaN test -- datetime should be taken care of by now
+        if x.astype('float32').replace([np.inf, -np.inf], np.nan).isna().sum().sum() != 0:
+            raise ValueError(f"Column(s) with NaN: {list(x.keys()[x.isna().sum() > 0])}")
 
         # Return
         return x, y
@@ -516,7 +518,6 @@ class Pipeline:
             self.scorer = metrics.SCORERS[self.objective]
 
             # Copy to settings
-            print(self.settings)
             self.settings['pipeline']['mode'] = self.mode
             self.settings['pipeline']['objective'] = self.objective
 
