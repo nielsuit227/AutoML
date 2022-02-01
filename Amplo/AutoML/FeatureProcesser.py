@@ -1,5 +1,6 @@
 import time
 import copy
+import random
 import warnings
 import itertools
 import numpy as np
@@ -11,7 +12,6 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.cluster import MiniBatchKMeans
-from Amplo.Utils import clean_keys
 from Amplo.Classifiers import CatBoostClassifier
 from Amplo.Regressors import CatBoostRegressor
 
@@ -73,6 +73,7 @@ class FeatureProcesser:
         self.mode = mode
         self.timeout = timeout
         self.date_cols = [] if date_cols is None else date_cols
+        self.non_date_cols = None
 
         # Register
         self.is_fitted = False
@@ -115,7 +116,7 @@ class FeatureProcesser:
         feature_sets [dict]: A dictionary with various selected feature sets
         """
         # First clean (just to make sure), and set in class memory
-        self._clean_set(x, y)
+        self._set_data_mod(x, y)
 
         # Remove co-linear features
         self._remove_co_linearity()
@@ -254,7 +255,7 @@ class FeatureProcesser:
         self.is_fitted = True
         self.verbosity = 0
 
-    def _clean_set(self, x: pd.DataFrame, y: pd.Series) -> None:
+    def _set_data_mod(self, x: pd.DataFrame, y: pd.Series) -> None:
         """
         Does some basic cleaning just in case, and sets the input/output in memory.
         """
@@ -266,8 +267,10 @@ class FeatureProcesser:
         elif self.mode == 'regression':
             self.model = DecisionTreeRegressor(max_depth=3)
 
-        # Bit of necessary data cleaning (shouldn't change anything)
-        x = clean_keys(x.astype('float32').clip(lower=-1e12, upper=1e12).fillna(0).reset_index(drop=True))
+        # Set non-date columns
+        self.non_date_cols = [k for k in x.keys() if k not in self.date_cols]
+
+        # Copy data
         self.x = copy.copy(x)
         self.originalInput = copy.copy(x)
         self.y = y.replace([np.inf, -np.inf], 0).fillna(0).reset_index(drop=True)
@@ -277,7 +280,7 @@ class FeatureProcesser:
         Calculates feature value of the original features
         """
         baseline = {}
-        for key in self.originalInput.keys():
+        for key in self.non_date_cols:
             baseline[key] = self._analyse_feature(self.x[key])
         self.baseline = pd.DataFrame(baseline).max(axis=1)
 
@@ -303,7 +306,7 @@ class FeatureProcesser:
 
     def _accept_feature(self, score: list) -> bool:
         """
-        Whether or not to accept a new feature,
+        Whether to accept a new feature,
         basically we accept if it's higher than baseline for any of the classes
         """
         if any(score > self.baseline.values):
@@ -353,23 +356,22 @@ class FeatureProcesser:
             print('[AutoML] Analysing co-linearity')
 
         # Get co-linear features
-        nk = len(self.x.keys())
-        norm = (self.x - self.x.mean(skipna=True, numeric_only=True)).to_numpy()
+        nk = len(self.non_date_cols)
+        norm = (self.x[self.non_date_cols] - self.x[self.non_date_cols].mean(skipna=True, numeric_only=True)).to_numpy()
         ss = np.sqrt(np.sum(norm ** 2, axis=0))
         corr_mat = np.zeros((nk, nk))
         for i in range(nk):
             for j in range(nk):
-                if i == j:
+                if i >= j:
                     continue
-                if corr_mat[i, j] == 0:
-                    c = abs(np.sum(norm[:, i] * norm[:, j]) / (ss[i] * ss[j]))
-                    corr_mat[i, j] = c
-                    corr_mat[j, i] = c
-        upper = np.triu(corr_mat)
-        self.coLinearFeatures = self.x.keys()[np.sum(upper > self.informationThreshold, axis=0) > 0].to_list()
+                corr_mat[i, j] = abs(np.sum(norm[:, i] * norm[:, j]) / (ss[i] * ss[j]))
+        for i, coLinear in enumerate(np.sum(corr_mat > self.informationThreshold, axis=0) > 0):
+            if coLinear:
+                self.coLinearFeatures.append(self.non_date_cols[i])
 
         # Parse results
         self.originalInput = self.originalInput.drop(self.coLinearFeatures, axis=1)
+        self.non_date_cols = list(set(self.non_date_cols) - set(self.coLinearFeatures))
         if self.verbosity > 0:
             print('[AutoML] Removed {} Co-Linear features ({:.3f} %% threshold)'
                   .format(len(self.coLinearFeatures), self.informationThreshold))
@@ -389,7 +391,7 @@ class FeatureProcesser:
             scores[f"{key}__dt__dayofweek"] = self.x[key].dt.dayofweek
             scores[f"{key}__dt__quarter"] = self.x[key].dt.quarter
             scores[f"{key}__dt__month"] = self.x[key].dt.month
-            scores[f"{key}__dt__week"] = self.x[key].dt.week
+            scores[f"{key}__dt__week"] = self.x[key].dt.isocalendar().week
             scores[f"{key}__dt__hour"] = self.x[key].dt.hour
             scores[f"{key}__dt__minute"] = self.x[key].dt.minute
             scores[f"{key}__dt__second"] = self.x[key].dt.second
@@ -406,6 +408,9 @@ class FeatureProcesser:
             key, _, period = k.split('__')
             self.x[k] = getattr(self.x[key].dt, period).clip(lower=-1e12, upper=1e12).fillna(0)
 
+        # Remove original datetime features
+        self.x = self.x.drop(self.date_cols, axis=1)
+
         # Print result
         if self.verbosity > 0:
             print('[AutoML] Added {} datetime features'.format(len(self.datetimeFeatures)))
@@ -418,13 +423,13 @@ class FeatureProcesser:
         if self.verbosity > 0:
             print('[AutoML] Analysing cross features')
         scores = {}
-        n_keys = len(self.originalInput.keys())
+        n_keys = len(self.non_date_cols)
         start_time = time.time()
 
         # Analyse Cross Features
-        for i, key_a in enumerate(tqdm(self.originalInput.keys())):
+        for i, key_a in enumerate(tqdm(self.non_date_cols)):
             accepted_for_key_a = 0
-            for j, key_b in enumerate(self.originalInput.keys()[np.random.permutation(n_keys)]):
+            for j, key_b in enumerate(random.sample(self.non_date_cols, len(self.non_date_cols))):
                 # Skip if they're the same
                 if key_a == key_b:
                     continue
@@ -440,7 +445,7 @@ class FeatureProcesser:
                 score = self._analyse_feature(feature)
                 # Accept or not
                 if self._accept_feature(score):
-                    scores[key_a + '__d__' + key_b] = score
+                    scores[f"{key_a}__d__{key_b}"] = score
                     accepted_for_key_a += 1
 
                 # Multiplication i * j == j * i, so skip if j >= i
@@ -452,7 +457,7 @@ class FeatureProcesser:
                 score = self._analyse_feature(feature)
                 # Accept or not
                 if self._accept_feature(score):
-                    scores[key_a + '__x__' + key_b] = score
+                    scores[f"{key_a}__x__{key_b}"] = score
                     accepted_for_key_a += 1
 
         # Select valuable features
@@ -485,18 +490,18 @@ class FeatureProcesser:
             print('[AutoML] Analysing Trigonometric Features')
 
         scores = {}
-        for key in tqdm(self.originalInput.keys()):
+        for key in tqdm(self.non_date_cols):
             # Sinus feature
             sin_feature = np.sin(self.x[key])
             score = self._analyse_feature(sin_feature)
             if self._accept_feature(score):
-                scores['sin__' + key] = score
+                scores[f"sin__{key}"] = score
 
             # Co sinus feature
             cos_feature = np.cos(self.x[key])
             score = self._analyse_feature(cos_feature)
             if self._accept_feature(score):
-                scores['cos__' + key] = score
+                scores[f"cos__{key}"] = score
 
         # Select valuable features
         self.trigonometricFeatures = self._select_features(scores)
@@ -524,15 +529,14 @@ class FeatureProcesser:
 
         scores = {}
         start_time = time.time()
-        n_keys = len(self.originalInput.keys())
-        for i, key_a in enumerate(self.originalInput.keys()):
+        for i, key_a in enumerate(self.non_date_cols):
             accepted_for_key_a = 0
-            for j, key_b in enumerate(self.originalInput.keys()[np.random.permutation(n_keys)]):
+            for j, key_b in enumerate(random.sample(self.non_date_cols, len(self.non_date_cols))):
                 # Skip if they're the same
                 if key_a == key_b:
                     continue
                 # Skip rest if key_a is not useful in first max(50, 30%) (uniform)
-                if accepted_for_key_a == 0 and j > max(50, int(n_keys / 3)):
+                if accepted_for_key_a == 0 and j > max(50, int(len(self.non_date_cols) / 3)):
                     continue
                 # Skip if we're out of time
                 if time.time() - start_time > self.timeout:
@@ -542,7 +546,7 @@ class FeatureProcesser:
                 feature = self.x[key_a] - self.x[key_b]
                 score = self._analyse_feature(feature)
                 if self._accept_feature(score):
-                    scores[key_a + '__sub__' + key_b] = score
+                    scores[f"{key_a}__sub__{key_b}"] = score
                     accepted_for_key_a += 1
 
                 # A + B == B + A, so skip if i > j
@@ -553,7 +557,7 @@ class FeatureProcesser:
                 feature = self.x[key_a] + self.x[key_b]
                 score = self._analyse_feature(feature)
                 if self._accept_feature(score):
-                    scores[key_a + '__add__' + key_b] = score
+                    scores[f"{key_a}__add__{key_b}"] = score
                     accepted_for_key_a += 1
 
         # Select valuable Features
@@ -586,11 +590,11 @@ class FeatureProcesser:
             print('[AutoML] Analysing Inverse Features')
 
         scores = {}
-        for i, key in enumerate(self.originalInput.keys()):
+        for i, key in enumerate(self.non_date_cols):
             inv_feature = (1 / self.x[key]).clip(lower=-1e12, upper=1e12)
             score = self._analyse_feature(inv_feature)
             if self._accept_feature(score):
-                scores['inv__' + key] = score
+                scores[f"inv__{key}"] = score
 
         self.inverseFeatures = self._select_features(scores)
 
@@ -618,7 +622,7 @@ class FeatureProcesser:
             print('[AutoML] Calculating and Analysing K-Means features')
 
         # Prepare data
-        data = copy.copy(self.originalInput)
+        data = copy.copy(self.originalInput[self.non_date_cols])
         self._means = data.mean()
         self._stds = data.std()
         self._stds[self._stds == 0] = 1
@@ -626,12 +630,12 @@ class FeatureProcesser:
         data /= self._stds
 
         # Determine clusters
-        clusters = min(max(int(np.log10(len(self.originalInput)) * 8), 8), len(self.originalInput.keys()))
+        clusters = min(max(int(np.log10(len(self.non_date_cols)) * 8), 8), len(self.non_date_cols))
         k_means = MiniBatchKMeans(n_clusters=clusters)
         column_names = ['dist__{}_{}'.format(i, clusters) for i in range(clusters)]
         distances = pd.DataFrame(columns=column_names, data=k_means.fit_transform(data))
         distances = distances.clip(lower=-1e12, upper=1e12).fillna(0)
-        self._centers = pd.DataFrame(columns=self.originalInput.keys(), data=k_means.cluster_centers_)
+        self._centers = pd.DataFrame(columns=self.non_date_cols, data=k_means.cluster_centers_)
 
         # Analyse correlation
         scores = {}
@@ -676,14 +680,13 @@ class FeatureProcesser:
             print('[AutoML] Analysing diff features')
 
         # Copy data so we can diff without altering original data
-        keys = self.originalInput.keys()
-        diff_input = copy.copy(self.originalInput)
+        diff_input = copy.copy(self.originalInput[self.non_date_cols])
 
         # Calculate scores
         scores = {}
         for diff in tqdm(range(1, self.maxDiff + 1)):
             diff_input = diff_input.diff().fillna(0)
-            for key in keys:
+            for key in self.non_date_cols:
                 score = self._analyse_feature(diff_input[key])
                 if self._accept_feature(score):
                     scores[key + '__diff__{}'.format(diff)] = score
@@ -721,10 +724,9 @@ class FeatureProcesser:
             print('[AutoML] Analysing lagged features')
 
         # Analyse
-        keys = self.originalInput.keys()
         scores = {}
         for lag in tqdm(range(1, self.maxLags)):
-            for key in keys:
+            for key in self.non_date_cols:
                 score = self._analyse_feature(self.x[key].shift(lag))
                 if self._accept_feature(score):
                     scores[key + '__lag__{}'.format(lag)] = score
@@ -796,7 +798,7 @@ class FeatureProcesser:
         threshold = self.x.keys()[ind_keep].to_list()
 
         # Info increment
-        ind_keep = [ind[i] for i in range(len(ind)) if fi[i] > sfi * self.selectionIncrement]
+        ind_keep = [ind[i] for i in range(len(ind)) if fi[ind[i]] > sfi * self.selectionIncrement]
         increment = self.x.keys()[ind_keep].to_list()
 
         if self.verbosity > 0:

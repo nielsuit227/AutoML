@@ -1,6 +1,7 @@
 import unittest
 import numpy as np
 import pandas as pd
+from datetime import datetime
 from sklearn.datasets import make_classification
 from sklearn.datasets import make_regression
 from Amplo.AutoML import FeatureProcesser
@@ -98,3 +99,15 @@ class TestFeatureProcessing(unittest.TestCase):
         fp = FeatureProcesser(mode='regression')
         xt, sets = fp.fit_transform(x, y)
         assert set(fp.get_required_features(['a__x__b'])) == set(['b', 'a'])
+
+    def test_datetime(self):
+        x = pd.DataFrame({
+            'ts': pd.date_range(start=datetime.now(), periods=1000, freq='1s'),
+            'noise': np.random.normal(0, 5, 1000),
+        })
+        y = pd.Series(np.linspace(0, 100, 1000))
+        fp = FeatureProcesser(mode='regression', date_cols=['ts'])
+        xt, sets = fp.fit_transform(x, y)
+        print(sets)
+
+
