@@ -12,6 +12,7 @@ import pandas as pd
 from tqdm import tqdm
 from datetime import datetime
 from shap import TreeExplainer
+from shap import KernelExplainer
 
 from sklearn import metrics
 from sklearn.model_selection import KFold
@@ -1093,7 +1094,6 @@ class Pipeline:
                     '{}Production/v{}/Report.pdf'.format(self.mainDir, self.version))
 
         # Save settings
-        print(self.settings)
         json.dump(self.settings, open(self.mainDir + 'Production/v{}/Settings.json'
                                       .format(self.version), 'w'), indent=4)
 
@@ -1284,12 +1284,7 @@ class Pipeline:
         Using Shapely Additive Explanations, this function calculates the main predictors for a given
         prediction and sets them into the class' memory.
         """
-        if type(self.bestModel).__name__ in ['SVC', 'RidgeClassifier', 'LinearRegression']:
-            return
-        elif type(self.bestModel).__module__[:5] == 'Amplo':
-            explainer = TreeExplainer(self.bestModel.model)
-        else:
-            explainer = TreeExplainer(self.bestModel)
+        explainer = self._get_explainer(self.bestModel)
 
         # Get values
         shap_values = np.array(explainer.shap_values(data))
@@ -1306,3 +1301,15 @@ class Pipeline:
 
         # Set class attribute
         self._main_predictors = dict([(data.keys()[i], float(abs(shap_values[i]))) for i in inds])
+
+    def _get_explainer(self, model):
+        if type(model).__module__ in ['SVC', 'BaggingClassifier', 'RidgeClassifier', 'LinearRegression', 'SVR',
+                                      'BaggingRegressor']:
+            if self.mode == 'classification':
+                return KernelExplainer(model.predict_proba, self.x)
+            else:
+                return KernelExplainer(model.predict, self.x)
+        elif type(self.bestModel).__module__[:5] == 'Amplo':
+            return TreeExplainer(model.model)
+        else:
+            return TreeExplainer(model)
