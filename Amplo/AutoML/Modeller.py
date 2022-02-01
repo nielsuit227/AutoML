@@ -115,8 +115,7 @@ class Modeller:
         if self.mode == 'classification':
             # The thorough ones
             if self.samples < 25000:
-                if not self.needsProba:
-                    models.append(svm.SVC(kernel='rbf'))
+                models.append(svm.SVC(kernel='rbf', probability=self.needsProba))
                 models.append(ensemble.BaggingClassifier())
                 # models.append(ensemble.GradientBoostingClassifier()) == XG Boost
                 models.append(XGBClassifier())
@@ -135,7 +134,6 @@ class Modeller:
         elif self.mode == 'regression':
             # The thorough ones
             if self.samples < 25000:
-                models.append(linear_model.LinearRegression())
                 models.append(svm.SVR(kernel='rbf'))
                 models.append(ensemble.BaggingRegressor())
                 # models.append(ensemble.GradientBoostingRegressor()) == XG Boost
@@ -143,11 +141,11 @@ class Modeller:
 
             # The efficient ones
             else:
-                models.append(linear_model.LinearRegression())
                 # models.append(ensemble.HistGradientBoostingRegressor()) == LGBM
                 models.append(LGBMRegressor())
 
             # And the multifaceted ones
+            models.append(linear_model.LinearRegression())
             models.append(CatBoostRegressor())
             models.append(ensemble.RandomForestRegressor())
 
