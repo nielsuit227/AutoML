@@ -1284,32 +1284,28 @@ class Pipeline:
         Using Shapely Additive Explanations, this function calculates the main predictors for a given
         prediction and sets them into the class' memory.
         """
-        explainer = self._get_explainer(self.bestModel)
+        # Shap is not implemented for all models.
+        if type(self.bestModel).__name__ in ['SVC', 'BaggingClassifier', 'RidgeClassifier', 'LinearRegression', 'SVR',
+                                             'BaggingRegressor']:
+            self._main_predictors = self.settings['feature_processing']['featureImportance']['shap'][0]
 
-        # Get values
-        shap_values = np.array(explainer.shap_values(data))
-
-        # Shape them (for multiclass it outputs ndim=3, for binary/regression ndim=2)
-        if shap_values.ndim == 3:
-            shap_values = shap_values[1]
-
-        # Take mean over samples
-        shap_values = np.mean(shap_values, axis=0)
-
-        # Sort them
-        inds = sorted(range(len(shap_values)), key=lambda x: -abs(shap_values[x]))
-
-        # Set class attribute
-        self._main_predictors = dict([(data.keys()[i], float(abs(shap_values[i]))) for i in inds])
-
-    def _get_explainer(self, model):
-        if type(model).__module__ in ['SVC', 'BaggingClassifier', 'RidgeClassifier', 'LinearRegression', 'SVR',
-                                      'BaggingRegressor']:
-            if self.mode == 'classification':
-                return KernelExplainer(model.predict_proba, self.x)
-            else:
-                return KernelExplainer(model.predict, self.x)
-        elif type(self.bestModel).__module__[:5] == 'Amplo':
-            return TreeExplainer(model.model)
         else:
-            return TreeExplainer(model)
+            if type(self.bestModel).__module__[:5] == 'Amplo':
+                shap_values = np.array(TreeExplainer(self.bestModel.model).shap_values(data))
+            else:
+                shap_values = np.array(TreeExplainer(self.bestModel).shap_values(data))
+
+            # Shape them (for multiclass it outputs ndim=3, for binary/regression ndim=2)
+            if shap_values.ndim == 3:
+                shap_values = shap_values[1]
+
+            # Take mean over samples
+            shap_values = np.mean(shap_values, axis=0)
+
+            # Sort them
+            inds = sorted(range(len(shap_values)), key=lambda x: -abs(shap_values[x]))
+
+            # Set class attribute
+            self._main_predictors = dict([(data.keys()[i], float(abs(shap_values[i]))) for i in inds])
+
+        return self._main_predictors
