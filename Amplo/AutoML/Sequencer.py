@@ -230,7 +230,6 @@ class Sequencer:
         :param y_start: Starting vector, always necessary when differentiated.
         :return: y: normal predicted signal, de-sequenced.
         """
-        print('Start Y: {}'.format(y_start))
         assert len(seq_y.shape) == 2 and seq_y.shape[1] == self.nOutputSteps, "revert() only suitable for output."
         # assert len(y_start) == self.maxOutputStep + self.shift + 1
 
