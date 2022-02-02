@@ -18,7 +18,6 @@ class TestModelling(unittest.TestCase):
         mod = Modeller(mode='regression', objective='r2', folder='tmp/')
         mod.fit(self.rx, self.ry)
         # Tests
-        assert not mod.needsProba, 'R2 does not need probability'
         assert isinstance(mod.results, pd.DataFrame), 'Results should be type pd.DataFrame'
         assert len(mod.results) != 0, 'Results empty'
         assert mod.results['mean_objective'].max() < 1, 'R2 needs to be smaller than 1'
@@ -35,7 +34,6 @@ class TestModelling(unittest.TestCase):
         mod = Modeller(mode='classification', objective='neg_log_loss', folder='tmp/')
         mod.fit(self.cx, self.cy)
         # Tests
-        assert mod.needsProba, 'Neg Log Loss does not need probability'
         assert isinstance(mod.results, pd.DataFrame), 'Results should be type pd.DataFrame'
         assert len(mod.results) != 0, 'Results empty'
         assert mod.results['mean_objective'].max() < 1, 'R2 needs to be smaller than 1'
