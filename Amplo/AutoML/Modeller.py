@@ -27,6 +27,7 @@ class Modeller:
                  n_splits=3,
                  objective='accuracy',
                  samples=None,
+                 needs_proba=True,
                  folder='',
                  dataset='set_0',
                  store_models=False,
@@ -90,9 +91,7 @@ class Modeller:
             if not os.path.exists(self.folder):
                 os.makedirs(self.folder)
 
-        self.needsProba = False  # Whether scorer requires needs_proba attr
-        if 'True' in self.scoring._factory_args():
-            self.needsProba = True
+        self.needsProba = needs_proba
 
     def fit(self, x, y):
         # Copy number of samples
