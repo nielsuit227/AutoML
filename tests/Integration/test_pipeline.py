@@ -195,3 +195,6 @@ class TestPipeline(unittest.TestCase):
     def test_drift(self):
         # todo connect with logger
         pass
+
+    def test_all_models(self):
+        pass
