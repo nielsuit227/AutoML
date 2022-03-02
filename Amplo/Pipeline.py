@@ -1287,7 +1287,9 @@ class Pipeline:
         # Shap is not implemented for all models.
         if type(self.bestModel).__name__ in ['SVC', 'BaggingClassifier', 'RidgeClassifier', 'LinearRegression', 'SVR',
                                              'BaggingRegressor']:
-            self._main_predictors = self.settings['feature_processing']['featureImportance']['shap'][0]
+            features = self.settings['feature_processing']['featureImportance']['shap'][0]
+            values = self.settings['feature_processing']['featureImportance']['shap'][1]
+            self._main_predictors = {features[i]: values[i] for i in range(len(features))}
 
         else:
             if type(self.bestModel).__module__[:5] == 'Amplo':
