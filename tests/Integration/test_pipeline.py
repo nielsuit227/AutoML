@@ -58,12 +58,6 @@ class TestPipeline(unittest.TestCase):
         pipeline._prepare_production_files(model='StackingRegressor')
         shutil.rmtree('AutoML')
 
-    def test_no_dirs(self):
-        if os.path.exists('AutoML'):
-            shutil.rmtree('AutoML')
-        pipeline = Pipeline(no_dirs=True)
-        assert not os.path.exists('AutoML'), 'Directory created'
-
     def test_regression(self):
         if os.path.exists('AutoML'):
             shutil.rmtree('AutoML')
@@ -178,19 +172,6 @@ class TestPipeline(unittest.TestCase):
         # Cleanup
         shutil.rmtree('AutoML')
 
-    def test_no_args(self):
-        x, y = make_regression()
-        pipeline = Pipeline(grid_search_iterations=0)
-        pipeline.fit(x, y)
-        assert pipeline.mode == 'regression'
-        shutil.rmtree('AutoML')
-        x, y = make_classification()
-        pipeline = Pipeline(grid_search_iterations=0)
-        pipeline.fit(x, y)
-        assert pipeline.mode == 'classification'
-        pipeline.fit(self.c_data)
-        pipeline.fit(self.r_data)
-        shutil.rmtree('AutoML')
 
     def test_drift(self):
         # todo connect with logger
