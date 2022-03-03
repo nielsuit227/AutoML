@@ -32,10 +32,6 @@ class TestPipeline(unittest.TestCase):
             if os.path.exists('AutoML'):
                 shutil.rmtree('AutoML')
 
-
-
-
-
     def test_no_dirs(self):
         if os.path.exists('AutoML'):
             shutil.rmtree('AutoML')
