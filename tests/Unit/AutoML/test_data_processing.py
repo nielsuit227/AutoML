@@ -158,6 +158,16 @@ class TestDataProcessing(unittest.TestCase):
         xt2 = dp.transform(pd.DataFrame({'a': ['a', 'c']}))
         assert np.allclose(xt2.values, pd.DataFrame({'a_b': [0, 0], 'a_c': [0, 1]}).values), "Converted not correct"
 
+    def test_nan_categorical(self):
+        # Setup
+        df = pd.DataFrame({'a': ['hoi', np.nan, np.nan, np.nan]})
+        dp = DataProcesser()
+        df = dp.fit_transform(df)
+
+        # Tests
+        assert 'a' in dp.cat_cols, 'NaN categorical column not recognised as categorical.'
+        assert 'a_hoi' in list(df.keys()), f'Categorical column not properly converted: {df.keys()}'
+
     def test_settings(self):
         x = pd.DataFrame({'a': ['a', 'b', 'c', 'b', 'c', 'a'], 'b': [1, 1, 1, 1, 1, 1]})
         dp = DataProcesser(cat_cols=['a'])

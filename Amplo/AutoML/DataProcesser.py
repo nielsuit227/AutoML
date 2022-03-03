@@ -263,7 +263,7 @@ class DataProcesser:
 
                         # Check numeric
                         numeric = pd.to_numeric(self.data[key], errors='coerce', downcast='integer')
-                        if numeric.isna().sum() < len(self.data) * 0.2:
+                        if numeric.isna().sum() < len(self.data) * 0.3:
                             # Float
                             if pd.api.types.is_float_dtype(numeric):
                                 self.float_cols.append(key)
@@ -346,7 +346,7 @@ class DataProcesser:
             self.data = data
 
         for key in self.cat_cols:
-            dummies = pd.get_dummies(self.data[key], prefix=key, drop_first=True)
+            dummies = pd.get_dummies(self.data[key], prefix=key, dummy_na=True)
             self.data = self.data.drop(key, axis=1).join(dummies)
             self.dummies[key] = dummies.keys().tolist()
         return self.data
