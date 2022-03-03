@@ -17,6 +17,7 @@ class DataProcesser:
                  missing_values: str = 'interpolate',
                  outlier_removal: str = 'clip',
                  z_score_threshold: int = 4,
+                 remove_constants: bool = True,
                  version: int = 1,
                  verbosity: int = 0,
                  ):
@@ -36,6 +37,7 @@ class DataProcesser:
         missing_values str: How to deal with missing values ('remove', 'interpolate' or 'mean')
         outlier_removal str: How to deal with outliers ('clip', 'quantiles', 'z-score' or 'none')
         z_score_threshold int: If outlierRemoval='z-score', the threshold is adaptable, default=4.
+        remove_constants bool: If false, does not remove constant columns
         version int: Versioning the output files
         verbosity int: How much to print
         """
@@ -63,6 +65,7 @@ class DataProcesser:
         self.missing_values = missing_values
         self.outlier_removal = outlier_removal
         self.z_score_threshold = z_score_threshold
+        self.removeConstants = remove_constants
 
         # Fitted Settings
         self.data = None
@@ -403,7 +406,8 @@ class DataProcesser:
         columns = len(self.data.keys())
 
         # Remove Constants
-        self.data = self.data.drop(columns=self.data.columns[self.data.nunique() == 1])
+        if self.removeConstants:
+            self.data = self.data.drop(columns=self.data.columns[self.data.nunique() == 1])
 
         # Note
         self.removedConstantColumns = columns - len(self.data.keys())
