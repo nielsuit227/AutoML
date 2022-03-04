@@ -831,7 +831,7 @@ class FeatureProcesser:
             shap_values = np.mean(np.abs(shap_values), axis=0)
 
         # Average over samples
-        shap_values = np.mean(np.abs(explainer.shap_values(self.x, self.y)), axis=0)
+        shap_values = np.mean(shap_values, axis=0)
         values_sum = np.sum(shap_values)
         ind = np.flip(np.argsort(shap_values))
 
