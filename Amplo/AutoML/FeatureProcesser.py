@@ -829,7 +829,7 @@ class FeatureProcesser:
         ind = np.flip(np.argsort(values))
 
         # Add to class attribute
-        self.featureImportance['shap'] = (self.x.keys()[ind].to_list(), values[ind].tolist())
+        self.featureImportance['shap'] = (self.x.keys()[ind].tolist(), values[ind].tolist())
 
         # Threshold
         ind_keep = [ind[i] for i in range(len(ind)) if values[ind[:i]].sum() <= self.selectionCutoff * values_sum]
