@@ -824,19 +824,26 @@ class FeatureProcesser:
 
         # Get SHAP values
         explainer = TreeExplainer(base.model)
-        values = np.mean(np.abs(explainer.shap_values(self.x, self.y)), axis=0)
-        values_sum = np.sum(values)
-        ind = np.flip(np.argsort(values))
+        shap_values = np.array(explainer.shap_values(self.x, self.y))
+
+        # Average over classes if necessary
+        if shap_values.ndim == 3:
+            shap_values = np.mean(np.abs(shap_values), axis=0)
+
+        # Average over samples
+        shap_values = np.mean(np.abs(explainer.shap_values(self.x, self.y)), axis=0)
+        values_sum = np.sum(shap_values)
+        ind = np.flip(np.argsort(shap_values))
 
         # Add to class attribute
-        self.featureImportance['shap'] = (self.x.keys()[ind].tolist(), values[ind].tolist())
+        self.featureImportance['shap'] = (self.x.keys()[ind].tolist(), shap_values[ind].tolist())
 
         # Threshold
-        ind_keep = [ind[i] for i in range(len(ind)) if values[ind[:i]].sum() <= self.selectionCutoff * values_sum]
+        ind_keep = [ind[i] for i in range(len(ind)) if shap_values[ind[:i]].sum() <= self.selectionCutoff * values_sum]
         threshold = self.x.keys()[ind_keep].to_list()
 
         # Increment
-        ind_keep = [ind[i] for i in range(len(ind)) if values[ind[i]] > values_sum * self.selectionIncrement * 10]
+        ind_keep = [ind[i] for i in range(len(ind)) if shap_values[ind[i]] > values_sum * self.selectionIncrement * 10]
         increment = self.x.keys()[ind_keep].to_list()
 
         if self.verbosity > 0:
