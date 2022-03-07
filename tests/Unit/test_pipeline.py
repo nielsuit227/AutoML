@@ -57,7 +57,7 @@ class TestPipeline(unittest.TestCase):
             shutil.rmtree('AutoML')
 
         x, y = make_classification()
-        pipeline = Pipeline()
+        pipeline = Pipeline(grid_search_iterations=0)
         pipeline.fit(x, y)
 
         # Test Directories
