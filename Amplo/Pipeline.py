@@ -132,6 +132,9 @@ class Pipeline:
         self.zScoreThreshold = kwargs.get('z_score_threshold', 4)
         self.includeOutput = kwargs.get('include_output', False)
 
+        # Balancer
+        self.balance = kwargs.get('balance', True)
+
         # Feature Processor
         self.extractFeatures = kwargs.get('extract_features', True)
         self.informationThreshold = kwargs.get('information_threshold', 0.999)
@@ -600,10 +603,11 @@ class Pipeline:
         Only run for classification problems. Balances the data using imblearn.
         Does not guarantee to return balanced classes. (Methods are data dependent)
         """
-        # Only necessary for classification
         self.dataSampler = DataSampler(method='both', margin=0.1, cv_splits=self.cvSplits, shuffle=self.shuffle,
                                        fast_run=False, objective=self.objective)
-        if self.mode == 'classification':
+
+        # Only necessary for classification
+        if self.mode == 'classification' and self.balance:
             # Check if exists
             try:
                 # Load
