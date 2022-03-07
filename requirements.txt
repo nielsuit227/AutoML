@@ -1,5 +1,5 @@
-annoy==1.17.0
 catboost>=1.0.0
+faiss>=1.7.0
 fpdf==1.7.2
 imbalanced_learn==0.8.0
 joblib>=1.1.0
