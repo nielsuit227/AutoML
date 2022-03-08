@@ -172,7 +172,7 @@ class TestDataProcessing(unittest.TestCase):
         x = pd.DataFrame({'a': ['a', 'b', 'c', 'b', 'c', 'a'], 'b': [1, 1, 1, 1, 1, 1]})
         dp = DataProcesser(cat_cols=['a'])
         xt = dp.fit_transform(x)
-        assert len(xt.keys()) == 2
+        assert len(xt.keys()) == x['a'].nunique()
         settings = dp.get_settings()
         dp2 = DataProcesser()
         dp2.load_settings(settings)
