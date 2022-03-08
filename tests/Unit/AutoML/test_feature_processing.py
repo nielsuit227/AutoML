@@ -15,7 +15,7 @@ class TestFeatureProcessing(unittest.TestCase):
 
     def test_regression(self):
         x, y = make_regression()
-        x, y = pd.DataFrame(x), pd.Series(y)
+        x, y = pd.DataFrame(x, columns=[f'F{i}' for i in range(len(x[0]))]), pd.Series(y)
         fp = FeatureProcesser(max_lags=2, mode='regression')
         xt, sets = fp.fit_transform(x, y)
 
@@ -70,12 +70,12 @@ class TestFeatureProcessing(unittest.TestCase):
         assert len(fp.diffFeatures) != 0, "Difference feature not spotted"
 
     def test_select(self):
-        n = 1000
+        n = 5000
         y = pd.Series(np.linspace(0, 100, n))
-        x = pd.DataFrame({'a': y, 'b': np.random.normal(0, 1, n)})
+        x = pd.DataFrame({'a': y, 'b': np.random.normal(0, 5, n)})
         fp = FeatureProcesser(mode='regression')
         xt, sets = fp.fit_transform(x, y)
-        assert all([len(i) == 1 for i in sets.values()]), f"Random Feature Selected: {sets}"
+        assert all(['a' in i and 'b' not in i for i in sets.values()]), f"Random Feature Selected: {sets}"
 
     def test_settings(self):
         y = pd.Series(np.random.randint(1, 100, 100))

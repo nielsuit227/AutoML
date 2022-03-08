@@ -76,7 +76,7 @@ class TestDataProcessing(unittest.TestCase):
         # Remove cols
         dp = DataProcesser(missing_values='remove_cols')
         cleaned = dp.fit_transform(data)
-        assert len(cleaned.keys()) == 4, cleaned.head()
+        assert len(cleaned.keys()) == 6, cleaned.head() # Categorical NaN is allowed, so 5 categoricals and d
 
         # Replace with 0
         dp = DataProcesser(missing_values='zero')
@@ -156,7 +156,7 @@ class TestDataProcessing(unittest.TestCase):
         assert 'a_b' in xt.keys(), "a_b missing"
         assert 'a_c' in xt.keys(), "a_c missing"
         xt2 = dp.transform(pd.DataFrame({'a': ['a', 'c']}))
-        assert np.allclose(xt2.values, pd.DataFrame({'a_b': [0, 0], 'a_c': [0, 1]}).values), "Converted not correct"
+        assert np.allclose(xt2.values, pd.DataFrame({'a_a': [1, 0], 'a_b': [0, 0], 'a_c': [0, 1]}).values), "Converted not correct"
 
     def test_nan_categorical(self):
         # Setup
@@ -172,12 +172,12 @@ class TestDataProcessing(unittest.TestCase):
         x = pd.DataFrame({'a': ['a', 'b', 'c', 'b', 'c', 'a'], 'b': [1, 1, 1, 1, 1, 1]})
         dp = DataProcesser(cat_cols=['a'])
         xt = dp.fit_transform(x)
-        assert len(xt.keys()) == 2
+        assert len(xt.keys()) == x['a'].nunique()
         settings = dp.get_settings()
         dp2 = DataProcesser()
         dp2.load_settings(settings)
         xt2 = dp2.transform(pd.DataFrame({'a': ['a', 'b'], 'b': [1, 2]}))
-        assert np.allclose(pd.DataFrame({'b': [1.0, 2.0], 'a_b': [0, 1], 'a_c': [0, 0]}).values, xt2.values)
+        assert np.allclose(pd.DataFrame({'b': [1.0, 2.0], 'a_a': [1, 0], 'a_b': [0, 1], 'a_c': [0, 0]}).values, xt2.values)
 
     def test_pruner(self):
         x = pd.DataFrame({'a': ['a', 'b', 'c', 'b', 'c', 'a'], 'b': [1, 1, 1, 1, 1, 1]})
@@ -194,3 +194,10 @@ class TestDataProcessing(unittest.TestCase):
                 dp = DataProcesser(outlier_removal=o, missing_values=mv)
                 dp.fit_transform(x)
                 json.dumps(dp.get_settings())
+
+    def test_cat_target(self):
+        df = pd.DataFrame({'a': ['a', 'b', 'c', 'b', 'c', 'a'], 'b': [1, 2, 3, 4, 5, 6]})
+        dp = DataProcesser(target='a')
+        xt = dp.fit_transform(df)
+        assert 'a' in xt
+        assert np.allclose(xt['a'].values, np.array([0, 1, 2, 1, 2, 0]))

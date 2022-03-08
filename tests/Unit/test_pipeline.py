@@ -39,6 +39,14 @@ class TestPipeline(unittest.TestCase):
         assert not os.path.exists('AutoML'), 'Directory created'
 
     def test_no_args(self):
+        if os.path.exists('AutoML'):
+            shutil.rmtree('AutoML')
+        x, y = make_regression()
+        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline.fit(x, y)
+        shutil.rmtree('AutoML')
+
+    def test_mode_detector(self):
         x, y = make_regression()
         pipeline = Pipeline(grid_search_iterations=0)
         pipeline.fit(x, y)
@@ -48,8 +56,6 @@ class TestPipeline(unittest.TestCase):
         pipeline = Pipeline(grid_search_iterations=0)
         pipeline.fit(x, y)
         assert pipeline.mode == 'classification'
-        pipeline.fit(self.c_data)
-        pipeline.fit(self.r_data)
         shutil.rmtree('AutoML')
 
     def test_create_folders(self):
@@ -57,7 +63,7 @@ class TestPipeline(unittest.TestCase):
             shutil.rmtree('AutoML')
 
         x, y = make_classification()
-        pipeline = Pipeline()
+        pipeline = Pipeline(grid_search_iterations=0)
         pipeline.fit(x, y)
 
         # Test Directories

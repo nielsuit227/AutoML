@@ -2,17 +2,25 @@ name: Automated Testing before Pull Request (PR)
 
 on:
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
 
+    # Checkout branch
     - name: Checkout branch
       uses: actions/checkout@v2
 
+    # Installs dependencies
+    - name: Install dependencies
+      run : |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest
+
     # Run tests
-    - name: Test backend
+    - name: Test Suite
       run: |
         pytest tests -s

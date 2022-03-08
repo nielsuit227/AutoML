@@ -35,44 +35,32 @@ class TestIntervalAnalyser(unittest.TestCase):
         for i in range(140):
             # Create dataframes
             df1, df2 = createDataFrames(cls.n_samples, cls.n_features)
+            df1.to_csv(f'IA/Class_1/Log_{i}.csv', index=False)
+            df2.to_csv(f'IA/Class_2/Log_{i}.csv', index=False)
 
-            if i <= 20:
-                df1.to_csv(f'IA/Class_1/Log_{i}.csv', index=False)
-                df2.to_csv(f'IA/Class_2/Log_{i}.csv', index=False)
-            elif i <= 40:
-                df1.to_json(f'IA/Class_1/Log_{i}.json')
-                df2.to_json(f'IA/Class_2/Log_{i}.json')
-            elif i <= 60:
-                df1.to_xml(f'IA/Class_1/Log_{i}.xml', index=False)
-                df2.to_xml(f'IA/Class_2/Log_{i}.xml', index=False)
-            elif i <= 80:
-                df1.to_feather(f'IA/Class_1/Log_{i}.feather')
-                df2.to_feather(f'IA/Class_2/Log_{i}.feather')
-            elif i <= 100:
-                df1.to_parquet(f'IA/Class_1/Log_{i}.parquet', index=False)
-                df2.to_parquet(f'IA/Class_2/Log_{i}.parquet', index=False)
-            elif i <= 120:
-                df1.to_stata(f'IA/Class_1/Log_{i}.stata', write_index=False)
-                df2.to_stata(f'IA/Class_2/Log_{i}.stata', write_index=False)
-            elif i <= 140:
-                df1.to_pickle(f'IA/Class_1/Log_{i}.pickle')
-                df2.to_pickle(f'IA/Class_2/Log_{i}.pickle')
-                
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if os.path.exists('IA'):
+            shutil.rmtree('IA')
+        if os.path.exists('tests/Unit/AutoML/IA'):
+            shutil.rmtree('tests/Unit/AutoML/IA')
+
     def test_all(self):
-        int_an = IntervalAnalyser(folder='IA')
-        sens = int_an.analyse()
+        ia = IntervalAnalyser(folder='IA', min_length=10)
+        df = ia.fit_transform()
 
-        assert len(sens) == self.n_samples
-        assert sens.ndim == 1
-        assert sens[-1] > sens[0]
-        assert np.max(sens) <= 100
-        assert np.min(sens) >= 0
+        # Attribute tests
+        assert ia.n_folders == 2
+        assert ia.n_files == 280
+
+        # Functional tests
+        for i in range(ia.n_files):
+            dist = ia._distributions[i].values
+            assert all(v < 0.8 for v in dist[:int(len(dist) / 2)]), 'Noise with high percentage of neighbors'
+            assert all(v > 0.8 for v in dist[int(len(dist) / 2):]), 'Information with low percentage of neighbors'
+        assert len(df) == int(ia.samples / 2), 'Incorrect number of samples'
+        assert df.index.get_level_values(0).nunique() == ia.n_files, 'Files skipped'
 
 
-@pytest.fixture(autouse=True)
-def teardown():
-    yield
-    if os.path.exists('IA'):
-        shutil.rmtree('IA')
-    if os.path.exists('tests/Unit/AutoML/IA'):
-        shutil.rmtree('tests/Unit/AutoML/IA')
+
+
