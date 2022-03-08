@@ -15,7 +15,7 @@ class TestFeatureProcessing(unittest.TestCase):
 
     def test_regression(self):
         x, y = make_regression()
-        x, y = pd.DataFrame(x), pd.Series(y)
+        x, y = pd.DataFrame(x, columns=[f'F{i}' for i in range(len(x[0]))]), pd.Series(y)
         fp = FeatureProcesser(max_lags=2, mode='regression')
         xt, sets = fp.fit_transform(x, y)
 
