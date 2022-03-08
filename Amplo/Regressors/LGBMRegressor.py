@@ -14,6 +14,8 @@ class LGBMRegressor:
         @param params: Model parameters
         """
         default = {'verbosity': -1, 'force_col_wise': True}
+        if not 'objective' in params:
+            default['objective'] = 'rmse'
         for k, v in default.items():
             if k not in params.keys():
                 params[k] = v
