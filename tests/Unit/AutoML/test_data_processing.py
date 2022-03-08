@@ -156,7 +156,7 @@ class TestDataProcessing(unittest.TestCase):
         assert 'a_b' in xt.keys(), "a_b missing"
         assert 'a_c' in xt.keys(), "a_c missing"
         xt2 = dp.transform(pd.DataFrame({'a': ['a', 'c']}))
-        assert np.allclose(xt2.values, pd.DataFrame({'a_b': [0, 0], 'a_c': [0, 1]}).values), "Converted not correct"
+        assert np.allclose(xt2.values, pd.DataFrame({'a_a': [1, 0], 'a_b': [0, 0], 'a_c': [0, 1]}).values), "Converted not correct"
 
     def test_nan_categorical(self):
         # Setup

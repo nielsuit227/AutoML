@@ -346,7 +346,7 @@ class DataProcesser:
             self.data = data
 
         for key in self.cat_cols:
-            dummies = pd.get_dummies(self.data[key], prefix=key, dummy_na=True)
+            dummies = pd.get_dummies(self.data[key], prefix=key, dummy_na=self.data[key].isna().sum() > 0)
             self.data = self.data.drop(key, axis=1).join(dummies)
             self.dummies[key] = dummies.keys().tolist()
         return self.data
