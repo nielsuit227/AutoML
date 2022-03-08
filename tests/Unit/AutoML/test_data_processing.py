@@ -194,3 +194,10 @@ class TestDataProcessing(unittest.TestCase):
                 dp = DataProcesser(outlier_removal=o, missing_values=mv)
                 dp.fit_transform(x)
                 json.dumps(dp.get_settings())
+
+    def test_cat_target(self):
+        df = pd.DataFrame({'a': ['a', 'b', 'c', 'b', 'c', 'a'], 'b': [1, 2, 3, 4, 5, 6]})
+        dp = DataProcesser(target='a')
+        xt = dp.fit_transform(df)
+        assert 'a' in xt
+        assert np.allclose(xt['a'].values, np.array([0, 1, 2, 1, 2, 0]))
