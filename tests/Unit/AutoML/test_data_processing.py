@@ -76,7 +76,7 @@ class TestDataProcessing(unittest.TestCase):
         # Remove cols
         dp = DataProcesser(missing_values='remove_cols')
         cleaned = dp.fit_transform(data)
-        assert len(cleaned.keys()) == 4, cleaned.head()
+        assert len(cleaned.keys()) == 6, cleaned.head() # Categorical NaN is allowed, so 5 categoricals and d
 
         # Replace with 0
         dp = DataProcesser(missing_values='zero')
