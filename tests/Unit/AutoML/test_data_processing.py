@@ -177,7 +177,7 @@ class TestDataProcessing(unittest.TestCase):
         dp2 = DataProcesser()
         dp2.load_settings(settings)
         xt2 = dp2.transform(pd.DataFrame({'a': ['a', 'b'], 'b': [1, 2]}))
-        assert np.allclose(pd.DataFrame({'b': [1.0, 2.0], 'a_b': [0, 1], 'a_c': [0, 0]}).values, xt2.values)
+        assert np.allclose(pd.DataFrame({'b': [1.0, 2.0], 'a_a': [1, 0], 'a_b': [0, 1], 'a_c': [0, 0]}).values, xt2.values)
 
     def test_pruner(self):
         x = pd.DataFrame({'a': ['a', 'b', 'c', 'b', 'c', 'a'], 'b': [1, 1, 1, 1, 1, 1]})
