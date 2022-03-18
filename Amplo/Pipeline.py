@@ -835,7 +835,7 @@ class Pipeline:
         )])
         for iteration in range(self.gridSearchIterations):
             # Grab settings
-            settings = results.iloc[iteration] # IndexError
+            settings = results.iloc[iteration]  # IndexError
             model = Utils.getModel(settings['model'], mode=self.mode, samples=len(self.x))
             feature_set = settings['dataset']
 
@@ -1261,9 +1261,9 @@ class Pipeline:
             type(model).__name__, feature_set, len(self.x), len(self.featureSets[feature_set])))
 
         # Cross-Validator
-        cv = StratifiedKFold(n_splits=self.cvSplits, shuffle=self.shuffle)
-        if self.mode == 'regression':
-            cv = KFold(n_splits=self.cvSplits, shuffle=self.shuffle)
+        cv_args = {'n_splits': self.cvSplits, 'shuffle': self.shuffle,
+                   'random_state': 83847939 if self.shuffle else None}
+        cv = KFold(**cv_args) if self.mode == 'regression' else StratifiedKFold(**cv_args)
 
         # Select right hyper parameter optimizer
         if self.gridSearchType == 'base':
