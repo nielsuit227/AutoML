@@ -1281,7 +1281,26 @@ class Pipeline:
             raise NotImplementedError('Only Base, Halving and Optuna are implemented.')
         # Get results
         results = grid_search.fit(self.x[self.featureSets[feature_set]], self.y)
-        return results.sort_values('worst_case', ascending=False)
+        results = results.sort_values('worst_case', ascending=False)
+
+        # Warn when best hyperparameters are close to predefined grid
+        edge_params = grid_search.get_parameter_min_max()
+        best_params = pd.Series(results['params'].iloc[0], name='best')
+        params = edge_params.join(best_params, how='inner')
+
+        def warn_when_too_close_to_edge(param: pd.Series, tol=0.01):
+            # Min-max scaling
+            scaled = np.array(param['best']) / (param['max'] - param['min'])
+            # Check if too close and warn if so
+            if not (tol < scaled < 1 - tol):
+                warn_message = ('WARNING: Optimal value for parameter {} '
+                                'is very close to edge case.\t({} = {})'
+                                ).format(param.name, param.name, param['best'])
+                warnings.warn(warn_message)
+
+        params.apply(lambda p: warn_when_too_close_to_edge(p), axis=1)
+
+        return results
 
     def _get_main_predictors(self, data):
         """

@@ -295,7 +295,7 @@ class _GridSearch:
         # Raise error if no match was found
         raise NotImplementedError('Hyper parameter tuning not implemented for {}'.format(model_name))
 
-    def _get_parameter_min_max(self) -> pd.DataFrame:
+    def get_parameter_min_max(self) -> pd.DataFrame:
         """Get all min and max values from model-specific set of parameters.
         Omit categorical parameters as min and max values are ambiguous.
 
