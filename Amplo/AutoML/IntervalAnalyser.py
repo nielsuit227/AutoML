@@ -106,6 +106,9 @@ class IntervalAnalyser:
         # label_means = self._get_label_means(labels, self._distributions)
         # label_samples = labels.value_counts()
 
+        # Initialize
+        ind_remove = []
+
         # Iterate through labels and see if we should remove values
         for i in range(self.n_files):
 
@@ -115,14 +118,14 @@ class IntervalAnalyser:
 
             # Check distribution and find cut-off
             dist = self._distributions[i]
-            ind_remove = [(i, j) for j in np.where(dist < dist.mean())[0]]
+            ind_remove.extend([(i, j) for j in np.where(dist < dist.mean())[0]])
 
             # Verbose
             if len(ind_remove) > 0 and self.verbose > 1:
                 print(f'[AutoML] Removing {len(ind_remove)} samples from {os.listdir(self.folder)[labels[(i, 0)]]}')
 
-            # Remove samples from df
-            df = df.drop(ind_remove, axis=0)
+        # Remove samples from df
+        df = df.drop(ind_remove, axis=0)
 
         # Return original scales
         df = df * (self._maxs[df.keys()] - self._mins[df.keys()]) + self._mins[df.keys()]
