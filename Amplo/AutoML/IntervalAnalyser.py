@@ -1,4 +1,5 @@
 import os
+import copy
 import faiss
 import numpy as np
 import pandas as pd
@@ -24,18 +25,18 @@ class IntervalAnalyser:
         Uses Facebook's FAISS for K-Nearest Neighbors approximation.
 
         ** IMPORTANT **
-        To use this interval analyser, make sure that your logs are located in a folder of their class, with one parent
-        folder with all classes, e.g.:
+        To use this interval analyser, make sure that your logs are located in a folder of their label, with one parent
+        folder with all labels, e.g.:
         +-- Parent Folder
-        |   +-- Class_1
+        |   +-- Label_1
         |       +-- Log_1.*
         |       +-- Log_2.*
-        |   +-- Class_2
+        |   +-- Label_2
         |       +-- Log_3.*
 
         Parameters
         ----------
-        folder [str]:       Parent folder of classes
+        folder [str]:       Parent folder of labels
         index_col [str]:    For reading the log files
         min_length [int]:   Minimum length to cut off, everything shorter is left untouched
         norm [str]:         Optimization metric for K-Nearest Neighbors
@@ -62,6 +63,7 @@ class IntervalAnalyser:
         self._labels = None
         self._engine = None
         self._distributions = None
+        self._str_labels = None
 
         # Test
         assert norm in ['euclidean', 'manhattan', 'angular', 'hamming', 'dot']
@@ -117,19 +119,23 @@ class IntervalAnalyser:
 
             # Verbose
             if len(ind_remove) > 0 and self.verbose > 1:
-                print(f'[AutoML] Removing {len(ind_remove)} samples from {labels[(i, 0)]}/Zie Gy')
+                print(f'[AutoML] Removing {len(ind_remove)} samples from {os.listdir(self.folder)[labels[(i, 0)]]}')
 
             # Remove samples from df
             df = df.drop(ind_remove, axis=0)
+
+        # Return original scales
+        df = df * (self._maxs[df.keys()] - self._mins[df.keys()]) + self._mins[df.keys()]
+
+        # Add labels
+        df['labels'] = self._str_labels
 
         return df
 
     def _parse_data(self):
         """
-        Loops through all files, cleans them and notes down sizes.
-        """
-        """
         Reads all files and sets a multi index
+
         Returns
         -------
         pd.DataFrame: all log files
@@ -153,7 +159,7 @@ class IntervalAnalyser:
                 df = self._read(f'{self.folder}{folder}/{file}')
 
                 # Set label
-                df['class'] = folder
+                df['labels'] = folder
 
                 # Set second index
                 df = df.set_index(pd.MultiIndex.from_product([[self.n_files], df.index.values], names=['log', 'index']))
@@ -168,31 +174,36 @@ class IntervalAnalyser:
         # Concatenate dataframes
         dfs = pd.concat(dfs)
 
-        # Remove classes
-        labels = dfs['class']
-        dfs = dfs.drop('class', axis=1)
+        # Extract string labels
+        self._str_labels = copy.deepcopy(dfs['labels'])
 
         # Clean data
-        dp = DataProcesser(missing_values='zero')
+        dp = DataProcesser(missing_values='zero', target='labels')
         dfs = dp.fit_transform(dfs)
 
         # Remove datetime columns
         if len(dp.date_cols) != 0:
             dfs = dfs.drop(dp.date_cols, axis=1)
 
-        # Select features
-        fp = FeatureProcesser(extract_features=False)
-        dfs, sets = fp.fit_transform(dfs, labels)
-        dfs = dfs[sets['ShapThreshold']]
+        # Remove classes
+        labels = dfs['labels']
+        dfs = dfs.drop('labels', axis=1)
+
+        # Select features -- bit hacky to avoid memory
+        fp = FeatureProcesser(extract_features=False, mode='classification')
+        fp.x, fp.y = dfs, labels
+        features, _ = fp._sel_gini_impurity()
+        dfs = dfs[features]
 
         # Normalize
+        self._mins, self._maxs = dfs.min(), dfs.max()
         dfs = (dfs - dfs.min()) / (dfs.max() - dfs.min())
 
         # Set sizes
         self.samples = len(dfs)
         self.n_keys = len(dfs.keys())
         if self.n_neighbors is None:
-            self.n_neighbors = int(3 * self.samples / self.n_files)
+            self.n_neighbors = min(int(3 * self.samples / self.n_files), 5000)
 
         # Return
         return dfs, labels
@@ -240,11 +251,11 @@ class IntervalAnalyser:
         if self.verbose > 0:
             print('[AutoML] Calculating interval within-class distributions.')
 
-        # Search nearest neighbors for all samples
-        _, neighbors = self._engine.search(np.ascontiguousarray(df.values), self.n_neighbors)
-
-        # And calculate percentage in label
-        distribution = [sum(labels.iloc[n] == labels.iloc[i]) / self.n_neighbors for i, n in enumerate(neighbors)]
+        # Search nearest neighbors for all samples -- has to be iterative for large files -.-
+        distribution = []
+        for i, row in df.iterrows():
+            _, neighbors = self._engine.search(np.ascontiguousarray(row.values.reshape((1, -1))), self.n_neighbors)
+            distribution.append(sum(labels.iloc[neighbors.reshape(-1)] == labels.loc[i]) / self.n_neighbors)
 
         # Parse into list of lists
         return pd.Series(distribution, index=labels.index)
