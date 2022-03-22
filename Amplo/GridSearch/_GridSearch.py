@@ -10,6 +10,50 @@ from sklearn.metrics import SCORERS
 import multiprocessing as mp
 
 
+def _sanity_check_param_values(f):
+    """Decorator for checking sanity of the parameter values."""
+
+    assert_message = 'Erroneous data detected'
+
+    def sanity_check(name, specifications):
+        # Check item
+        assert isinstance(name, str), assert_message
+        assert isinstance(specifications, tuple), assert_message
+        # Check specifications
+        p_type = specifications[0]
+        assert isinstance(p_type, str), assert_message
+        p_args = specifications[1]
+        assert isinstance(p_args, (list, tuple)), assert_message
+        if p_type != 'categorical':
+            assert all(isinstance(arg, (int, float)) for arg in p_args[:2]), assert_message
+            grid_size = specifications[2]
+            assert isinstance(grid_size, int)
+
+    def inner_function(*args, **kwargs):
+        # Get output
+        orig_output = f(*args, **kwargs)
+        assert isinstance(orig_output, dict), assert_message
+
+        # Duplicate (in order not to overwrite) the original output
+        # and extract conditionals
+        param_values = {**orig_output}
+        conditionals = param_values.pop('CONDITIONALS', {})
+
+        # Check parameter values
+        for name, specifications in param_values.items():
+            sanity_check(name, specifications)
+
+        # Check conditionals
+        for check_p_name, check_p_criteria in conditionals.items():
+            for matching_value, additional_params in check_p_criteria:
+                for name, specifications in additional_params.items():
+                    sanity_check(name, specifications)
+
+        return orig_output
+
+    return inner_function
+
+
 class _GridSearch:
     def __init__(
             self,
@@ -50,6 +94,7 @@ class _GridSearch:
         if type(self.model).__name__ == 'LinearRegression':
             self.nTrials = 1
 
+    @_sanity_check_param_values
     def _get_hyper_parameter_values(self) \
             -> Dict[str, Tuple[str, List[Union[str, float]], Optional[int]]]:
         """Get model specific hyper parameter values, indicating predefined
@@ -225,7 +270,7 @@ class _GridSearch:
                 eval_metric=('categorical', ['rmse']),
                 booster=('categorical', ['gbtree', 'gblinear', 'dart']),
                 alpha=('loguniform', [1e-8, 1], 10),
-                learning_rate=('loguniform', [0.001, 0.5]),
+                learning_rate=('loguniform', [0.001, 0.5], 5),
                 n_jobs=('categorical', [mp.cpu_count() - 1]),
             )
             params['lambda'] = ('loguniform', [1e-8, 1], 10)
@@ -236,7 +281,6 @@ class _GridSearch:
                 )
             params['CONDITIONALS'] = dict(
                 booster=[
-                    ('nothing', dict(a=8)),
                     ('gbtree', dict(
                         max_depth=('int', [1, min(10, int(np.log2(self.samples)))], 5),
                         eta=('loguniform', [1e-8, 1], 5),
@@ -306,6 +350,12 @@ class _GridSearch:
 
         # Get all model's parameters
         param_values = self._get_hyper_parameter_values()
+        # Pop conditionals and integrate all into `param_values`
+        conditionals = param_values.pop('CONDITIONALS', {})
+        for check_p_name, check_p_criteria in conditionals.items():
+            for matching_value, additional_params in check_p_criteria:
+                for name, value in additional_params.items():
+                    param_values[name] = value
 
         # Filter for min and max in non-categorical parameters
         param_min_max = {}
