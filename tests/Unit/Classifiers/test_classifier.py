@@ -1,3 +1,5 @@
+import os
+import joblib
 import numpy as np
 from sklearn.datasets import make_classification
 from sklearn.base import clone
@@ -76,3 +78,10 @@ class TestClassifier:
         SCORERS['neg_log_loss'](model, x, y)
         SCORERS['accuracy'](model, x, y)
         SCORERS['f1_micro'](model, x, y)
+
+    def test_pickleable(self):
+        model = clone(self.model)
+        x, y = make_classification()
+        model.fit(x, y)
+        joblib.dump(model, 'tmp.joblib')
+        os.remove('tmp.joblib')
