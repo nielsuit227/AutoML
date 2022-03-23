@@ -44,8 +44,18 @@ class HalvingGridSearch(_GridSearch):
         param_values.pop('n_jobs', None)  # drop n_jobs as HalvingGridSearch also uses this parameter
         param_values.pop('n_estimators', None)  # otherwise cannot use parameter n_estimators as the resource
 
-        params = {}
+        # Drop/adjust some more parameter names which HalvinGridSearch cannot handle
+        model_name = type(self.model).__name__
+        if model_name in ('BaggingClassifier', 'BaggingRegressor'):
+            # Apparently the regressor cannot handle any features for halving
+            return {}
+        elif model_name in ('LGBMRegressor', 'LGBMClassifier'):
+            # Someway it cannot handle uniform distributions for this two cases
+            param_values['bagging_fraction'] = ('categorical', [0.5, 0.7, 0.9, 1.0], None)
+            param_values['feature_fraction'] = ('categorical', [0.5, 0.7, 0.9, 1.0], None)
 
+        # Extract parameter distributions
+        params = {}
         for p_name, value in param_values.items():
 
             # Read out
