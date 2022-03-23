@@ -1022,7 +1022,7 @@ class Pipeline:
         if params is None:
             params = results.iloc[0]['params']
 
-        # Otherwise Find best
+        # Otherwise, find best
         model = results.iloc[0]['model']
         feature_set = results.iloc[0]['dataset']
         params = Utils.parse_json(params)
