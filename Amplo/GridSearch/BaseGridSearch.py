@@ -28,7 +28,7 @@ class BaseGridSearch(_GridSearch):
         self.result = []
 
     def _get_hyper_params(self) -> Dict[str, Union[None, bool, int, float, str, list]]:
-        param_values = self._get_hyper_parameter_values()
+        param_values = self._hyper_parameter_values
         param_values.pop('CONDITIONALS', {})  # drop conditionals as they are not supported
         params = {}
 

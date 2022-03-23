@@ -39,7 +39,7 @@ class HalvingGridSearch(_GridSearch):
             self.min_resource = 50
 
     def _get_hyper_params(self):
-        param_values = self._get_hyper_parameter_values()
+        param_values = self._hyper_parameter_values
         param_values.pop('CONDITIONALS', {})  # drop conditionals as they are not supported
         param_values.pop('n_jobs', None)  # drop n_jobs as HalvingGridSearch also uses this parameter
         param_values.pop('n_estimators', None)  # otherwise cannot use parameter n_estimators as the resource

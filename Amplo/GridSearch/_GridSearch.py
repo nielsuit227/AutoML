@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Any, Dict, List, Tuple, Optional, Union
 import re
 
 import numpy as np
@@ -95,7 +95,8 @@ class _GridSearch:
             self.nTrials = 1
 
     @_sanity_check_param_values
-    def _get_hyper_parameter_values(self) \
+    @property
+    def _hyper_parameter_values(self) \
             -> Dict[str, Tuple[str, List[Union[str, float]], Optional[int]]]:
         """Get model specific hyper parameter values, indicating predefined
         search areas to optimize.
@@ -344,7 +345,7 @@ class _GridSearch:
         """
 
         # Get all model's parameters
-        param_values = self._get_hyper_parameter_values()
+        param_values = self._hyper_parameter_values
         # Pop conditionals and integrate all into `param_values`
         conditionals = param_values.pop('CONDITIONALS', {})
         for check_p_name, check_p_criteria in conditionals.items():
@@ -367,6 +368,22 @@ class _GridSearch:
         # Combine all values to pd.DataFrame
         param_min_max = pd.DataFrame(param_min_max).T
         return param_min_max
+
+    @abstractmethod
+    def _get_hyper_params(self, *args, **kwargs) -> Dict[str, Any]:
+        """Translate `self._hyper_parameter_values` to grid-search specific
+        distributions or samples.
+
+        Parameters
+        ----------
+        *args (optional): grid-search specific arguments
+        **kwargs (optional): grid-search specific arguments
+
+        Returns
+        -------
+        Grid search parameters
+        """
+        pass
 
     @abstractmethod
     def fit(self, x, y) -> pd.DataFrame:

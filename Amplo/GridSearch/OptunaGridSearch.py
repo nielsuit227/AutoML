@@ -63,7 +63,7 @@ class OptunaGridSearch(_GridSearch):
         # Suggest parameter given the arguments
         return suggest(p_name, *p_args)
 
-    def get_params(self, trial: optuna.Trial) -> Dict[str, Union[None, bool, int, float, str]]:
+    def _get_hyper_params(self, trial: optuna.Trial) -> Dict[str, Union[None, bool, int, float, str]]:
         """Use trial to sample from available grid search parameters
 
         Parameters
@@ -75,7 +75,7 @@ class OptunaGridSearch(_GridSearch):
         Sampled grid search parameters
         """
 
-        param_values = self._get_hyper_parameter_values()
+        param_values = self._hyper_parameter_values
         conditionals = param_values.pop('CONDITIONALS', {})
         params = {}
 
@@ -142,7 +142,7 @@ class OptunaGridSearch(_GridSearch):
             # Train model
             t_start = time.time()
             model = copy.deepcopy(master)
-            model.set_params(**self.get_params(trial))
+            model.set_params(**self._get_hyper_params(trial))
             model.fit(xt, yt)
 
             # Results
