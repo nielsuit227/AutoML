@@ -84,4 +84,4 @@ class TestClassifier:
         x, y = make_classification()
         model.fit(x, y)
         joblib.dump(model, 'tmp.joblib')
-        os.rmdir('tmp.joblib')
+        os.remove('tmp.joblib')
