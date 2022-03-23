@@ -195,10 +195,9 @@ class _GridSearch:
 
         elif model_type == 'Bagging':
             params = dict(
-                max_samples=('uniform', [0.5, 1], 4),
-                max_features=('uniform', [0.5, 1], 4),
-                bootstrap=('categorical', [False, True]),
-                bootstrap_features=('categorical', [False, True]),
+                n_estimators=('int', [10, 250], 4),
+                max_samples=('uniform', [0.5, 1.0], 4),
+                max_features=('uniform', [0.5, 1.0], 4),
                 n_jobs=('categorical', [mp.cpu_count() - 1]),
             )
             return params
@@ -207,7 +206,6 @@ class _GridSearch:
             params = dict(
                 n_estimators=('int', [500, 2000], 5),
                 verbose=('categorical', [0]),
-                early_stopping_rounds=('categorical', [100]),
                 od_pval=('categorical', [1e-5]),
                 loss_function=('categorical', ['MAE', 'RMSE']),
                 learning_rate=('loguniform', [0.001, 0.5], 5),
@@ -305,33 +303,30 @@ class _GridSearch:
             if is_regression:
                 return dict(
                     num_leaves=('int', [10, 150], 5),
-                    min_data_in_leaf=('int', [1, min(1000, self.samples // 10)], 5),
-                    min_sum_hessian_in_leaf=('uniform', [0.001, 0.5], 5),
-                    # min_child_samples=('uniform', [0, 1], 5),
-                    # min_child_weight=('uniform', [0, 1], 5),
-                    subsample=('uniform', [0.5, 1], 5),
+                    min_data_in_leaf=('int', [1, min(1000, self.samples // 10)], 0),
+                    min_sum_hessian_in_leaf=('uniform', [0.001, 0.5], 0),
                     colsample_bytree=('uniform', [0, 1], 5),
                     reg_alpha=('uniform', [0, 1], 5),
                     reg_lambda=('uniform', [0, 1], 5),
                     verbosity=('categorical', [-1]),
                     n_jobs=('categorical', [mp.cpu_count() - 1]),
                 )
-            elif is_classification:
+            else:  # is_classification
                 return dict(
                     objective=('categorical', ['binary' if self.binary else 'multiclass']),
                     metric=('categorical',
                             ['binary_error', 'auc', 'average_precision', 'binary_logloss']
                             if self.binary else ['multi_error', 'multi_logloss', 'auc_mu']),
                     boosting_type=('categorical', ['gbdt']),
-                    lambda_l1=('loguniform', [1e-8, 10], 5),
-                    lambda_l2=('loguniform', [1e-8, 10], 5),
-                    num_leaves=('int', [10, 5000], 5),
-                    max_depth=('int', [5, 20], 5),
-                    min_sum_hessian_in_leaf=('uniform', [0.001, 0.5], 5),
-                    min_gain_to_split=('uniform', [0, 5], 3),
-                    feature_fraction=('uniform', [0.4, 1], 5),
-                    bagging_fraction=('uniform', [0.4, 1], 5),
-                    bagging_freq=('int', [1, 7], 4),
+                    lambda_l1=('loguniform', [1e-8, 10], 4),
+                    lambda_l2=('loguniform', [1e-8, 10], 4),
+                    num_leaves=('int', [10, 5000], 4),
+                    max_depth=('int', [5, 20], 4),
+                    min_data_in_leaf=('int', [1000, self.samples // 10], 0),
+                    min_gain_to_split=('uniform', [0, 5], 0),
+                    feature_fraction=('uniform', [0.4, 1], 4),
+                    bagging_fraction=('uniform', [0.4, 1], 4),
+                    bagging_freq=('int', [1, 7], 0),
                     verbosity=('categorical', [-1]),
                     n_jobs=('categorical', [mp.cpu_count() - 1]),
                 )

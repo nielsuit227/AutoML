@@ -43,6 +43,9 @@ class BaseGridSearch(_GridSearch):
             assert len(p_args) == 2 or p_type == 'categorical', \
                 'Only categorical parameter can have more/less than two suggest args'
 
+            # Skip parameters when none are wanted
+            if p_count == 0:
+                continue
             # Suggest parameter given the arguments
             if p_type == 'categorical':
                 params[p_name] = p_args

@@ -42,8 +42,8 @@ class HalvingGridSearch(_GridSearch):
         param_values = self._get_hyper_parameter_values()
         param_values.pop('CONDITIONALS', {})  # drop conditionals as they are not supported
         param_values.pop('n_jobs', None)  # drop n_jobs as HalvingGridSearch also uses this parameter
-        if self.model.__module__ == 'sklearn.ensemble._forest':
-            param_values.pop('n_estimators', None)  # otherwise cannot use parameter n_estimators as the resource
+        param_values.pop('n_estimators', None)  # otherwise cannot use parameter n_estimators as the resource
+
         params = {}
 
         for p_name, value in param_values.items():
