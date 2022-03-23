@@ -53,13 +53,14 @@ class BaseGridSearch(_GridSearch):
             elif p_type in ('int', 'uniform'):
                 params[p_name] = np.linspace(*p_args, p_count)
             elif p_type in ('logint', 'loguniform'):
+                p_args = [np.log(arg) for arg in p_args]  # logarithmise for np.logspace
                 params[p_name] = np.logspace(*p_args, p_count)
             else:
                 raise NotImplementedError('Invalid parameter specification')
             # Discretize and convert to list
             if 'int' in p_type:
                 params[p_name] = params[p_name].astype('int')
-            params[p_name] = params[p_name].tolist()
+            params[p_name] = np.unique(params[p_name]).tolist()
 
         return params
 

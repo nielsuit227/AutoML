@@ -92,6 +92,10 @@ class _GridSearch:
         assert is_regression or is_classification,\
             'Could not determine mode (regression or classification)'
 
+        # Define min-max-function
+        def minimax(min_, value, max_):
+            return max(min_, min(value, max_))
+
         # Find matching model and return its parameter values
 
         if model_name == 'LinearRegression':
@@ -110,9 +114,9 @@ class _GridSearch:
 
         elif model_type == 'KNeighbors':
             return dict(
-                n_neighbors=('int', [5, min(50, self.samples // 10)], 5),
+                n_neighbors=('int', [5, minimax(5, self.samples // 10, 50)], 5),
                 weights=('categorical', ['uniform', 'distance']),
-                leaf_size=('int', [1, min(100, self.samples // 10)], 5),
+                leaf_size=('int', [1, minimax(1, self.samples // 10, 100)], 5),
                 n_jobs=('categorical', [mp.cpu_count() - 1]),
             )
 
@@ -133,7 +137,7 @@ class _GridSearch:
         elif model_type == 'DecisionTree':
             params = dict(
                 criterion=('categorical', ['squared_error', 'friedman_mse', 'absolute_error', 'poisson']),
-                max_depth=('int', [3, min(25, int(np.log2(self.samples)))], 4),
+                max_depth=('int', [3, minimax(3, int(np.log2(self.samples)), 25)], 4),
             )
             if is_classification:
                 params.update(criterion=('categorical', ['gini', 'entropy']))
@@ -166,8 +170,8 @@ class _GridSearch:
                 loss_function=('categorical', ['MAE', 'RMSE']),
                 learning_rate=('loguniform', [0.001, 0.5], 5),
                 l2_leaf_reg=('uniform', [0, 10], 5),
-                depth=('int', [3, min(10, int(np.log2(self.samples)))], 4),
-                min_data_in_leaf=('int', [1, min(1000, self.samples // 10)], 5),
+                depth=('int', [3, minimax(3, int(np.log2(self.samples)), 10)], 4),
+                min_data_in_leaf=('int', [1, minimax(1, self.samples // 10, 1000)], 5),
                 grow_policy=('categorical', ['SymmetricTree', 'Depthwise', 'Lossguide']),
             )
             if is_classification:
@@ -178,9 +182,9 @@ class _GridSearch:
             params = dict(
                 loss=('categorical', ['ls', 'lad', 'huber']),
                 learning_rate=('loguniform', [0.001, 0.5], 10),
-                max_depth=('int', [3, min(10, int(np.log2(self.samples)))], 4),
+                max_depth=('int', [3, minimax(3, int(np.log2(self.samples)), 10)], 4),
                 n_estimators=('int', [100, 1000], 4),
-                min_samples_leaf=('int', [1, min(1000, int(self.samples / 10))], 3),
+                min_samples_leaf=('int', [1, minimax(1, int(self.samples / 10), 1000)], 3),
                 max_features=('uniform', [0.5, 1], 3),
                 subsample=('uniform', [0.5, 1], 3)
             )
@@ -194,8 +198,8 @@ class _GridSearch:
                 learning_rate=('loguniform', [0.001, 0.5], 10),
                 max_iter=('int', [100, 250], 4),
                 max_leaf_nodes=('int', [30, 150], 4),
-                max_depth=('int', [3, min(10, int(np.log2(self.samples)))], 4),
-                min_samples_leaf=('int', [1, min(1000, int(self.samples / 10))], 4),
+                max_depth=('int', [3, minimax(3, int(np.log2(self.samples)), 10)], 4),
+                min_samples_leaf=('int', [1, minimax(1, int(self.samples / 10), 1000)], 4),
                 l2_regularization=('uniform', [0, 10], 5),
                 max_bins=('int', [100, 255], 4),
                 early_stopping=('categorical', [True])
@@ -208,10 +212,10 @@ class _GridSearch:
             params = dict(
                 n_estimators=('int', [50, 1000], 5),
                 criterion=('categorical', ['squared_error', 'absolute_error']),
-                max_depth=('int', [3, min(15, int(np.log2(self.samples)))], 4),
+                max_depth=('int', [3, minimax(3, int(np.log2(self.samples)), 15)], 4),
                 max_features=('categorical', ['auto', 'sqrt']),
                 min_samples_split=('int', [2, 50], 4),
-                min_samples_leaf=('int', [1, min(1000, self.samples // 10)], 5),
+                min_samples_leaf=('int', [1, minimax(1, self.samples // 10, 1000)], 5),
                 bootstrap=('categorical', [True, False]),
             )
             if is_classification:
@@ -236,13 +240,13 @@ class _GridSearch:
             params['CONDITIONALS'] = dict(
                 booster=[
                     ('gbtree', dict(
-                        max_depth=('int', [1, min(10, int(np.log2(self.samples)))], 5),
+                        max_depth=('int', [1, minimax(1, int(np.log2(self.samples)), 10)], 5),
                         eta=('loguniform', [1e-8, 1], 5),
                         gamma=('loguniform', [1e-8, 1], 5),
                         grow_policy=('categorical', ['depthwise', 'lossguide']),
                     )),
                     ('dart', dict(
-                        max_depth=('int', [1, min(10, int(np.log2(self.samples)))], 5),
+                        max_depth=('int', [1, minimax(1, int(np.log2(self.samples)), 10)], 5),
                         eta=('loguniform', [1e-8, 1], 5),
                         gamma=('loguniform', [1e-8, 1], 5),
                         grow_policy=('categorical', ['depthwise', 'lossguide']),
@@ -259,7 +263,7 @@ class _GridSearch:
             if is_regression:
                 return dict(
                     num_leaves=('int', [10, 150], 5),
-                    min_data_in_leaf=('int', [1, min(1000, self.samples // 10)], 0),
+                    min_data_in_leaf=('int', [1, minimax(1, self.samples // 10, 1000)], 0),
                     min_sum_hessian_in_leaf=('uniform', [0.001, 0.5], 0),
                     colsample_bytree=('uniform', [0, 1], 5),
                     reg_alpha=('uniform', [0, 1], 5),
@@ -278,7 +282,7 @@ class _GridSearch:
                     lambda_l2=('loguniform', [1e-8, 10], 4),
                     num_leaves=('int', [10, 5000], 4),
                     max_depth=('int', [5, 20], 4),
-                    min_data_in_leaf=('int', [1000, self.samples // 10], 0),
+                    min_data_in_leaf=('int', [1, minimax(1, self.samples // 10, 1000)], 0),
                     min_gain_to_split=('uniform', [0, 5], 0),
                     feature_fraction=('uniform', [0.4, 1], 4),
                     bagging_fraction=('uniform', [0.4, 1], 4),
