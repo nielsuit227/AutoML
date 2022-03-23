@@ -1,3 +1,5 @@
+import os
+import joblib
 from sklearn.base import clone
 from sklearn.metrics import SCORERS
 
@@ -52,3 +54,8 @@ class TestRegression(object):
         SCORERS['neg_mean_squared_error'](model, self.x, self.y)
         SCORERS['r2'](model, self.x, self.y)
 
+    def test_pickleable(self):
+        model = clone(self.model)
+        model.fit(self.x, self.y)
+        joblib.dump(model, 'tmp.joblib')
+        os.remove('tmp.joblib')

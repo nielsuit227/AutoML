@@ -11,7 +11,10 @@ class LGBMClassifier:
     def __init__(self, **params):
         """
         Light GBM wrapper
+
         @param params: Model parameters
+
+        callbacks [list[str]]: Callbacks as a string, transformed in a function here
         """
         default = {'verbosity': -1, 'force_col_wise': True}
         for k, v in default.items():
@@ -23,7 +26,7 @@ class LGBMClassifier:
         self.set_params(**self.params)
         self.classes_ = None
         self.model = None
-        self.callbacks = [lgb.early_stopping(100, verbose=False)]
+        self.callbacks = []
         self.trained = False
         self._estimator_type = 'classifier'
 
@@ -70,7 +73,7 @@ class LGBMClassifier:
                                d_train,
                                valid_sets=[d_train, d_test],
                                feval=self.eval_function,
-                               callbacks=self.callbacks,
+                               callbacks=[lgb.early_stopping(100, verbose=False)] + self._get_callbacks(),
                                )
         self.trained = True
 
@@ -109,6 +112,18 @@ class LGBMClassifier:
             params.pop('callbacks')
         self.params = params
         return self
+
+    def _get_callbacks(self) -> list:
+        # Output
+        callbacks = []
+
+        # Iterate through callbacks
+        for callback in self.callbacks:
+            # todo implement various callbacks - recognize string and add function
+            raise NotImplementedError('Callback not implemented.')
+
+        # Return
+        return callbacks
 
     def get_params(self, **args):
         params = copy.copy(self.params)
