@@ -33,12 +33,23 @@ class OptunaGridSearch(_GridSearch):
     @staticmethod
     def _get_suggestion(trial: optuna.Trial, p_name: str, p_value: Union[tuple, list]) \
             -> Union[None, bool, int, float, str]:
-        """Get suggestion for specific parameter"""
+        """Get suggestion for specific parameter
+
+        Parameters
+        ----------
+        trial: optuna.Trial to sample from
+        p_name: hyper parameter name
+        p_value: contains necessary info (dtype, range, ...)
+
+        Returns
+        -------
+        A specific parameter for given hyper parameter
+        """
 
         # Read out
-        p_type = p_value[0]
-        p_args = p_value[1]
-        p_kwargs = {}
+        p_type = p_value[0]  # parameter type (str)
+        p_args = p_value[1]  # parameter arguments (list, tuple)
+        p_kwargs = {}  # additional parameter keyword arguments, depends on parameter type
 
         # Sanity checks
         assert len(p_args) == 2 or p_type == 'categorical', \

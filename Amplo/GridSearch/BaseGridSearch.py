@@ -35,9 +35,9 @@ class BaseGridSearch(_GridSearch):
         for p_name, value in param_values.items():
 
             # Read out
-            p_type = value[0]
-            p_args = value[1]
-            p_count = value[2] if p_type != 'categorical' else None
+            p_type = value[0]  # parameter type (str)
+            p_args = value[1]  # parameter arguments (list, tuple)
+            p_count = value[2] if p_type != 'categorical' else None  # n_samples for np.linspace or np.logspace
 
             # Sanity checks
             assert len(p_args) == 2 or p_type == 'categorical', \
