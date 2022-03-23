@@ -1,4 +1,5 @@
 import copy
+import warnings
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
@@ -12,6 +13,8 @@ class LGBMRegressor:
         """
         Light GBM wrapper
         @param params: Model parameters
+        
+        callbacks [list[str]]: Callbacks as a string, transformed in a function here
         """
         default = {'verbosity': -1, 'force_col_wise': True}
         if not 'objective' in params:
@@ -19,11 +22,12 @@ class LGBMRegressor:
         for k, v in default.items():
             if k not in params.keys():
                 params[k] = v
+
         self.params = params
         self.default = default
         self.set_params(**self.params)
         self.model = None
-        self.callbacks = [lgb.early_stopping(100, verbose=False)]
+        self.callbacks = []
         self.trained = False
         self._estimator_type = 'regressor'
 
@@ -60,7 +64,7 @@ class LGBMRegressor:
                                d_train,
                                valid_sets=[d_train, d_test],
                                feval=self.eval_function,
-                               callbacks=self.callbacks,
+                               callbacks=[lgb.early_stopping(100, verbose=False)] + self._get_callbacks(),
                                )
         self.trained = True
 
@@ -74,10 +78,22 @@ class LGBMRegressor:
             if k not in params.keys():
                 params[k] = v
         if 'callbacks' in params.keys():
-            self.callbacks.extend(params['callbacks'])
+            self.callbacks = params['callbacks']
             params.pop('callbacks')
         self.params = params
         return self
+
+    def _get_callbacks(self) -> list:
+        # Output
+        callbacks = []
+
+        # Iterate through callbacks
+        for callback in self.callbacks:
+            # todo implement various callbacks - recognize string and add function
+            raise NotImplementedError('Callback not implemented.')
+
+        # Return
+        return callbacks
 
     def get_params(self, **args):
         params = copy.copy(self.params)
