@@ -1,6 +1,7 @@
 import os
 import shutil
 import unittest
+import numpy as np
 import pandas as pd
 from sklearn.datasets import make_classification, make_regression
 from Amplo import Pipeline
@@ -73,3 +74,28 @@ class TestPipeline(unittest.TestCase):
         assert os.path.exists('AutoML/Production')
         assert os.path.exists('AutoML/Documentation')
         assert os.path.exists('AutoML/Results.csv')
+
+    def test_read_write_csv(self):
+        """
+        Check whether intermediate data is stored and read correctly
+        """
+        # Set path
+        data_path = 'test_data.csv'
+
+        # Test single index
+        data_write = pd.DataFrame(np.random.randint(0, 100, size=(10, 10)),
+                                  columns=[f'feature_{i}' for i in range(10)])
+        data_write.index.name = 'index'
+        Pipeline._write_csv(data_write, data_path)
+        data_read = Pipeline._read_csv(data_path)
+        assert data_write.equals(data_read), 'Read data should be equal to original data'
+
+        # Test multi-index (cf. IntervalAnalyser)
+        data_write = data_write.set_index(data_write.columns[-2:].to_list())
+        data_write.index.names = ['log', 'index']
+        Pipeline._write_csv(data_write, data_path)
+        data_read = Pipeline._read_csv(data_path)
+        assert data_write.equals(data_read), 'Read data should be equal to original data'
+
+        # Remove data
+        os.remove(data_path)

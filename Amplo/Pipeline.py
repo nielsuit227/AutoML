@@ -540,7 +540,7 @@ class Pipeline:
         ----------
         data_path : str or Path
         """
-        assert Path(data_path).suffix == 'csv', 'Expected a *.csv path'
+        assert Path(data_path).suffix == '.csv', 'Expected a *.csv path'
 
         data = pd.read_csv(data_path)
 
@@ -564,7 +564,7 @@ class Pipeline:
         data : pd.DataFrame or pd.Series
         data_path : str or Path
         """
-        assert Path(data_path).suffix == 'csv', 'Expected a *.csv path'
+        assert Path(data_path).suffix == '.csv', 'Expected a *.csv path'
 
         # Set single-index if not already present
         if len(data.index.names) == 1 and data.index.name is None:
