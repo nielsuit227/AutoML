@@ -10,6 +10,7 @@ import warnings
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from pathlib import Path
 from datetime import datetime
 from shap import TreeExplainer
 from shap import KernelExplainer
@@ -530,6 +531,51 @@ class Pipeline:
                 print(f"[AutoML] Setting mode to {self.mode} & objective to {self.objective}.")
         return
 
+    @staticmethod
+    def _read_csv(data_path) -> pd.DataFrame:
+        """
+        Read data from given path and set index or multi-index
+
+        Parameters
+        ----------
+        data_path : str or Path
+        """
+        assert Path(data_path).suffix == '.csv', 'Expected a *.csv path'
+
+        data = pd.read_csv(data_path)
+
+        if {'index', 'log'}.issubset(data.columns):
+            # Multi-index: case when IntervalAnalyser was used
+            index = ['log', 'index']
+        elif 'index' in data.columns:
+            index = ['index']
+        else:
+            raise IndexError('No known index was found. '
+                             'Expected to find at least a column named `index`.')
+        return data.set_index(index)
+
+    @staticmethod
+    def _write_csv(data, data_path):
+        """
+        Write data to given path and set index if needed.
+
+        Parameters
+        ----------
+        data : pd.DataFrame or pd.Series
+        data_path : str or Path
+        """
+        assert Path(data_path).suffix == '.csv', 'Expected a *.csv path'
+
+        # Set single-index if not already present
+        if len(data.index.names) == 1 and data.index.name is None:
+            data.index.name = 'index'
+        # Raise error if unnamed index is present
+        if None in data.index.names:
+            raise IndexError(f'Found an unnamed index column ({list(data.index.names)}).')
+
+        # Write data
+        data.to_csv(data_path)
+
     def _data_processing(self, data: pd.DataFrame):
         """
         Organises the data cleaning. Heavy lifting is done in self.dataProcesser, but settings etc. needs
@@ -540,13 +586,16 @@ class Pipeline:
                                            missing_values=self.missingValues,
                                            outlier_removal=self.outlierRemoval, z_score_threshold=self.zScoreThreshold)
 
+        # Set paths
+        data_path = self.mainDir + f'Data/Cleaned_v{self.version}.csv'
+        settings_path = self.mainDir + f'Settings/Cleaning_v{self.version}.json'
+
         try:
             # Load data
-            data = pd.read_csv(self.mainDir + 'Data/Cleaned_v{}.csv'.format(self.version), index_col='index')
+            data = self._read_csv(data_path)
 
             # Load settings
-            self.settings['data_processing'] = json.load(open(self.mainDir + 'Settings/Cleaning_v{}.json'
-                                                              .format(self.version), 'r'))
+            self.settings['data_processing'] = json.load(open(settings_path, 'r'))
             self.dataProcesser.load_settings(self.settings['data_processing'])
 
             if self.verbose > 0:
@@ -557,12 +606,11 @@ class Pipeline:
             data = self.dataProcesser.fit_transform(data)
 
             # Store data
-            data.to_csv(self.mainDir + 'Data/Cleaned_v{}.csv'.format(self.version), index_label='index')
+            self._write_csv(data, data_path)
 
             # Save settings
             self.settings['data_processing'] = self.dataProcesser.get_settings()
-            json.dump(self.settings['data_processing'], open(self.mainDir + 'Settings/Cleaning_v{}.json'
-                                                             .format(self.version), 'w'))
+            json.dump(self.settings['data_processing'], open(settings_path, 'w'))
 
         # If no columns were provided, load them from data processor
         if self.dateCols is None:
@@ -606,12 +654,15 @@ class Pipeline:
         self.dataSampler = DataSampler(method='both', margin=0.1, cv_splits=self.cvSplits, shuffle=self.shuffle,
                                        fast_run=False, objective=self.objective)
 
+        # Set paths
+        data_path = self.mainDir + f'Data/Balanced_v{self.version}.csv'
+
         # Only necessary for classification
         if self.mode == 'classification' and self.balance:
             # Check if exists
             try:
                 # Load
-                data = pd.read_csv(self.mainDir + 'Data/Balanced_v{}.csv'.format(self.version), index_col='index')
+                data = self._read_csv(data_path)
 
                 # Split
                 self.y = data[self.target]
@@ -629,7 +680,7 @@ class Pipeline:
                 # Store
                 data = copy.copy(self.x)
                 data[self.target] = self.y
-                data.to_csv(self.mainDir + 'Data/Balanced_v{}.csv'.format(self.version), index_label='index')
+                self._write_csv(data, data_path)
 
     def _sequencing(self):
         """
@@ -638,10 +689,14 @@ class Pipeline:
         """
         self.dataSequencer = Sequencer(back=self.sequenceBack, forward=self.sequenceForward,
                                        shift=self.sequenceShift, diff=self.sequenceDiff)
+
+        # Set paths
+        data_path = self.mainDir + f'Data/Sequence_v{self.version}.csv'
+
         if self.sequence:
             try:
                 # Load data
-                data = pd.read_csv(self.mainDir + 'Data/Sequence_v{}.csv'.format(self.version), index_col='index')
+                data = self._read_csv(data_path)
 
                 # Split and set to memory
                 self.y = data[self.target]
@@ -659,7 +714,7 @@ class Pipeline:
                 # Save
                 data = copy.deepcopy(self.x)
                 data[self.target] = copy.deepcopy(self.y)
-                data.to_csv(self.mainDir + 'Data/Sequence_v{}.csv'.format(self.version), index_label='index')
+                self._write_csv(data, data_path)
 
     def _feature_processing(self):
         """
@@ -669,19 +724,24 @@ class Pipeline:
         self.featureProcesser = FeatureProcesser(mode=self.mode, max_lags=self.maxLags, max_diff=self.maxDiff,
                                                  extract_features=self.extractFeatures, timeout=self.featureTimeout,
                                                  information_threshold=self.informationThreshold)
+
+        # Set paths
+        data_path = self.mainDir + f'Data/Extracted_v{self.version}.csv'
+        settings_path = self.mainDir + f'Settings/Cleaning_v{self.version}.json'
+
         # Check if exists
         try:
             # Loading data
-            self.x = pd.read_csv(self.mainDir + 'Data/Extracted_v{}.csv'.format(self.version), index_col='index')
+            self.x = self._read_csv(data_path)
 
             # Loading settings
-            self.settings['feature_processing'] = json.load(open(self.mainDir + 'Settings/Features_v{}.json'
-                                                                 .format(self.version), 'r'))
+            self.settings['feature_processing'] = json.load(open(settings_path, 'r'))
             self.featureProcesser.load_settings(self.settings['feature_processing'])
             self.featureSets = self.settings['feature_processing']['featureSets']
 
             if self.verbose > 0:
                 print('[AutoML] Loaded Extracted Features')
+
         except FileNotFoundError:
             print('[AutoML] Starting Feature Processor')
 
@@ -689,12 +749,11 @@ class Pipeline:
             self.x, self.featureSets = self.featureProcesser.fit_transform(self.x, self.y)
 
             # Store data
-            self.x.to_csv(self.mainDir + 'Data/Extracted_v{}.csv'.format(self.version), index_label='index')
+            self._write_csv(self.x, data_path)
 
             # Save settings
             self.settings['feature_processing'] = self.featureProcesser.get_settings()
-            json.dump(self.settings['feature_processing'], open(self.mainDir + 'Settings/Features_v{}.json'
-                                                                .format(self.version), 'w'))
+            json.dump(self.settings['feature_processing'], open(settings_path, 'w'))
 
     def _standardizing(self):
         """
@@ -724,11 +783,15 @@ class Pipeline:
         """
         Runs various models to see which work well.
         """
+
+        # Set paths
+        results_path = Path(self.mainDir) / 'Results.csv'
+
         # Load existing results
-        if 'Results.csv' in os.listdir(self.mainDir):
+        if results_path.exists():
 
             # Load results
-            self.results = pd.read_csv(self.mainDir + 'Results.csv')
+            self.results = pd.read_csv(results_path)
 
             # Printing here as we load it
             results = self.results[np.logical_and(
@@ -736,12 +799,12 @@ class Pipeline:
                 self.results['type'] == 'Initial modelling'
             )]
             for fs in set(results['dataset']):
-                print('[AutoML] Initial Modelling for {} ({})'.format(fs, len(self.featureSets[fs])))
+                print(f'[AutoML] Initial Modelling for {fs} ({len(self.featureSets[fs])})')
                 fsr = results[results['dataset'] == fs]
                 for i in range(len(fsr)):
                     row = fsr.iloc[i]
-                    print('[AutoML] {} {}: {:.4f} \u00B1 {:.4f}'.format(row['model'].ljust(40), self.objective,
-                                                                        row['mean_objective'], row['std_objective']))
+                    print(f'[AutoML] {row["model"].ljust(40)} {self.objective}: '
+                          f'{row["mean_objective"]:.4f} \u00B1 {row["std_objective"]:.4f}')
 
         # Check if this version has been modelled
         if self.results is None or self.version not in self.results['version'].values:
@@ -751,9 +814,9 @@ class Pipeline:
 
                 # Skip empty sets
                 if len(cols) == 0:
-                    print('[AutoML] Skipping {} features, empty set'.format(feature_set))
+                    print(f'[AutoML] Skipping {feature_set} features, empty set')
                     continue
-                print('[AutoML] Initial Modelling for {} features ({})'.format(feature_set, len(cols)))
+                print(f'[AutoML] Initial Modelling for {feature_set} features ({len(cols)})')
 
                 # Do the modelling
                 modeller = Modeller(mode=self.mode, shuffle=self.shuffle, store_models=self.storeModels,
@@ -770,7 +833,7 @@ class Pipeline:
                     self.results = self.results.append(results)
 
             # Save results
-            self.results.to_csv(self.mainDir + 'Results.csv', index=False)
+            self.results.to_csv(results_path, index=False)
 
     def grid_search(self, model=None, feature_set: str = None, parameter_set: str = None):
         """
