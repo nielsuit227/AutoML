@@ -58,6 +58,7 @@ class IntervalAnalyser:
         self.avg_samples = None
         self.n_files = 0
         self.n_folders = 0
+        self._df = None
         self._mins = pd.DataFrame(index=[0])
         self._maxs = pd.DataFrame(index=[0])
         self._labels = None
@@ -124,16 +125,8 @@ class IntervalAnalyser:
             if len(ind_remove) > 0 and self.verbose > 1:
                 print(f'[AutoML] Removing {len(ind_remove)} samples from {os.listdir(self.folder)[labels[(i, 0)]]}')
 
-        # Remove samples from df
-        df = df.drop(ind_remove, axis=0)
-
-        # Return original scales
-        df = df * (self._maxs[df.keys()] - self._mins[df.keys()]) + self._mins[df.keys()]
-
-        # Add labels
-        df['labels'] = self._str_labels
-
-        return df
+        # Return stored df and remove samples
+        return self._df.drop(ind_remove, axis=0)
 
     def _parse_data(self):
         """
@@ -183,6 +176,10 @@ class IntervalAnalyser:
         # Clean data
         dp = DataProcesser(missing_values='zero', target='labels')
         dfs = dp.fit_transform(dfs)
+
+        # Store copy
+        self._df = copy.deepcopy(dfs)
+        self._df['labels'] = self._str_labels
 
         # Remove datetime columns
         if len(dp.date_cols) != 0:

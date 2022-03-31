@@ -60,7 +60,4 @@ class TestIntervalAnalyser(unittest.TestCase):
             assert all(v > 0.8 for v in dist[int(len(dist) / 2):]), 'Information with low percentage of neighbors'
         assert len(df) == int(ia.samples / 2), 'Incorrect number of samples'
         assert df.index.get_level_values(0).nunique() == ia.n_files, 'Files skipped'
-
-
-
-
+        assert len(df.keys()) == self.n_features + 1, 'Incorrect number of features (+1 for labels)'
