@@ -126,7 +126,8 @@ class IntervalAnalyser:
                 print(f'[AutoML] Removing {len(ind_remove)} samples from {os.listdir(self.folder)[labels[(i, 0)]]}')
 
         # Return stored df and remove samples
-        return self._df.drop(ind_remove, axis=0)
+        self._df['labels'][ind_remove] = 'Noise'
+        return self._df
 
     def _parse_data(self):
         """
