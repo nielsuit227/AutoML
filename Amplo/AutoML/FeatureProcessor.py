@@ -16,7 +16,7 @@ from Amplo.Classifiers import CatBoostClassifier
 from Amplo.Regressors import CatBoostRegressor
 
 
-class FeatureProcesser:
+class FeatureProcessor:
 
     def __init__(self,
                  max_lags: int = 10,
@@ -604,8 +604,8 @@ class FeatureProcesser:
         """
         # Add features
         for k in self.inverseFeatures:
-            key = k[5:]
-            self.x[k] = (1 / self.x[key]).clip(lower=-1e12, upper=1e12)
+            key = str(k).lstrip('inv__')
+            self.x.loc[:, k] = (1 / self.x.loc[:, key]).clip(lower=-1e12, upper=1e12)
 
         # Store
         if self.verbosity > 0:
@@ -897,3 +897,13 @@ class FeatureProcesser:
 
         # Remove duplicates from required
         return list(set(required))
+
+
+class FeatureProcesser(FeatureProcessor):
+
+    def __init__(self, *args, **kwargs):
+        warnings.warn(
+            'FeatureProcesser was renamed to FeatureProcessor and will be removed in the future',
+            DeprecationWarning
+        )
+        super().__init__(*args, **kwargs)

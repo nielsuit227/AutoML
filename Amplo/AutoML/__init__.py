@@ -3,8 +3,8 @@ from .Modeller import Modeller
 from .Documenter import Documenter
 from .DataSampler import DataSampler
 from .DataExplorer import DataExplorer
-from .DataProcesser import DataProcesser
+from .DataProcessor import DataProcessor
 from .DriftDetector import DriftDetector
-from .FeatureProcesser import FeatureProcesser
+from .FeatureProcessor import FeatureProcessor
 from .IntervalAnalyser import IntervalAnalyser
 from .Standardizer import Standardizer

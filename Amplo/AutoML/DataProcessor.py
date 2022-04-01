@@ -5,7 +5,7 @@ import pandas as pd
 from Amplo.Utils import clean_keys
 
 
-class DataProcesser:
+class DataProcessor:
 
     def __init__(self,
                  target: str = None,
@@ -28,18 +28,30 @@ class DataProcesser:
 
         Parameters
         ----------
-        target str: Column name of target variable
-        float_cols list: Float columns
-        int_cols list: Integer columns
-        date_cols list: Date columns, all parsed to pd.datetime format
-        cat_cols list: Categorical Columns. Currently all one-hot encoded.
-        include_output bool: Whether to include output in the data
-        missing_values str: How to deal with missing values ('remove', 'interpolate' or 'mean')
-        outlier_removal str: How to deal with outliers ('clip', 'quantiles', 'z-score' or 'none')
-        z_score_threshold int: If outlierRemoval='z-score', the threshold is adaptable, default=4.
-        remove_constants bool: If false, does not remove constant columns
-        version int: Versioning the output files
-        verbosity int: How much to print
+        target : str
+            Column name of target variable
+        float_cols : list
+            Float columns
+        int_cols : list
+            Integer columns
+        date_cols : list
+            Date columns, all parsed to pd.datetime format
+        cat_cols : list
+            Categorical Columns. Currently, all one-hot encoded.
+        include_output : bool
+            Whether to include output in the data
+        missing_values : str
+            How to deal with missing values ('remove', 'interpolate' or 'mean')
+        outlier_removal : str
+            How to deal with outliers ('clip', 'quantiles', 'z-score' or 'none')
+        z_score_threshold : int
+            If outlierRemoval='z-score', the threshold is adaptable
+        remove_constants : bool
+            If False, does not remove constant columns
+        version : int
+            Versioning the output files
+        verbosity : int
+            How much to print
         """
         # Tests
         mis_values_algo = ['remove_rows', 'remove_cols', 'interpolate', 'mean', 'zero']
@@ -84,57 +96,86 @@ class DataProcesser:
         self.imputedMissingValues = 0
         self.removedConstantColumns = 0
 
-    def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _fit_transform(self, data: pd.DataFrame, fit=False) -> 'DataProcessor':
         """
-        Fits this data cleaning module and returns the transformed data.
-
+        Wraps behavior of both, fitting and transforming the DataProcessor.
+        The function basically reduces duplicated code fragments of `self.fit_transform` and `self.transform`.
 
         Parameters
         ----------
-        data [pd.DataFrame]: Input data
+        data : pd.DataFrame
+            Input data
+        fit : bool
+            If True, it will fit the transformer, too
 
         Returns
         -------
-        data [pd.DataFrame]: Cleaned input data
+        DataProcessor
         """
-        if self.verbosity > 0:
-            print('[AutoML] Data Cleaning Started, ({} x {}) samples'.format(len(data), len(data.keys())))
 
         # Clean Keys
         self.data = clean_keys(data)
 
+        # Impute columns
+        self._impute_columns()
+
         # Remove target
-        if not self.includeOutput and self.target is not None and self.target in data:
-            data = data.drop(self.target, axis=1)
+        if fit and not self.includeOutput and self.target is not None and self.target in self.data:
+            self.data = self.data.drop(self.target, axis=1)
 
         # Remove Duplicates
         self.remove_duplicates()
 
         # Infer data-types
-        self.infer_data_types()
+        if fit:
+            self.infer_data_types()
 
         # Convert data types
-        self.convert_data_types(fit_categorical=True)
+        self.convert_data_types(fit_categorical=fit)
 
         # Remove outliers
-        self.remove_outliers(fit=True)
+        self.remove_outliers(fit=fit)
 
         # Remove missing values
         self.remove_missing_values()
 
         # Remove Constants
-        self.remove_constants()
+        if fit:
+            self.remove_constants()
 
         # Convert integer columns
         self.convert_float_int()
 
         # Clean target
-        self.clean_target()
+        if fit:
+            self.clean_target()
+
+        return self
+
+    def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Fits this data cleaning module and returns the transformed data.
+
+        Parameters
+        ----------
+        data : pd.DataFrame
+            Input data
+
+        Returns
+        -------
+        pd.DataFrame
+            Cleaned input data
+        """
+        if self.verbosity > 0:
+            print(f'[AutoML] Data Cleaning Started, ({len(data)} x {len(data.keys())}) samples')
+
+        self._fit_transform(data, fit=True)
 
         # Finish
         self.is_fitted = True
         if self.verbosity > 0:
-            print('[AutoML] Processing completed, ({} x {}) samples returned'.format(len(data), len(data.keys())))
+            print(f'[AutoML] Processing completed, ({len(data)} x {len(data.keys())}) samples returned')
+
         return self.data
 
     def transform(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -143,34 +184,17 @@ class DataProcesser:
 
         Parameters
         ----------
-        data [pd.DataFrame]: Input data
+        data : pd.DataFrame
+            Input data
 
         Returns
         -------
-        data [pd.DataFrame]: Cleaned input data
+        pd.DataFrame
+            Cleaned input data
         """
         assert self.is_fitted, "Transform only available for fitted objects, run .fit_transform() first."
 
-        # Clean Keys
-        self.data = clean_keys(data)
-
-        # Impute columns
-        self._impute_columns()
-
-        # Remove duplicates
-        self.remove_duplicates(rows=False)
-
-        # Convert data types
-        self.convert_data_types(fit_categorical=False)
-
-        # Remove outliers
-        self.remove_outliers(fit=False)
-
-        # Remove missing values
-        self.remove_missing_values()
-
-        # Convert integer columns
-        self.convert_float_int()
+        self._fit_transform(data, fit=False)
 
         return self.data
 
@@ -299,12 +323,15 @@ class DataProcesser:
 
         Parameters
         ----------
-        data [pd.DataFrame]: Input data
-        fit_categorical [bool]: Whether to fit the categorical encoder
+        data : pd.DataFrame
+            Input data
+        fit_categorical : bool
+            Whether to fit the categorical encoder
 
         Returns
         -------
-        data [pd.DataFrame]: Cleaned input data
+        pd.DataFrame
+            Cleaned input data
         """
         # Set data
         if data is not None:
@@ -371,11 +398,13 @@ class DataProcesser:
 
         Parameters
         ----------
-        data [pd.DataFrame]: Input data
+        data : pd.DataFrame
+            Input data
 
         Returns
         -------
-        data [pd.DataFrame]: Cleaned input data
+        pd.DataFrame
+            Cleaned input data
         """
         if data is not None:
             self.data = data
@@ -591,7 +620,8 @@ class DataProcesser:
 
         parameters
         ----------
-        features [list]: List with required features (NOTE: include required features for extracted)
+        features : list
+            Required features (NOTE: include required features for extracted)
         """
         hash_features = dict([(k, 0) for k in features])
         self.date_cols = [f for f in self.date_cols if f in hash_features]
@@ -599,3 +629,13 @@ class DataProcesser:
         self.int_cols = [f for f in self.int_cols if f in hash_features]
         self.float_cols = [f for f in self.float_cols if f in hash_features]
         self.cat_cols = [f for f in self.cat_cols if f in hash_features]
+
+
+class DataProcesser(DataProcessor):
+
+    def __init__(self, *args, **kwargs):
+        warnings.warn(
+            'DataProcesser was renamed to DataProcessor and will be removed in the future',
+            DeprecationWarning
+        )
+        super().__init__(*args, **kwargs)

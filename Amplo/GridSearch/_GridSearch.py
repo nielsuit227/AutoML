@@ -109,7 +109,7 @@ class _GridSearch:
         elif model_name in ('SVR', 'SVC'):
             return dict(
                 gamma=('categorical', ['scale', 'auto', 0.001, 0.01, 0.1, 0.5, 1]),
-                C=('uniform', [0, 10], 25),
+                C=('uniform', [0.001, 10], 25),
             )
 
         elif model_type == 'KNeighbors':

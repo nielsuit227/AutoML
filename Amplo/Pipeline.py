@@ -25,9 +25,9 @@ from Amplo.AutoML.Sequencer import Sequencer
 from Amplo.AutoML.Modeller import Modeller
 from Amplo.AutoML.DataSampler import DataSampler
 from Amplo.AutoML.DataExplorer import DataExplorer
-from Amplo.AutoML.DataProcesser import DataProcesser
+from Amplo.AutoML.DataProcessor import DataProcessor
 from Amplo.AutoML.DriftDetector import DriftDetector
-from Amplo.AutoML.FeatureProcesser import FeatureProcesser
+from Amplo.AutoML.FeatureProcessor import FeatureProcessor
 from Amplo.Regressors.StackingRegressor import StackingRegressor
 from Amplo.Classifiers.StackingClassifier import StackingClassifier
 
@@ -205,9 +205,9 @@ class Pipeline:
 
         # Required sub-classes
         self.dataSampler = DataSampler()
-        self.dataProcesser = DataProcesser()
+        self.dataProcessor = DataProcessor()
         self.dataSequencer = Sequencer()
-        self.featureProcesser = FeatureProcesser()
+        self.featureProcessor = FeatureProcessor()
         self.driftDetector = DriftDetector()
 
         # Instance initiating
@@ -244,13 +244,13 @@ class Pipeline:
         settings['pipeline']['no_dirs'] = True
         self.__init__(**settings['pipeline'])
         self.settings = settings
-        self.dataProcesser.load_settings(settings['data_processing'])
-        self.featureProcesser.load_settings(settings['feature_processing'])
+        self.dataProcessor.load_settings(settings['data_processing'])
+        self.featureProcessor.load_settings(settings['feature_processing'])
         if 'drift_detector' in settings:
             self.driftDetector = DriftDetector(
-                num_cols=self.dataProcesser.float_cols + self.dataProcesser.int_cols,
-                cat_cols=self.dataProcesser.cat_cols,
-                date_cols=self.dataProcesser.date_cols
+                num_cols=self.dataProcessor.float_cols + self.dataProcessor.int_cols,
+                cat_cols=self.dataProcessor.cat_cols,
+                date_cols=self.dataProcessor.date_cols
             ).load_weights(settings['drift_detector'])
 
     def load_model(self, model: object):
@@ -349,7 +349,7 @@ class Pipeline:
             x = ex_globals['data']
 
         # Process data
-        x = self.dataProcesser.transform(x)
+        x = self.dataProcessor.transform(x)
 
         # Drift Check
         self.driftDetector.check(x)
@@ -366,7 +366,7 @@ class Pipeline:
             x, y = self.dataSequencer.convert(x, y)
 
         # Convert Features
-        x = self.featureProcesser.transform(x, self.settings['feature_set'])
+        x = self.featureProcessor.transform(x, self.settings['feature_set'])
 
         # Standardize
         if self.standardize:
@@ -578,10 +578,10 @@ class Pipeline:
 
     def _data_processing(self, data: pd.DataFrame):
         """
-        Organises the data cleaning. Heavy lifting is done in self.dataProcesser, but settings etc. needs
+        Organises the data cleaning. Heavy lifting is done in self.dataProcessor, but settings etc. needs
         to be organised.
         """
-        self.dataProcesser = DataProcesser(target=self.target, int_cols=self.intCols, float_cols=self.floatCols,
+        self.dataProcessor = DataProcessor(target=self.target, int_cols=self.intCols, float_cols=self.floatCols,
                                            date_cols=self.dateCols, cat_cols=self.catCols,
                                            missing_values=self.missingValues,
                                            outlier_removal=self.outlierRemoval, z_score_threshold=self.zScoreThreshold)
@@ -596,20 +596,20 @@ class Pipeline:
 
             # Load settings
             self.settings['data_processing'] = json.load(open(settings_path, 'r'))
-            self.dataProcesser.load_settings(self.settings['data_processing'])
+            self.dataProcessor.load_settings(self.settings['data_processing'])
 
             if self.verbose > 0:
                 print('[AutoML] Loaded Cleaned Data')
 
         except FileNotFoundError:
             # Cleaning
-            data = self.dataProcesser.fit_transform(data)
+            data = self.dataProcessor.fit_transform(data)
 
             # Store data
             self._write_csv(data, data_path)
 
             # Save settings
-            self.settings['data_processing'] = self.dataProcesser.get_settings()
+            self.settings['data_processing'] = self.dataProcessor.get_settings()
             json.dump(self.settings['data_processing'], open(settings_path, 'w'))
 
         # If no columns were provided, load them from data processor
@@ -718,10 +718,10 @@ class Pipeline:
 
     def _feature_processing(self):
         """
-        Organises feature processing. Heavy lifting is done in self.featureProcesser, but settings, etc.
+        Organises feature processing. Heavy lifting is done in self.featureProcessor, but settings, etc.
         needs to be organised.
         """
-        self.featureProcesser = FeatureProcesser(mode=self.mode, max_lags=self.maxLags, max_diff=self.maxDiff,
+        self.featureProcessor = FeatureProcessor(mode=self.mode, max_lags=self.maxLags, max_diff=self.maxDiff,
                                                  extract_features=self.extractFeatures, timeout=self.featureTimeout,
                                                  information_threshold=self.informationThreshold)
 
@@ -736,7 +736,7 @@ class Pipeline:
 
             # Loading settings
             self.settings['feature_processing'] = json.load(open(settings_path, 'r'))
-            self.featureProcesser.load_settings(self.settings['feature_processing'])
+            self.featureProcessor.load_settings(self.settings['feature_processing'])
             self.featureSets = self.settings['feature_processing']['featureSets']
 
             if self.verbose > 0:
@@ -746,13 +746,13 @@ class Pipeline:
             print('[AutoML] Starting Feature Processor')
 
             # Transform data
-            self.x, self.featureSets = self.featureProcesser.fit_transform(self.x, self.y)
+            self.x, self.featureSets = self.featureProcessor.fit_transform(self.x, self.y)
 
             # Store data
             self._write_csv(self.x, data_path)
 
             # Save settings
-            self.settings['feature_processing'] = self.featureProcesser.get_settings()
+            self.settings['feature_processing'] = self.featureProcessor.get_settings()
             json.dump(self.settings['feature_processing'], open(settings_path, 'w'))
 
     def _standardizing(self):
@@ -1140,15 +1140,15 @@ class Pipeline:
         self.settings['amplo_version'] = Amplo.__version__ if hasattr(Amplo, '__version__') else 'dev'
 
         # Prune Data Processor
-        required_features = self.featureProcesser.get_required_features(self.featureSets[feature_set])
-        self.dataProcesser.prune_features(required_features)
-        self.settings['data_processing'] = self.dataProcesser.get_settings()
+        required_features = self.featureProcessor.get_required_features(self.featureSets[feature_set])
+        self.dataProcessor.prune_features(required_features)
+        self.settings['data_processing'] = self.dataProcessor.get_settings()
 
         # Fit Drift Detector
         self.driftDetector = DriftDetector(
-            num_cols=self.dataProcesser.float_cols + self.dataProcesser.int_cols,
-            cat_cols=self.dataProcesser.cat_cols,
-            date_cols=self.dataProcesser.date_cols
+            num_cols=self.dataProcessor.float_cols + self.dataProcessor.int_cols,
+            cat_cols=self.dataProcessor.cat_cols,
+            date_cols=self.dataProcessor.date_cols
         )
         self.driftDetector.fit(self.data)
         self.driftDetector.fit_output(self.bestModel, self.x[self.featureSets[feature_set]])

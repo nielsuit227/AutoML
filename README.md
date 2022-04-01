@@ -87,7 +87,7 @@ Additional plots for Regression:
 - Scatter Plots
 
 ## Data Processing
-`from Amplo.AutoML import DataProcesser`
+`from Amplo.AutoML import DataProcessor`
 
 Automated Data Cleaning:
 - Infers & converts data types (integer, floats, categorical, datetime)
@@ -121,7 +121,7 @@ minority class helps. Various algorithms are analysed:
 - SMOTE Edited Nearest Neighbours
 
 ## Feature Processing
-`from Amplo.AutoML import FeatureProcesser`
+`from Amplo.AutoML import FeatureProcessor`
 
 Automatically extracts and selects features. Removes Co-Linear Features.
 Included Feature Extraction algorithms:

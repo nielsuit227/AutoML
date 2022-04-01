@@ -238,7 +238,7 @@ class BinaryDocumenting(FPDF):
             ax.spines['right'].set_visible(False)
             ax.spines['bottom'].set_visible(False)
             ax.spines['top'].set_visible(False)
-            keys, fi = self.p.featureProcesser.featureImportance['rf']
+            keys, fi = self.p.featureProcessor.featureImportance['rf']
             plt.barh(keys[:15], width=fi[:15], color='#2369ec')
             fig.savefig(self.p.mainDir + 'EDA/Features/v{}/RF.png'.format(self.p.version), format='png', dpi=200)
 
@@ -456,14 +456,14 @@ class BinaryDocumenting(FPDF):
 
     def features(self):
         features = {
-            'Co-Linear Features': self.p.featureProcesser.coLinearFeatures,
-            'Linear Features': self.p.featureProcesser.linearFeatures,
-            'Arithmetic Features': self.p.featureProcesser.crossFeatures,
-            'Trigonometric Features': self.p.featureProcesser.trigonometricFeatures,
-            'Inverse Features': self.p.featureProcesser.inverseFeatures,
-            'K-Means Features': self.p.featureProcesser.kMeansFeatures,
-            'Lagged Features': self.p.featureProcesser.laggedFeatures,
-            'Differentiated Features': self.p.featureProcesser.diffFeatures,
+            'Co-Linear Features': self.p.featureProcessor.coLinearFeatures,
+            'Linear Features': self.p.featureProcessor.linearFeatures,
+            'Arithmetic Features': self.p.featureProcessor.crossFeatures,
+            'Trigonometric Features': self.p.featureProcessor.trigonometricFeatures,
+            'Inverse Features': self.p.featureProcessor.inverseFeatures,
+            'K-Means Features': self.p.featureProcessor.kMeansFeatures,
+            'Lagged Features': self.p.featureProcessor.laggedFeatures,
+            'Differentiated Features': self.p.featureProcessor.diffFeatures,
         }
         if not self.check_new_page():
             self.ln(20)
@@ -518,10 +518,10 @@ class BinaryDocumenting(FPDF):
                       "  2.  Removed {} outliers with {}\n"
                       "  3.  Imputed {} missing values with {}\n"
                       "  4.  Removed {} columns with constant values\n"
-                      .format(self.p.dataProcesser.removedDuplicateColumns, self.p.dataProcesser.removedDuplicateRows,
-                              self.p.dataProcesser.removedOutliers, self.p.dataProcesser.outlier_removal,
-                              self.p.dataProcesser.imputedMissingValues, self.p.dataProcesser.missing_values,
-                              self.p.dataProcesser.removedConstantColumns))
+                      .format(self.p.dataProcessor.removedDuplicateColumns, self.p.dataProcessor.removedDuplicateRows,
+                              self.p.dataProcessor.removedOutliers, self.p.dataProcessor.outlier_removal,
+                              self.p.dataProcessor.imputedMissingValues, self.p.dataProcessor.missing_values,
+                              self.p.dataProcessor.removedConstantColumns))
 
     def score_board(self):
         if not self.check_new_page():

@@ -3,8 +3,8 @@ import copy
 import faiss
 import numpy as np
 import pandas as pd
-from Amplo.AutoML import DataProcesser
-from Amplo.AutoML import FeatureProcesser
+from Amplo.AutoML import DataProcessor
+from Amplo.AutoML import FeatureProcessor
 
 
 class IntervalAnalyser:
@@ -174,7 +174,7 @@ class IntervalAnalyser:
         self._str_labels = copy.deepcopy(dfs['labels'])
 
         # Clean data
-        dp = DataProcesser(missing_values='zero', target='labels')
+        dp = DataProcessor(missing_values='zero', target='labels')
         dfs = dp.fit_transform(dfs)
 
         # Store copy
@@ -190,7 +190,7 @@ class IntervalAnalyser:
         dfs = dfs.drop('labels', axis=1)
 
         # Select features -- bit hacky to avoid memory
-        fp = FeatureProcesser(extract_features=False, mode='classification')
+        fp = FeatureProcessor(extract_features=False, mode='classification')
         fp.x, fp.y = dfs, labels
         features, _ = fp._sel_gini_impurity()
         dfs = dfs[features]

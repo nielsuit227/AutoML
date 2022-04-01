@@ -86,7 +86,7 @@ class RegressionDocumenting(BinaryDocumenting):
             ax.spines['right'].set_visible(False)
             ax.spines['bottom'].set_visible(False)
             ax.spines['top'].set_visible(False)
-            keys, fi = self.p.featureProcesser.featureImportance['rf']
+            keys, fi = self.p.featureProcessor.featureImportance['rf']
             plt.barh(keys[:15], width=fi[:15], color='#2369ec')
             fig.savefig(self.p.mainDir + 'EDA/Features/v{}/RF.png'.format(self.p.version), format='png', dpi=200)
 
