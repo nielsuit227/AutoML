@@ -58,6 +58,8 @@ class TestIntervalAnalyser(unittest.TestCase):
             dist = ia._distributions[i].values
             assert all(v < 0.8 for v in dist[:int(len(dist) / 2)]), 'Noise with high percentage of neighbors'
             assert all(v > 0.8 for v in dist[int(len(dist) / 2):]), 'Information with low percentage of neighbors'
-        assert len(df) == int(ia.samples / 2), 'Incorrect number of samples'
+        # TODO: change 'labels' and 'Noise' to `IntervalAnalyser.target` and `IntervalAnalyser.noise`
+        df_no_noise = df[df.loc[:, 'labels'] != 'Noise']
+        assert len(df) == ia.samples and len(df_no_noise) == int(ia.samples / 2), 'Incorrect number of samples'
         assert df.index.get_level_values(0).nunique() == ia.n_files, 'Files skipped'
         assert len(df.keys()) == self.n_features + 1, 'Incorrect number of features (+1 for labels)'

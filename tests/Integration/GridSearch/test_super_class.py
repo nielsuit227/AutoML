@@ -1,4 +1,5 @@
 import unittest
+
 from Amplo.GridSearch._GridSearch import _GridSearch  # noqa
 from Amplo.AutoML import Modeller
 
@@ -19,20 +20,20 @@ class TestGridSearchSuperClass(unittest.TestCase):
             models = models.union(m.return_models())
 
         # Define sanity checker for hyper parameter values
-        def sanity_check(name, specifications):
+        def sanity_check(name_, specifications_):
             """Check whether the dictionary and its content is structured as expected"""
             assert_message = 'Erroneous data detected'
             # Check item
-            assert isinstance(name, str), assert_message
-            assert isinstance(specifications, tuple), assert_message
-            # Check specifications
-            p_type = specifications[0]
+            assert isinstance(name_, str), assert_message
+            assert isinstance(specifications_, tuple), assert_message
+            # Check specifications_
+            p_type = specifications_[0]
             assert isinstance(p_type, str), assert_message
-            p_args = specifications[1]
+            p_args = specifications_[1]
             assert isinstance(p_args, (list, tuple)), assert_message
             if p_type != 'categorical':
                 assert all(isinstance(arg, (int, float)) for arg in p_args[:2]), assert_message
-                grid_size = specifications[2]
+                grid_size = specifications_[2]
                 assert isinstance(grid_size, int)
 
         for model in models:

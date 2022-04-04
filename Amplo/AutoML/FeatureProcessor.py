@@ -1,3 +1,4 @@
+import re
 import time
 import copy
 import random
@@ -604,7 +605,7 @@ class FeatureProcessor:
         """
         # Add features
         for k in self.inverseFeatures:
-            key = str(k).lstrip('inv__')
+            key = re.sub(r'^inv__', '', str(k))
             self.x.loc[:, k] = (1 / self.x.loc[:, key]).clip(lower=-1e12, upper=1e12)
 
         # Store

@@ -68,14 +68,14 @@ class Pipeline:
         include_output [bool]: Whether to include output in the training data (sensible only with sequencing)
 
         Feature Processor:
-        extract_features [bool]: Whether or not to use FeatureProcessing module
+        extract_features [bool]: Whether to use FeatureProcessing module
         information_threshold : [FeatureProcessing] Threshold for removing co-linear features
         feature_timeout [int]: [FeatureProcessing] Time budget for feature processing
         max_lags [int]: [FeatureProcessing] Maximum lags for lagged features to analyse
         max_diff [int]: [FeatureProcessing] Maximum differencing order for differencing features
 
         Sequencing:
-        sequence [bool]: [Sequencing] Whether or not to use Sequence module
+        sequence [bool]: [Sequencing] Whether to use Sequence module
         seq_back [int or list[int]]: Input time indices
             If list -> includes all integers within the list
             If int -> includes that many samples back
@@ -93,7 +93,7 @@ class Pipeline:
         store_models [bool]: Whether to store all trained model files
 
         Grid Search:
-        grid_search_type [str]: Which method to use 'optuna', 'halving', 'base'
+        grid_search_type [Optional[str]]: Which method to use 'optuna', 'halving', 'base' or None
         grid_search_time_budget : Time budget for grid search
         grid_search_candidates : Parameter evaluation budget for grid search
         grid_search_iterations : Model evaluation budget for grid search
@@ -106,9 +106,9 @@ class Pipeline:
             with exec, can be multiline. Uses data as input.
 
         Flags:
-        plot_eda [bool]: Whether or not to run Exploratory Data Analysis
-        process_data [bool]: Whether or not to force data processing
-        document_results [bool]: Whether or not to force documenting
+        plot_eda [bool]: Whether to run Exploratory Data Analysis
+        process_data [bool]: Whether to force data processing
+        document_results [bool]: Whether to force documenting
         no_dirs [bool]: Whether to create files or not
         verbose [int]: Level of verbosity
         """
@@ -181,8 +181,9 @@ class Pipeline:
         assert 0 < self.informationThreshold < 1, 'Information threshold needs to be within [0, 1]'
         assert self.maxLags < 50, 'Max_lags too big. Max 50.'
         assert self.maxDiff < 5, 'Max diff too big. Max 5.'
-        assert self.gridSearchType.lower() in ['base', 'halving', 'optuna'], 'Grid Search Type must be Base, Halving ' \
-                                                                             'or Optuna'
+        assert self.gridSearchType is None \
+            or self.gridSearchType.lower() in ['base', 'halving', 'optuna'], \
+            'Grid Search Type must be Base, Halving, Optuna or None'
 
         # Advices
         if self.includeOutput and not self.sequence:
@@ -848,8 +849,17 @@ class Pipeline:
         feature_set [str]- (optional) Which feature set to run grid search for 'rft', 'rfi' or 'pps'
         parameter_set [dict]- (optional) Parameter grid to optimize over
         """
-        assert model is not None and feature_set is not None or model == feature_set, \
+
+        assert (model is not None and feature_set is not None) or model == feature_set, \
             'Model & feature_set need to be either both None or both provided.'
+
+        # Skip grid search and set best initial model as best grid search parameters
+        if self.gridSearchType is None or self.gridSearchIterations == 0:
+            best_initial_model = self._sort_results(self.results[self.results['version'] == self.version]).iloc[0]
+            best_initial_model['type'] = 'Hyper parameter'
+            self.results = self.results.append(best_initial_model)
+            return
+
         # If arguments are provided
         if model is not None:
 
