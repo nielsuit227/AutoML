@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 import matplotlib.pyplot as plt
-from Amplo.Utils import histSearch
+from Amplo.Utils.utils import hist_search
 
 
 class DriftDetector:
@@ -101,7 +101,7 @@ class DriftDetector:
         no_drift = True
         while no_drift:
             for value in prediction:
-                ind = histSearch(x, value)
+                ind = hist_search(x, value)
                 if ind == -1 or y[ind] <= 0:
                     logging.warning(f"[AutoML] Output drift detected!")
                     no_drift = False
@@ -164,12 +164,12 @@ class DriftDetector:
             # Check bins
             if isinstance(data, pd.DataFrame):
                 for v in data[key].values:
-                    ind = histSearch(x, v)
+                    ind = hist_search(x, v)
                     if ind == -1 or y[ind] <= 0:
                         violations.append(key)
                         break
             elif isinstance(data, pd.Series):
-                ind = histSearch(x, data[key])
+                ind = hist_search(x, data[key])
                 if ind == -1 or (y[ind] <= 0 and y[max(0, ind - 1)] <= 0 and y[min(self.n_bins, ind + 1)] <= 0):
                     violations.append(key)
 

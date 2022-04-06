@@ -5,7 +5,7 @@ import pandas as pd
 from sklearn.datasets import load_iris
 from sklearn.datasets import fetch_california_housing
 from Amplo.AutoML import DataProcessor
-from Amplo.Utils import check_dataframe_quality
+from Amplo.Utils.data import check_dataframe_quality
 
 
 class TestDataProcessor(unittest.TestCase):

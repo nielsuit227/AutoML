@@ -1,11 +1,12 @@
 import numpy as np
-from ..Utils import getModel
 from sklearn.svm import SVC
 from sklearn import ensemble
 from sklearn.naive_bayes import GaussianNB
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
+
+from Amplo.Utils.utils import get_model
 
 
 class StackingClassifier:
@@ -106,7 +107,7 @@ class StackingClassifier:
 
             # Add if not in stack
             if len(ind) == 0:
-                model = getModel(model_name, mode='classification', samples=self.n_samples)
+                model = get_model(model_name, mode='classification', samples=self.n_samples)
                 self.stack.append((model_name, model.set_params(**param)))
 
             # Update otherwise

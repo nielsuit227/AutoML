@@ -8,7 +8,7 @@ from sklearn.model_selection import StratifiedKFold
 
 from Amplo.AutoML import Modeller
 from Amplo.GridSearch._GridSearch import _GridSearch  # noqa
-from Amplo.Utils import parse_json
+from Amplo.Utils.io import parse_json
 
 
 __all__ = ['GridSearchTestCase']

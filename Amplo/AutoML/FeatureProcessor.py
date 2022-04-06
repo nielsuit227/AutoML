@@ -116,6 +116,13 @@ class FeatureProcessor:
         x [pd.DataFrame]: Input data with enriched features
         feature_sets [dict]: A dictionary with various selected feature sets
         """
+        # Assertions
+        assert isinstance(x, pd.DataFrame), 'Invalid data type'
+        assert isinstance(y, pd.Series), 'Invalid data type'
+        # Stringify column names
+        x.columns = [str(col) for col in x.columns]
+        y.name = str(y.name)
+
         # First clean (just to make sure), and set in class memory
         self._set_data_mod(x, y)
 

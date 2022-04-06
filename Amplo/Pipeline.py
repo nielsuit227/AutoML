@@ -20,7 +20,6 @@ from sklearn.model_selection import KFold
 from sklearn.model_selection import StratifiedKFold
 
 from Amplo import Utils
-
 from Amplo.AutoML.Sequencer import Sequencer
 from Amplo.AutoML.Modeller import Modeller
 from Amplo.AutoML.DataSampler import DataSampler
@@ -106,6 +105,7 @@ class Pipeline:
             with exec, can be multiline. Uses data as input.
 
         Flags:
+        logging_level [Optional[Union[int, str]]]: Logging level for warnings, info, etc.
         plot_eda [bool]: Whether to run Exploratory Data Analysis
         process_data [bool]: Whether to force data processing
         document_results [bool]: Whether to force documenting
@@ -222,6 +222,9 @@ class Pipeline:
         self.is_fitted = False
 
         # Monitoring
+        logging_level = kwargs.get('logging_level', 'INFO')
+        logging_dir = Path(self.mainDir) / 'app_logs.log' if not self.noDirs else None
+        self.logger = Utils.logging.get_logger('AutoML', logging_dir, logging_level, capture_warnings=True)
         self._prediction_time = None
         self._main_predictors = None
 
@@ -471,7 +474,7 @@ class Pipeline:
             # Test data
             assert isinstance(data, pd.DataFrame), "With only 1 argument, data must be a Pandas Dataframe."
             assert self.target != '', 'No target string provided'
-            assert self.target in Utils.clean_keys(data).keys(), 'Target column missing'
+            assert self.target in Utils.data.clean_keys(data).keys(), 'Target column missing'
 
         elif len(args) + len(kwargs) == 2:
             if len(args) == 2:
@@ -865,7 +868,7 @@ class Pipeline:
 
             # Get model string
             if isinstance(model, str):
-                model = Utils.getModel(model, mode=self.mode, samples=len(self.x))
+                model = Utils.utils.get_model(model, mode=self.mode, samples=len(self.x))
 
             # Organise existing results
             results = self.results[np.logical_and(
@@ -878,7 +881,7 @@ class Pipeline:
             if ('Hyper Parameter' == results['type']).any():
                 print('[AutoML] Loading optimization results.')
                 hyper_opt_results = results[results['type'] == 'Hyper Parameter']
-                params = Utils.parse_json(hyper_opt_results.iloc[0]['params'])
+                params = Utils.io.parse_json(hyper_opt_results.iloc[0]['params'])
 
             # Or run
             else:
@@ -894,7 +897,7 @@ class Pipeline:
                 self.results.to_csv(self.mainDir + 'Results.csv', index=False)
 
                 # Get params for validation
-                params = Utils.parse_json(grid_search_results.iloc[0]['params'])
+                params = Utils.io.parse_json(grid_search_results.iloc[0]['params'])
 
             # Validate
             if self.documentResults:
@@ -909,7 +912,7 @@ class Pipeline:
         for iteration in range(self.gridSearchIterations):
             # Grab settings
             settings = results.iloc[iteration]  # IndexError
-            model = Utils.getModel(settings['model'], mode=self.mode, samples=len(self.x))
+            model = Utils.utils.get_model(settings['model'], mode=self.mode, samples=len(self.x))
             feature_set = settings['dataset']
 
             # Check whether exists
@@ -922,7 +925,7 @@ class Pipeline:
             # If exists
             if ('Hyper Parameter' == model_results['type']).any():
                 hyper_opt_res = model_results[model_results['type'] == 'Hyper Parameter']
-                params = Utils.parse_json(hyper_opt_res.iloc[0]['params'])
+                params = Utils.io.parse_json(hyper_opt_res.iloc[0]['params'])
 
             # Else run
             else:
@@ -936,7 +939,7 @@ class Pipeline:
                 grid_search_results['type'] = 'Hyper Parameter'
                 self.results = self.results.append(grid_search_results)
                 self.results.to_csv(self.mainDir + 'Results.csv', index=False)
-                params = Utils.parse_json(grid_search_results.iloc[0]['params'])
+                params = Utils.io.parse_json(grid_search_results.iloc[0]['params'])
 
             # Validate
             if self.documentResults:
@@ -965,7 +968,7 @@ class Pipeline:
             # Create Stacking Model Params
             n_stacking_models = 3
             stacking_models_str = results['model'].unique()[:n_stacking_models]
-            stacking_models_params = [Utils.parse_json(results.iloc[np.where(results['model'] == sms)[0][0]]['params'])
+            stacking_models_params = [Utils.io.parse_json(results.iloc[np.where(results['model'] == sms)[0][0]]['params'])
                                       for sms in stacking_models_str]
             stacking_models = dict([(sms, stacking_models_params[i]) for i, sms in enumerate(stacking_models_str)])
             print('[AutoML] Stacked models: {}'.format(list(stacking_models.keys())))
@@ -1028,7 +1031,7 @@ class Pipeline:
         """
         # Get model
         if isinstance(model, str):
-            model = Utils.getModel(model, mode=self.mode, samples=len(self.x))
+            model = Utils.utils.get_model(model, mode=self.mode, samples=len(self.x))
 
         # Checks
         assert feature_set in self.featureSets.keys(), 'Feature Set not available.'
@@ -1098,7 +1101,7 @@ class Pipeline:
         # Otherwise, find best
         model = results.iloc[0]['model']
         feature_set = results.iloc[0]['dataset']
-        params = Utils.parse_json(params)
+        params = Utils.io.parse_json(params)
 
         # Printing action
         if self.verbose > 0:
@@ -1124,7 +1127,7 @@ class Pipeline:
 
             else:
                 # Model
-                self.bestModel = Utils.getModel(model, mode=self.mode, samples=len(self.x))
+                self.bestModel = Utils.utils.get_model(model, mode=self.mode, samples=len(self.x))
 
             # Set params, train, & save
             self.bestModel.set_params(**params)
@@ -1324,7 +1327,7 @@ class Pipeline:
             warnings.warn('Hyper parameters not optimized for this combination')
 
         # Parse & return best parameters (regardless of if it's optimized)
-        return Utils.parse_json(results.iloc[0]['params'])
+        return Utils.io.parse_json(results.iloc[0]['params'])
 
     def _grid_search_iteration(self, model, parameter_set: str, feature_set: str):
         """

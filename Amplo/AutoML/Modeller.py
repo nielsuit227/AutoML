@@ -7,16 +7,13 @@ import pandas as pd
 from datetime import datetime
 from sklearn.model_selection import KFold
 from sklearn.model_selection import StratifiedKFold
-from ..Classifiers.CatBoostClassifier import CatBoostClassifier
-from ..Classifiers.XGBClassifier import XGBClassifier
-from ..Classifiers.LGBMClassifier import LGBMClassifier
-from ..Regressors.CatBoostRegressor import CatBoostRegressor
-from ..Regressors.XGBRegressor import XGBRegressor
-from ..Regressors.LGBMRegressor import LGBMRegressor
 from sklearn import linear_model
 from sklearn import ensemble
 from sklearn import svm
 from sklearn import metrics
+
+from Amplo.Classifiers import CatBoostClassifier, XGBClassifier, LGBMClassifier
+from Amplo.Regressors import CatBoostRegressor, XGBRegressor, LGBMRegressor
 
 
 class Modeller:

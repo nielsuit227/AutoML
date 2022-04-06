@@ -1,11 +1,12 @@
 import numpy as np
 import pandas as pd
-from ..Utils import getModel
 from sklearn.svm import SVR
 from sklearn import ensemble
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.linear_model import LinearRegression
+
+from Amplo.Utils.utils import get_model
 
 
 class StackingRegressor:
@@ -96,7 +97,7 @@ class StackingRegressor:
 
             # Add if not in stack
             if len(ind) == 0:
-                model = getModel(model_name, mode='regression', samples=self.n_samples)
+                model = get_model(model_name, mode='regression', samples=self.n_samples)
                 self.stack.append((model_name, model.set_params(**param)))
 
             # Update otherwise
