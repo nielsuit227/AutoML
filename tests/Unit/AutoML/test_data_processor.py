@@ -4,6 +4,9 @@ import numpy as np
 import pandas as pd
 from sklearn.datasets import load_iris
 from sklearn.datasets import fetch_california_housing
+
+# TODO: Make use of the dummy data creator
+#  from Amplo.Utils.testing import (DummyDataSampler, make_data, make_cat_data, make_num_data)
 from Amplo.AutoML import DataProcessor
 from Amplo.Utils.data import check_dataframe_quality
 

@@ -1,9 +1,16 @@
-import logging
+import warnings
+from typing import Union
+
 import numpy as np
 import pandas as pd
 from scipy import stats
 import matplotlib.pyplot as plt
+
 from Amplo.Utils.utils import hist_search
+
+
+class DataDriftWarning(Warning):
+    pass
 
 
 class DriftDetector:
@@ -42,7 +49,7 @@ class DriftDetector:
         self.output_bins = (None, None)
         self.distributions = {}
 
-    def fit(self, data: pd.DataFrame) -> object:
+    def fit(self, data: pd.DataFrame) -> 'DriftDetector':
         """
         Fits the class object
         """
@@ -60,10 +67,8 @@ class DriftDetector:
         """
         violations = []
 
-        # Histogram
         violations.extend(self._check_bins(data))
-
-        # todo add distributions
+        violations.extend(self._check_distributions(data))
 
         return violations
 
@@ -81,7 +86,7 @@ class DriftDetector:
             prediction = model.predict(data)
 
         ma, mi = max(prediction), min(prediction)
-        y, x = np.histogram(prediction, bins=self.n_bins, range=(mi - (ma - mi) / 10, ma + (ma - mi) / 10))
+        y, x = np.histogram(prediction, bins=self.n_bins - 1, range=(mi - (ma - mi) / 10, ma + (ma - mi) / 10))
         self.output_bins = (x.tolist(), y.tolist())
 
     def check_output(self, model, data: pd.DataFrame, add: bool = False):
@@ -98,13 +103,15 @@ class DriftDetector:
 
         # Check all predictions
         x, y = self.output_bins
-        no_drift = True
-        while no_drift:
-            for value in prediction:
-                ind = hist_search(x, value)
-                if ind == -1 or y[ind] <= 0:
-                    logging.warning(f"[AutoML] Output drift detected!")
-                    no_drift = False
+        count_drifts = 0
+        for value in prediction:
+            ind = hist_search(x, value)
+            if ind == -1 or y[ind] <= 0:
+                # Drift detected
+                count_drifts += 1
+        if count_drifts > 0:
+            severity = count_drifts / len(prediction) * 100
+            warnings.warn(DataDriftWarning(f'[AutoML] Output drift detected! Severity: {severity:.2f}%'))
 
         # Add new output
         if add:
@@ -163,8 +170,8 @@ class DriftDetector:
 
             # Check bins
             if isinstance(data, pd.DataFrame):
-                for v in data[key].values:
-                    ind = hist_search(x, v)
+                for value in data[key].values:
+                    ind = hist_search(x, value)
                     if ind == -1 or y[ind] <= 0:
                         violations.append(key)
                         break
@@ -179,7 +186,8 @@ class DriftDetector:
                 self.bins[key] = (x, y)
 
         if len(violations) > 0:
-            logging.warning(f"[AutoML] Drift detected!  {len(violations)} features outside training bins: {violations}")
+            warnings.warn(DataDriftWarning(f"[AutoML] Drift detected! "
+                                           f"{len(violations)} features outside training bins: {violations}"))
 
         return violations
 
@@ -222,10 +230,10 @@ class DriftDetector:
         """
         Checks whether the new data falls within the fitted distributions
         """
-        if self.with_pdf:
-            # Init
-            violations = []
+        # Init
+        violations = []
 
+        if self.with_pdf:
             # Check all numerical columns
             for key in self.num_cols:
                 dist = getattr(stats, self.distributions[key]['distribution'])
@@ -237,12 +245,12 @@ class DriftDetector:
                     continue
 
             if len(violations) > 0:
-                logging.warning(f"[AutoML] Drift detected!  {len(violations)} features outside training bins: "
-                                f"{violations}")
+                warnings.warn(DataDriftWarning(f"[AutoML] Drift detected! "
+                                               f"{len(violations)} features outside training bins: {violations}"))
 
-            return violations
+        return violations
 
-    def add_output_bins(self, old_bins: tuple, prediction: np.ndarray):
+    def add_output_bins(self, old_bins: tuple, prediction: Union[np.ndarray, pd.Series]):
         """
         Just a utility, adds new data to an old distribution.
         """
