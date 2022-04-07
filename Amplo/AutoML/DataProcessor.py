@@ -19,7 +19,7 @@ class DataProcessor:
                  z_score_threshold: int = 4,
                  remove_constants: bool = True,
                  version: int = 1,
-                 verbosity: int = 0,
+                 verbosity: int = 1,
                  ):
         """
         Preprocessing Class. Cleans a dataset into a workable format.
@@ -112,6 +112,7 @@ class DataProcessor:
         -------
         DataProcessor
         """
+        print('USING LOCAL')
 
         # Clean Keys
         self.data = clean_keys(data)
@@ -174,7 +175,7 @@ class DataProcessor:
         # Finish
         self.is_fitted = True
         if self.verbosity > 0:
-            print(f'[AutoML] Processing completed, ({len(data)} x {len(data.keys())}) samples returned')
+            print(f'[AutoML] Processing completed, ({len(self.data)} x {len(self.data.keys())}) samples returned')
 
         return self.data
 
@@ -373,8 +374,9 @@ class DataProcessor:
             self.data = data
 
         for key in self.cat_cols:
+            # Todo somehow the dummies are longer than the original
             dummies = pd.get_dummies(self.data[key], prefix=key, dummy_na=self.data[key].isna().sum() > 0)
-            self.data = self.data.drop(key, axis=1).join(dummies)
+            self.data = pd.concat([self.data.drop(key, axis=1), dummies], axis=1)
             self.dummies[key] = dummies.keys().tolist()
         return self.data
 

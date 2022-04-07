@@ -1,6 +1,7 @@
 import os
 import copy
 import faiss
+import warnings
 import numpy as np
 import pandas as pd
 from Amplo.AutoML import DataProcessor
@@ -153,7 +154,12 @@ class IntervalAnalyser:
                     print(f"[AutoML] {self.folder}{folder}/{file}")
 
                 # Read df
-                df = self._read(f'{self.folder}{folder}/{file}')
+                try:
+                    df = self._read(f'{self.folder}{folder}/{file}')
+                except Exception as e:
+                    warnings.warn(f"Couldn't load log {folder}/{file}: {e}")
+                    continue
+
 
                 # Set label
                 df['labels'] = folder
@@ -199,6 +205,10 @@ class IntervalAnalyser:
         # Normalize
         self._mins, self._maxs = dfs.min(), dfs.max()
         dfs = (dfs - dfs.min()) / (dfs.max() - dfs.min())
+
+        # Change float64 to float32
+        for col in dfs.select_dtypes(include=['float64']).keys():
+            dfs[col] = dfs[col].astype('float32')
 
         # Set sizes
         self.samples = len(dfs)
