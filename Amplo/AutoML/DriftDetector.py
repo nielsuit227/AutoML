@@ -86,7 +86,7 @@ class DriftDetector:
             prediction = model.predict(data)
 
         ma, mi = max(prediction), min(prediction)
-        y, x = np.histogram(prediction, bins=self.n_bins - 1, range=(mi - (ma - mi) / 10, ma + (ma - mi) / 10))
+        y, x = np.histogram(prediction, bins=self.n_bins, range=(mi - (ma - mi) / 10, ma + (ma - mi) / 10))
         self.output_bins = (x.tolist(), y.tolist())
 
     def check_output(self, model, data: pd.DataFrame, add: bool = False):
