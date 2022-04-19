@@ -6,14 +6,14 @@ import pandas as pd
 from sklearn.datasets import make_classification, make_regression
 from Amplo import Pipeline
 from Amplo.AutoML import Modeller
+from tests import rmtree_automl
 
 
 class TestPipeline(unittest.TestCase):
 
     def test_main_predictors(self):
-        if os.path.exists('AutoML'):
-            shutil.rmtree('AutoML')
-        for mode in ['classification', 'regression']:
+        @rmtree_automl
+        def test_predictor_by_(mode):
             if mode == 'classification':
                 x, y = make_classification()
             else:
@@ -30,22 +30,19 @@ class TestPipeline(unittest.TestCase):
                     pipeline.predict(x)
                     assert isinstance(pipeline._main_predictors, dict), 'Main predictors not dictionary.'
 
-            if os.path.exists('AutoML'):
-                shutil.rmtree('AutoML')
+        for mode_ in ['classification', 'regression']:
+            test_predictor_by_(mode_)
 
+    @rmtree_automl
     def test_no_dirs(self):
-        if os.path.exists('AutoML'):
-            shutil.rmtree('AutoML')
         pipeline = Pipeline(no_dirs=True)
         assert not os.path.exists('AutoML'), 'Directory created'
 
+    @rmtree_automl
     def test_no_args(self):
-        if os.path.exists('AutoML'):
-            shutil.rmtree('AutoML')
         x, y = make_regression()
         pipeline = Pipeline(grid_search_iterations=0)
         pipeline.fit(x, y)
-        shutil.rmtree('AutoML')
 
     def test_mode_detector(self):
         x, y = make_regression()
@@ -59,10 +56,8 @@ class TestPipeline(unittest.TestCase):
         assert pipeline.mode == 'classification'
         shutil.rmtree('AutoML')
 
+    @rmtree_automl
     def test_create_folders(self):
-        if os.path.exists('AutoML'):
-            shutil.rmtree('AutoML')
-
         x, y = make_classification()
         pipeline = Pipeline(grid_search_iterations=0)
         pipeline.fit(x, y)

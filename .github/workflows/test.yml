@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  AZURE_STORAGE_STRING: ${{ secrets.AZURE_STORAGE_STRING }}
+  AMPLO_PLATFORM_STRING: ${{ secrets.AMPLO_PLATFORM_STRING }}
+
 jobs:
   build:
     runs-on: ubuntu-latest

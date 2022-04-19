@@ -1,21 +1,28 @@
 import os
 import copy
-import faiss
 import warnings
+from typing import Union
+from pathlib import Path
+
+import faiss
 import numpy as np
 import pandas as pd
-from Amplo.AutoML import DataProcessor
-from Amplo.AutoML import FeatureProcessor
+
+from Amplo.AutoML import DataProcessor, FeatureProcessor
 
 
 class IntervalAnalyser:
 
+    target = 'labels'
+    noise = 'Noise'
+
     def __init__(self,
                  folder: str = None,
-                 norm: str = 'euclidean',
+                 norm: str = 'euclidean',  # TODO: implement functionality
                  min_length: int = 1000,
                  n_neighbors: int = None,
                  n_trees: int = 10,
+                 pipeline=None,
                  verbose: int = 1,
                  ):
         """
@@ -37,13 +44,24 @@ class IntervalAnalyser:
 
         Parameters
         ----------
-        folder [str]:       Parent folder of labels
-        index_col [str]:    For reading the log files
-        min_length [int]:   Minimum length to cut off, everything shorter is left untouched
-        norm [str]:         Optimization metric for K-Nearest Neighbors
-        n_neighbors [int]:  Quantity of neighbors, default to 3 * log length
-        n_trees [int]:      Quantity of trees
+        folder : str
+            Parent folder of labels
+        norm : str
+            Optimization metric for K-Nearest Neighbors
+            NOTE: This option has no effect, yet!
+        min_length : int
+            Minimum length to cut off, everything shorter is left untouched
+        n_neighbors : int, optional
+            Quantity of neighbors, default to 3 * log length
+        n_trees : int
+            Quantity of trees
+        pipeline : Pipeline, optional
+            Pipeline instance in order to call `_data_processing()` and thus synchronize behavior
         """
+        # Test
+        assert norm in ['euclidean', 'manhattan', 'angular', 'hamming', 'dot']
+        assert pipeline is None or type(pipeline).__name__ == 'Pipeline', 'Invalid argument'
+
         # Parameters
         self.folder = folder + '/' if len(folder) == 0 or folder[-1] != '/' else folder
         self.min_length = min_length
@@ -66,9 +84,7 @@ class IntervalAnalyser:
         self._engine = None
         self._distributions = None
         self._str_labels = None
-
-        # Test
-        assert norm in ['euclidean', 'manhattan', 'angular', 'hamming', 'dot']
+        self._pipeline = pipeline
 
     def fit_transform(self) -> pd.DataFrame:
         """
@@ -127,7 +143,7 @@ class IntervalAnalyser:
                 print(f'[AutoML] Removing {len(ind_remove)} samples from {os.listdir(self.folder)[labels[(i, 0)]]}')
 
         # Return stored df and remove samples
-        self._df['labels'][ind_remove] = 'Noise'
+        self._df[self.target][ind_remove] = self.noise
         return self._df
 
     def _parse_data(self):
@@ -146,23 +162,28 @@ class IntervalAnalyser:
         dfs = []
 
         # Loop through files
-        for folder in os.listdir(self.folder):
-            for file in os.listdir(self.folder + folder):
+        for folder in Path(self.folder).glob('*'):
+
+            # Skip if not a folder
+            if not folder.is_dir():
+                continue
+
+            for file in folder.glob('*.*'):
 
                 # Verbose
                 if self.verbose > 1:
-                    print(f"[AutoML] {self.folder}{folder}/{file}")
+                    print(f"[AutoML] {file}")
 
                 # Read df
                 try:
-                    df = self._read(f'{self.folder}{folder}/{file}')
-                except Exception as e:
-                    warnings.warn(f"Couldn't load log {folder}/{file}: {e}")
+                    df = self._read(file)
+                except pd.errors.EmptyDataError as e:
+                    # Skip when empty
+                    warnings.warn(f'[AutoML] Empty file detected: {file} - {e}')
                     continue
 
-
                 # Set label
-                df['labels'] = folder
+                df[self.target] = folder.name
 
                 # Set second index
                 df = df.set_index(pd.MultiIndex.from_product([[self.n_files], df.index.values], names=['log', 'index']))
@@ -174,32 +195,40 @@ class IntervalAnalyser:
                 self.n_files += 1
             self.n_folders += 1
 
-        # Concatenate dataframes
-        dfs = pd.concat(dfs)
+        if len(dfs) == 1:
+            # Omit concatenation when only one item
+            dfs = dfs[0]
+        else:
+            # Concatenate dataframes
+            dfs = pd.concat(dfs)
 
         # Extract string labels
-        self._str_labels = copy.deepcopy(dfs['labels'])
+        self._str_labels = copy.deepcopy(dfs[self.target])
 
         # Clean data
-        dp = DataProcessor(missing_values='zero', target='labels')
+        if self._pipeline is not None:
+            self._pipeline._data_processing(dfs, add_to_name='_Interval')  # noqa
+            dp = self._pipeline.dataProcessor
+        else:
+            dp = DataProcessor(missing_values='zero', target=self.target)
         dfs = dp.fit_transform(dfs)
 
         # Store copy
         self._df = copy.deepcopy(dfs)
-        self._df['labels'] = self._str_labels
+        self._df[self.target] = self._str_labels
 
         # Remove datetime columns
         if len(dp.date_cols) != 0:
             dfs = dfs.drop(dp.date_cols, axis=1)
 
         # Remove classes
-        labels = dfs['labels']
-        dfs = dfs.drop('labels', axis=1)
+        labels = dfs[self.target]
+        dfs = dfs.drop(self.target, axis=1)
 
         # Select features -- bit hacky to avoid memory
         fp = FeatureProcessor(extract_features=False, mode='classification')
         fp.x, fp.y = dfs, labels
-        features, _ = fp._sel_gini_impurity()
+        features, _ = fp._sel_gini_impurity()  # noqa
         dfs = dfs[features]
 
         # Normalize
@@ -233,11 +262,11 @@ class IntervalAnalyser:
 
         return engine
 
-    def _read(self, path: str) -> pd.DataFrame:
+    def _read(self, path: Union[str, Path]) -> pd.DataFrame:
         """
         Wrapper for various read functions
         """
-        f_ext = path[path.rfind('.'):]
+        f_ext = Path(path).suffix
         if f_ext == '.csv':
             return pd.read_csv(path)
         elif f_ext == '.json':

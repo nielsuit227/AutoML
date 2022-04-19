@@ -3,13 +3,20 @@ import json
 import joblib
 import shutil
 import unittest
+import warnings
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from sklearn.datasets import make_classification
 from sklearn.datasets import make_regression
 from sklearn.metrics import r2_score
 from sklearn.metrics import log_loss
+
 from Amplo import Pipeline
+from Amplo.Utils.testing import make_interval_data
+from Amplo.AutoML import IntervalAnalyser
+from tests import rmtree_automl
 
 
 class TestPipeline(unittest.TestCase):
@@ -23,10 +30,8 @@ class TestPipeline(unittest.TestCase):
         cls.r_data = pd.DataFrame(x, columns=['Feature_{}'.format(i) for i in range(x.shape[1])])
         cls.r_data['target'] = y
 
+    @rmtree_automl
     def test_mode_detector(self):
-        if os.path.exists('AutoML'):
-            shutil.rmtree('AutoML')
-
         # Classification numeric
         pipeline = Pipeline(no_dirs=True, target='target')
         pipeline._mode_detector(self.c_data)
@@ -44,9 +49,8 @@ class TestPipeline(unittest.TestCase):
         pipeline._mode_detector(self.r_data)
         assert pipeline.mode == 'regression'
 
+    @rmtree_automl
     def test_stacking(self):
-        if os.path.exists('AutoML'):
-            shutil.rmtree('AutoML')
         pipeline = Pipeline(target='target', grid_search_candidates=1,
                             stacking=True, feature_timeout=5)
         pipeline.fit(self.c_data)
@@ -58,18 +62,14 @@ class TestPipeline(unittest.TestCase):
         pipeline._prepare_production_files(model='StackingRegressor')
         shutil.rmtree('AutoML')
 
+    @rmtree_automl
     def test_regression(self):
-        if os.path.exists('AutoML'):
-            shutil.rmtree('AutoML')
-
         pipeline = Pipeline(target='target',
                             name='AutoReg',
                             mode='regression',
                             objective='r2',
                             feature_timeout=5,
-                            grid_search_iterations=1,
-                            grid_search_time_budget=10,
-                            grid_search_candidates=2,
+                            grid_search_iterations=0,
                             plot_eda=False,
                             process_data=False,
                             document_results=False,
@@ -117,21 +117,15 @@ class TestPipeline(unittest.TestCase):
         assert 'validation' in settings
         assert 'data_processing' in settings
 
-        # Cleanup
-        shutil.rmtree('AutoML')
-
+    @rmtree_automl
     def test_classification(self):
-        if os.path.exists('AutoML'):
-            shutil.rmtree('AutoML')
         pipeline = Pipeline(target='target',
                             name='AutoClass',
                             mode='classification',
                             objective='neg_log_loss',
                             standardize=True,
                             feature_timeout=5,
-                            grid_search_iterations=1,
-                            grid_search_time_budget=10,
-                            grid_search_candidates=2,
+                            grid_search_iterations=0,
                             plot_eda=False,
                             process_data=True,
                             document_results=False,
@@ -169,13 +163,40 @@ class TestPipeline(unittest.TestCase):
         assert 'validation' in settings
         assert 'data_processing' in settings
 
-        # Cleanup
-        shutil.rmtree('AutoML')
-
-
     def test_drift(self):
         # todo connect with logger
+        warnings.warn('This test is not yet implemented')
         pass
 
     def test_all_models(self):
+        # TODO
+        warnings.warn('This test is not yet implemented')
         pass
+
+    @rmtree_automl
+    def test_interval_analyzer(self):
+        """Use interval analyzer by default when a folder with logs is presented to pipeline"""
+        # Create dummy data
+        data_dir = './test_data'
+        make_interval_data(directory=data_dir)
+        # TODO: does it have to work also with n_labels=1 and n_logs=1?
+
+        # Pipeline
+        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline.fit(data_dir)
+
+        # Check initial data handling
+        assert pipeline._data_from_interval_analyzer, '``IntervalAnalyser`` was not activated'
+        assert Path('AutoML/Data/Interval_Analyzed_v1.csv').exists(), \
+            'Interval-analyzed data was not properly stored'
+        assert pipeline.target == IntervalAnalyser.target, 'Targets should match'
+        assert list(pipeline.data.index.names) == ['log', 'index'], 'Index is incorrect'
+
+        # Check data processing
+        assert Path('AutoML/Data/Cleaned_Interval_v1.csv').exists(), \
+            'Either ``IntervalAnalyser`` did not call ``Pipeline._data_processing()`` ' \
+            'or *.csv file was not stored / stored in different path'
+        assert pipeline.dataProcessor.is_fitted, 'Data Processor was not fitted'
+
+        # Remove dummy data
+        shutil.rmtree(data_dir)

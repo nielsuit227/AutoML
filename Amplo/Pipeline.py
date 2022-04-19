@@ -27,6 +27,7 @@ from Amplo.AutoML.DataExplorer import DataExplorer
 from Amplo.AutoML.DataProcessor import DataProcessor
 from Amplo.AutoML.DriftDetector import DriftDetector
 from Amplo.AutoML.FeatureProcessor import FeatureProcessor
+from Amplo.AutoML.IntervalAnalyser import IntervalAnalyser
 from Amplo.Regressors.StackingRegressor import StackingRegressor
 from Amplo.Classifiers.StackingClassifier import StackingClassifier
 
@@ -50,6 +51,7 @@ class Pipeline:
         Parameters
         ----------
         Main Parameters:
+        main_dir [str]: Main directory of Pipeline (for documentation)
         target [str]: Column name of the output/dependent/regressand variable.
         name [str]: Name of the project (for documentation)
         version [int]: Pipeline version (set automatically)
@@ -112,11 +114,11 @@ class Pipeline:
         no_dirs [bool]: Whether to create files or not
         verbose [int]: Level of verbosity
         """
-        self.mainDir = 'AutoML/'
 
         # Copy arguments
         ##################
         # Main Settings
+        self.mainDir = kwargs.get('main_dir', 'AutoML/')
         self.target = re.sub('[^a-z0-9]', '_', kwargs.get('target', '').lower())
         self.name = kwargs.get('name', 'AutoML')
         self.version = kwargs.get('version', None)
@@ -124,10 +126,10 @@ class Pipeline:
         self.objective = kwargs.get('objective', None)
 
         # Data Processor
-        self.intCols = kwargs.get('int_cols', [])
-        self.floatCols = kwargs.get('float_cols', [])
-        self.dateCols = kwargs.get('date_cols', [])
-        self.catCols = kwargs.get('cat_cols', [])
+        self.intCols = kwargs.get('int_cols', None)
+        self.floatCols = kwargs.get('float_cols', None)
+        self.dateCols = kwargs.get('date_cols', None)
+        self.catCols = kwargs.get('cat_cols', None)
         self.missingValues = kwargs.get('missing_values', 'zero')
         self.outlierRemoval = kwargs.get('outlier_removal', 'clip')
         self.zScoreThreshold = kwargs.get('z_score_threshold', 4)
@@ -220,6 +222,7 @@ class Pipeline:
         self.results = None
         self.n_classes = None
         self.is_fitted = False
+        self._data_from_interval_analyzer = False
 
         # Monitoring
         logging_level = kwargs.get('logging_level', 'INFO')
@@ -471,8 +474,18 @@ class Pipeline:
             else:
                 raise ValueError('No data provided')
 
+            # Parse data
+            if isinstance(data, pd.DataFrame):
+                # Do nothing
+                pass
+            elif os.path.isdir(data):
+                # Interval-analyze data
+                data = self._interval_analyze_data(folder=data)
+            else:
+                raise ValueError('With only one argument, data must be either a `pandas.DataFrame` '
+                                 'or a directory to data compatible with `Amplo.IntervalAnalyzer`.')
+
             # Test data
-            assert isinstance(data, pd.DataFrame), "With only 1 argument, data must be a Pandas Dataframe."
             assert self.target != '', 'No target string provided'
             assert self.target in Utils.data.clean_keys(data).keys(), 'Target column missing'
 
@@ -580,19 +593,78 @@ class Pipeline:
         # Write data
         data.to_csv(data_path)
 
-    def _data_processing(self, data: pd.DataFrame):
+    def _interval_analyze_data(self, folder):
+        """
+        Interval-analyzes the data using ``Amplo.AutoML.IntervalAnalyser``
+        or resorts to pre-computed data, if present.
+
+        Parameters
+        ----------
+        folder : str or Path
+            Directory containing data for `IntervalAnalyser`
+
+        Returns
+        -------
+        pd.DataFrame
+            Interval-analyzed data
+        """
+
+        # Set paths
+        data_path = self.mainDir + f'Data/Interval_Analyzed_v{self.version}.csv'
+
+        # Set target
+        self.target = IntervalAnalyser.target
+
+        # Check if exists
+        try:
+            # Load data
+            data = self._read_csv(data_path)
+
+            if self.verbose > 0:
+                print('[AutoML] Loaded interval-analyzed data')
+
+        except FileNotFoundError:
+            print(f'[AutoML] Interval-analyzing data from directory {folder}')
+
+            # Interval-analyze data
+            data = IntervalAnalyser(folder=folder, pipeline=self).fit_transform()
+
+            # Store data
+            self._write_csv(data, data_path)
+
+        # Set flag
+        self._data_from_interval_analyzer = True
+
+        return data
+
+    def _data_processing(self, data: pd.DataFrame, *, add_to_name=''):
         """
         Organises the data cleaning. Heavy lifting is done in self.dataProcessor, but settings etc. needs
         to be organised.
+
+        Parameters
+        ----------
+        data : pd.DataFrame
+            Data to process
+        add_to_name : str
+            To manipulate filenames. This is particularly interesting for the IntervalAnalyser,
+            as it calls this function too but needs a custom filename.
         """
+
+        # Skip feature processing if data was processed with ``IntervalAnalyser``
+        # because ``_data_processing`` was already called internally
+        if self._data_from_interval_analyzer:
+            print('[AutoML] Skipped Data Processor (since already done)')
+            return
+
         self.dataProcessor = DataProcessor(target=self.target, int_cols=self.intCols, float_cols=self.floatCols,
                                            date_cols=self.dateCols, cat_cols=self.catCols,
                                            missing_values=self.missingValues,
                                            outlier_removal=self.outlierRemoval, z_score_threshold=self.zScoreThreshold)
 
         # Set paths
-        data_path = self.mainDir + f'Data/Cleaned_v{self.version}.csv'
-        settings_path = self.mainDir + f'Settings/Cleaning_v{self.version}.json'
+        data_path = self.mainDir + f'Data/Cleaned{add_to_name}_v{self.version}.csv'
+        settings_path = self.mainDir + f'Settings/Cleaning{add_to_name}_v{self.version}.json'
 
         try:
             # Load data
