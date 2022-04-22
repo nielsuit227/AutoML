@@ -23,8 +23,17 @@ jobs:
         pip install --upgrade pip
         pip install -r requirements.txt
         pip install pytest
+        pip install pytest-cov
 
     # Run tests
     - name: Test Suite
       run: |
-        pytest tests -s
+        pytest tests -s --cov=./ --cov-report=xml
+        
+    # Code coverage
+    - uses: codecov/codecov-action@v2
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
+        name: amploml-coverage # optional
+        fail_ci_if_error: true # optional (default = false)
+        verbose: true # optional (default = false)
