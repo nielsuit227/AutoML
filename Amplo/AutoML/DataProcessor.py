@@ -247,10 +247,10 @@ class DataProcessor:
         self.missing_values = settings.get('missing_values', [])
         self.outlier_removal = settings.get('outlier_removal', [])
         self.z_score_threshold = settings.get('z_score_threshold', [])
-        self._means = None if settings['_means'] is None else pd.read_json(settings['_means'])
-        self._stds = None if settings['_stds'] is None else pd.read_json(settings['_stds'])
-        self._q1 = None if settings['_q1'] is None else pd.read_json(settings['_q1'])
-        self._q3 = None if settings['_q3'] is None else pd.read_json(settings['_q3'])
+        self._means = None if settings['_means'] is None else pd.read_json(settings['_means'], typ='series')
+        self._stds = None if settings['_stds'] is None else pd.read_json(settings['_stds'], typ='series')
+        self._q1 = None if settings['_q1'] is None else pd.read_json(settings['_q1'], typ='series')
+        self._q3 = None if settings['_q3'] is None else pd.read_json(settings['_q3'], typ='series')
         self.dummies = settings.get('dummies', {})
         self.is_fitted = True
 

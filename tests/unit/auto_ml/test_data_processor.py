@@ -181,6 +181,7 @@ class TestDataProcessor:
         assert 'a_hoi' in list(df.keys()), f'Categorical column not properly converted: {df.keys()}'
 
     def test_settings(self):
+        # todo add tests for different arguments, was failing for outlier_removal=z-score.
         target = 'target'
         x = pd.DataFrame({'a': ['a', 'b', 'c', 'b', 'c', 'a'],
                           'b': [1, 1, 1, 1, 1, 1],
