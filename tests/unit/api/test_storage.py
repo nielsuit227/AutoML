@@ -1,8 +1,9 @@
 from Amplo.API.storage import AzureSynchronizer
-from tests.Unit.API import APITestCase
+
+from tests.unit.api import TestAPI
 
 
-class TestStorage(APITestCase):
+class TestStorage(TestAPI):
 
     def test_get_dir_paths(self):
         blob_dir = 'Demo/Charger 75kW/data'
@@ -29,4 +30,4 @@ class TestStorage(APITestCase):
         # Assert that files have been synchronized
         blob_files = sync.get_filenames(blob_dir)
         local_files = [path.name for path in local_dir.glob('*')]
-        assert set(blob_files) == set(local_files), 'Synchronization has failed. Content is not equal...'
+        assert set(blob_files).issubset(local_files), 'Synchronization has failed. Content is not equal...'

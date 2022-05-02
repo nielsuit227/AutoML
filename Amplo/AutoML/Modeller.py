@@ -194,7 +194,7 @@ class Modeller:
                     'mean_time': np.mean(train_time),
                     'std_time': np.std(train_time)
                 }
-                self.results = self.results.append(result, ignore_index=True)
+                self.results = pd.concat([self.results, pd.Series(result).to_frame().T], ignore_index=True)
                 self.print_results(result)
 
                 # Store model

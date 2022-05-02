@@ -10,6 +10,7 @@ import warnings
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from typing import Union
 from pathlib import Path
 from datetime import datetime
 from shap import TreeExplainer
@@ -74,6 +75,10 @@ class Pipeline:
         feature_timeout [int]: [FeatureProcessing] Time budget for feature processing
         max_lags [int]: [FeatureProcessing] Maximum lags for lagged features to analyse
         max_diff [int]: [FeatureProcessing] Maximum differencing order for differencing features
+
+        Interval Analyser:
+        interval_analyse [bool]: Whether to use IntervalAnalyser module
+            Note that this has no effect when data from ``self._read_data`` is not multi-indexed
 
         Sequencing:
         sequence [bool]: [Sequencing] Whether to use Sequence module
@@ -145,6 +150,9 @@ class Pipeline:
         self.maxLags = kwargs.get('max_lags', 0)
         self.maxDiff = kwargs.get('max_diff', 0)
 
+        # Interval Analyser
+        self.useIntervalAnalyser = kwargs.get('interval_analyse', True)
+
         # Sequencer
         self.sequence = kwargs.get('sequence', False)
         self.sequenceBack = kwargs.get('seq_back', 1)
@@ -211,18 +219,16 @@ class Pipeline:
         self.dataProcessor = DataProcessor()
         self.dataSequencer = Sequencer()
         self.featureProcessor = FeatureProcessor()
+        self.intervalAnalyser = IntervalAnalyser()
         self.driftDetector = DriftDetector()
 
         # Instance initiating
         self.bestModel = None
-        self.data = None
-        self.x = None
-        self.y = None
+        self._data = None
         self.featureSets = None
         self.results = None
         self.n_classes = None
         self.is_fitted = False
-        self._data_from_interval_analyzer = False
 
         # Monitoring
         logging_level = kwargs.get('logging_level', 'INFO')
@@ -232,12 +238,22 @@ class Pipeline:
         self._main_predictors = None
 
     # User Pointing Functions
-    def get_settings(self) -> dict:
+    def get_settings(self, version: int = None) -> dict:
         """
         Get settings to recreate fitted object.
+
+        Parameters
+        ----------
+        version : int, optional
+            Production version, defaults to current version
         """
-        assert self.is_fitted, "Pipeline not yet fitted."
-        return self.settings
+        if version is None or version == self.version:
+            assert self.is_fitted, "Pipeline not yet fitted."
+            return self.settings
+        else:
+            settings_path = self.mainDir + f'Production/v{self.version}/Settings.json'
+            assert Path(settings_path).exists(), 'Cannot load settings from nonexistent version'
+            return json.load(open(settings_path, 'r'))
 
     def load_settings(self, settings: dict):
         """
@@ -253,6 +269,7 @@ class Pipeline:
         self.settings = settings
         self.dataProcessor.load_settings(settings['data_processing'])
         self.featureProcessor.load_settings(settings['feature_processing'])
+        # TODO: load_settings for IntervalAnalyser (not yet implemented)
         if 'drift_detector' in settings:
             self.driftDetector = DriftDetector(
                 num_cols=self.dataProcessor.float_cols + self.dataProcessor.int_cols,
@@ -270,39 +287,57 @@ class Pipeline:
 
     def fit(self, *args, **kwargs):
         """
-        Fit the full autoML pipeline.
-
-        1. Data Processing
-        Cleans all the data. See @DataProcessing
-        2. (optional) Exploratory Data Analysis
-        Creates a ton of plots which are helpful to improve predictions manually
-        3. Feature Processing
-        Extracts & Selects. See @FeatureProcessing
-        4. Initial Modelling
-        Runs various off the shelf models with default parameters for all feature sets
-        If Sequencing is enabled, this is where it happens, as here, the feature set is generated.
-        5. Grid Search
-        Optimizes the hyper parameters of the best performing models
-        6. (optional) Create Stacking model
-        7. (optional) Create documentation
-        8. Prepare Production Files
-        Nicely organises all required scripts / files to make a prediction
+        Fit the full AutoML pipeline.
+            1. Prepare data for training
+            2. Train / optimize models
+            3. Prepare Production Files
+                Nicely organises all required scripts / files to make a prediction
 
         Parameters
         ----------
-        data [pd.DataFrame] - Single dataframe with input and output data.
+        args
+            For data reading - Propagated to `self.data_preparation`
+        kwargs
+            For data reading (propagated to `self.data_preparation`) AND
+            for production filing (propagated to `self.conclude_fitting`)
         """
         # Starting
         print('\n\n*** Starting Amplo AutoML - {} ***\n\n'.format(self.name))
 
+        # Prepare data for training
+        self.data_preparation(*args, **kwargs)
+
+        # Train / optimize models
+        self.model_training()
+
+        # Conclude fitting
+        self.conclude_fitting(**kwargs)
+
+    def data_preparation(self, *args, **kwargs):
+        """
+        Prepare data for modelling
+            1. Data Processing
+                Cleans all the data. See @DataProcessing
+            2. (optional) Exploratory Data Analysis
+                Creates a ton of plots which are helpful to improve predictions manually
+            3. Feature Processing
+                Extracts & Selects. See @FeatureProcessing
+
+        Parameters
+        ----------
+        args
+            For data reading - Propagated to `self._read_data`
+        kwargs
+            For data reading - Propagated to `self._read_data`
+        """
         # Reading data
-        data = self._read_data(*args, **kwargs)
+        self._read_data(*args, **kwargs)
 
         # Detect mode (classification / regression)
-        self._mode_detector(data)
+        self._mode_detector()
 
         # Preprocess Data
-        self._data_processing(data)
+        self._data_processing()
 
         # Run Exploratory Data Analysis
         self._eda()
@@ -316,11 +351,25 @@ class Pipeline:
         # Extract and select features
         self._feature_processing()
 
+        # Interval-analyze data
+        self._interval_analysis()
+
         # Standardize
         # Standardizing assures equal scales, equal gradients and no clipping.
-        # Therefore it needs to be after sequencing & feature processing, as this alters scales
+        # Therefore, it needs to be after sequencing & feature processing, as this alters scales
         self._standardizing()
 
+    def model_training(self):
+        """
+        Train models
+            1. Initial Modelling
+                Runs various off the shelf models with default parameters for all feature sets
+                If Sequencing is enabled, this is where it happens, as here, the feature set is generated.
+            2. Grid Search
+                Optimizes the hyperparameters of the best performing models
+            3. (optional) Create Stacking model
+            4. (optional) Create documentation
+        """
         # Run initial models
         self._initial_modelling()
 
@@ -330,9 +379,50 @@ class Pipeline:
         # Create stacking model
         self._create_stacking()
 
-        # Prepare production files
-        self._prepare_production_files()
+    def conclude_fitting(self, *, model=None, feature_set=None, params=None, **kwargs):
+        """
+        Prepare production files that are necessary to deploy a specific
+        model / feature set combination
 
+        Creates or modifies the following files
+            - ``Model.joblib`` (production model)
+            - ``Settings.json`` (model settings)
+            - ``Report.pdf`` (training report)
+
+        Parameters
+        ----------
+        model : str, optional
+            Model file for which to prepare production files
+        feature_set : str, optional
+            Feature set for which to prepare production files
+        params : dict, optional
+            Model parameters for which to prepare production files.
+            Default: takes best parameters
+        """
+        # Set up production path
+        prod_dir = self.mainDir + f'Production/v{self.version}/'
+        Path(prod_dir).mkdir(exist_ok=True)
+
+        # Parse arguments
+        model, feature_set, params = self._parse_production_args(model, feature_set, params)
+
+        # Verbose printing
+        if self.verbose > 0:
+            print(f'[AutoML] Preparing Production files for {model}, {feature_set}, {params}')
+
+        # Set best model (`self.bestModel`)
+        self._prepare_production_model(prod_dir + 'Model.joblib', model, feature_set, params)
+
+        # Set and store production settings
+        self._prepare_production_settings(prod_dir + 'Settings.json', model, feature_set, params)
+
+        # Report
+        report_path = self.mainDir + f'Documentation/v{self.version}/{model}_{feature_set}.pdf'
+        if not Path(report_path).exists():
+            self.document(self.bestModel, feature_set)
+        shutil.copy(report_path, prod_dir + 'Report.pdf')
+
+        # Finish
         self.is_fitted = True
         print('[AutoML] All done :)')
 
@@ -451,85 +541,126 @@ class Pipeline:
         return prediction
 
     # Fit functions
-    def _read_data(self, *args, **kwargs) -> pd.DataFrame:
+    def _read_data(self, x=None, y=None, *, data=None, **kwargs):
         """
-        To support Pandas & Numpy, with just data and x, y, this function reads the data and loads into desired format.
+        Reads and loads data into desired format.
+
+        Expects to receive:
+            1. Both, ``x`` and ``y`` (-> features and target), or
+            2. Either ``x`` or ``data`` (-> dataframe or path to folder)
 
         Parameters
         ----------
-        args / kwargs:
-            x (pd.DataFrame): input
-            y (pd.Series): output
-            data (pd.DataFrame): data
+        x : np.ndarray or pd.Series or pd.DataFrame or str or Path, optional
+            x-data (input) OR acts as ``data`` parameter when param ``y`` is empty
+        y : np.ndarray or pd.Series, optional
+            y-data (target)
+        data : pd.DataFrame or str or Path, optional
+            Contains both, x and y, OR provides a path to folder structure
+
+        Returns
+        -------
+        Pipeline
         """
-        assert len(args) + len(kwargs) != 0, "No data provided."
+        assert x is not None or data is not None, 'No data provided'
+        assert (x is not None) ^ (data is not None), 'Setting both, `x` and `data`, is ambiguous'
 
-        # Handle args
-        if len(args) + len(kwargs) == 1:
-            if len(args) == 1:
-                data = args[0]
-            elif len(kwargs) == 1:
-                assert 'data' in kwargs, "'data' argument missing"
-                data = kwargs['data']
-            else:
-                raise ValueError('No data provided')
+        # Labels are provided separately
+        if y is not None:
+            # Check data
+            x = x if x is not None else data
+            assert x is not None, 'Parameter ``x`` is not set'
+            assert isinstance(x, (np.ndarray, pd.Series, pd.DataFrame)), 'Unsupported data type for parameter ``x``'
+            assert isinstance(y, (np.ndarray, pd.Series)), 'Unsupported data type for parameter ``y``'
 
-            # Parse data
-            if isinstance(data, pd.DataFrame):
-                # Do nothing
-                pass
-            elif os.path.isdir(data):
-                # Interval-analyze data
-                data = self._interval_analyze_data(folder=data)
-            else:
-                raise ValueError('With only one argument, data must be either a `pandas.DataFrame` '
-                                 'or a directory to data compatible with `Amplo.IntervalAnalyzer`.')
-
-            # Test data
-            assert self.target != '', 'No target string provided'
-            assert self.target in Utils.data.clean_keys(data).keys(), 'Target column missing'
-
-        elif len(args) + len(kwargs) == 2:
-            if len(args) == 2:
-                x, y = args
-            elif len(kwargs) == 2:
-                assert 'x' in kwargs and 'y' in kwargs, "'x' or 'y' argument missing"
-                x, y = kwargs['x'], kwargs['y']
-            else:
-                raise ValueError('Cannot understand partially named arguments...')
-
-            # Parse data
-            assert isinstance(x, (np.ndarray, pd.Series, pd.DataFrame)), "Unsupported data type for 'x'"
-            if isinstance(x, pd.Series):
-                data = pd.DataFrame(x)
-            elif isinstance(x, np.ndarray):
-                data = pd.DataFrame(x, columns=[f"Feature_{i}" for i in range(x.shape[1])])
-            else:
-                data = x
-
-            # Check (and update) target
+            # Set target manually if not defined
             if self.target == '':
                 self.target = 'target'
 
-            # Add target
-            data[self.target] = y
+            # Parse x-data
+            if isinstance(x, np.ndarray):
+                x = pd.DataFrame(x)
+            elif isinstance(x, pd.Series):
+                x = pd.DataFrame(x)
+            # Parse y-data
+            if isinstance(y, np.ndarray):
+                y = pd.Series(y, index=x.index)
+            y.name = self.target
 
-        else:
-            raise ValueError('Incorrect number of arguments.')
+            # Check data
+            assert all(x.index == y.index), '``x`` and ``y`` indices do not match'
+            if self.target in x.columns:
+                assert all(x[self.target] == y), 'Target column co-exists in both, ``x`` and ``y`` data, ' \
+                                                 f'but has not equal content. Rename the column ``{self.target}`` ' \
+                                                 'in ``x`` or set a (different) target in initialization.'
 
-        return data
+            # Concatenate x and y
+            data = pd.concat([x, y], axis=1)
 
-    def _mode_detector(self, data: pd.DataFrame):
+        # Set data parameter in case it is provided through parameter ``x``
+        data = data if data is not None else x
+        metadata = None
+
+        # A path was provided to read out (multi-indexed) data
+        if isinstance(data, (str, Path)):
+            # Set target manually if not defined
+            if self.target == '':
+                self.target = 'target'
+            # Parse data
+            data, metadata = Utils.io.merge_logs(data, self.target)
+
+        # Test data
+        assert self.target != '', 'No target string provided'
+        assert self.target in data.columns, 'Target column missing'
+        assert len(data.columns) == data.columns.nunique(), 'Columns have no unique names'
+
+        # Parse data
+        y = data[self.target]
+        x = data.drop(self.target, axis=1)
+        if isinstance(x.columns, pd.RangeIndex):
+            x.columns = [f'Feature_{i}' for i in range(x.shape[1])]
+        # Concatenate x and y
+        data = pd.concat([x, y], axis=1)
+
+        # Save data
+        self.set_data(data)
+
+        # Store metadata in settings
+        file_metadata = dict()
+        if metadata is not None:
+            for _, row in metadata.iterrows():
+                folder = row.pop('folder')
+                file = row.pop('file')
+                # Set metadata
+                file_metadata[f'{folder}/{file}'] = row.to_dict()
+        self.settings['file_metadata'] = file_metadata
+
+        return self
+
+    def has_new_training_data(self):
+        # Return True if no previous version exists
+        if self.version == 1:
+            return True
+
+        # Get previous and current file metadata
+        curr_metadata = self.settings['file_metadata']
+        last_metadata = self.get_settings(self.version - 1)['files']
+        # Return True if metadata do not match
+        if set(curr_metadata.keys()) != set(last_metadata.keys()):
+            return True
+        # Check modification date of each file
+        return any(curr_metadata[file]['last_modified'] != last_metadata[file]['last_modified']
+                   for file in curr_metadata.keys())
+
+    def _mode_detector(self):
         """
         Detects the mode (Regression / Classification)
-        :param data: Data to detect mode on
         """
         # Only run if mode is not provided
         if self.mode is None:
 
             # Classification if string
-            if data[self.target].dtype == str or \
-                    data[self.target].nunique() < 0.1 * len(data):
+            if self.y.dtype == str or self.y.nunique() < 0.1 * len(self.data):
                 self.mode = 'classification'
                 self.objective = 'neg_log_loss'
 
@@ -548,127 +679,24 @@ class Pipeline:
                 print(f"[AutoML] Setting mode to {self.mode} & objective to {self.objective}.")
         return
 
-    @staticmethod
-    def _read_csv(data_path) -> pd.DataFrame:
-        """
-        Read data from given path and set index or multi-index
-
-        Parameters
-        ----------
-        data_path : str or Path
-        """
-        assert Path(data_path).suffix == '.csv', 'Expected a *.csv path'
-
-        data = pd.read_csv(data_path)
-
-        if {'index', 'log'}.issubset(data.columns):
-            # Multi-index: case when IntervalAnalyser was used
-            index = ['log', 'index']
-        elif 'index' in data.columns:
-            index = ['index']
-        else:
-            raise IndexError('No known index was found. '
-                             'Expected to find at least a column named `index`.')
-        return data.set_index(index)
-
-    @staticmethod
-    def _write_csv(data, data_path):
-        """
-        Write data to given path and set index if needed.
-
-        Parameters
-        ----------
-        data : pd.DataFrame or pd.Series
-        data_path : str or Path
-        """
-        assert Path(data_path).suffix == '.csv', 'Expected a *.csv path'
-
-        # Set single-index if not already present
-        if len(data.index.names) == 1 and data.index.name is None:
-            data.index.name = 'index'
-        # Raise error if unnamed index is present
-        if None in data.index.names:
-            raise IndexError(f'Found an unnamed index column ({list(data.index.names)}).')
-
-        # Write data
-        data.to_csv(data_path)
-
-    def _interval_analyze_data(self, folder):
-        """
-        Interval-analyzes the data using ``Amplo.AutoML.IntervalAnalyser``
-        or resorts to pre-computed data, if present.
-
-        Parameters
-        ----------
-        folder : str or Path
-            Directory containing data for `IntervalAnalyser`
-
-        Returns
-        -------
-        pd.DataFrame
-            Interval-analyzed data
-        """
-
-        # Set paths
-        data_path = self.mainDir + f'Data/Interval_Analyzed_v{self.version}.csv'
-
-        # Set target
-        self.target = IntervalAnalyser.target
-
-        # Check if exists
-        try:
-            # Load data
-            data = self._read_csv(data_path)
-
-            if self.verbose > 0:
-                print('[AutoML] Loaded interval-analyzed data')
-
-        except FileNotFoundError:
-            print(f'[AutoML] Interval-analyzing data from directory {folder}')
-
-            # Interval-analyze data
-            data = IntervalAnalyser(folder=folder, pipeline=self).fit_transform()
-
-            # Store data
-            self._write_csv(data, data_path)
-
-        # Set flag
-        self._data_from_interval_analyzer = True
-
-        return data
-
-    def _data_processing(self, data: pd.DataFrame, *, add_to_name=''):
+    def _data_processing(self):
         """
         Organises the data cleaning. Heavy lifting is done in self.dataProcessor, but settings etc. needs
         to be organised.
-
-        Parameters
-        ----------
-        data : pd.DataFrame
-            Data to process
-        add_to_name : str
-            To manipulate filenames. This is particularly interesting for the IntervalAnalyser,
-            as it calls this function too but needs a custom filename.
         """
-
-        # Skip feature processing if data was processed with ``IntervalAnalyser``
-        # because ``_data_processing`` was already called internally
-        if self._data_from_interval_analyzer:
-            print('[AutoML] Skipped Data Processor (since already done)')
-            return
-
         self.dataProcessor = DataProcessor(target=self.target, int_cols=self.intCols, float_cols=self.floatCols,
                                            date_cols=self.dateCols, cat_cols=self.catCols,
                                            missing_values=self.missingValues,
                                            outlier_removal=self.outlierRemoval, z_score_threshold=self.zScoreThreshold)
 
         # Set paths
-        data_path = self.mainDir + f'Data/Cleaned{add_to_name}_v{self.version}.csv'
-        settings_path = self.mainDir + f'Settings/Cleaning{add_to_name}_v{self.version}.json'
+        data_path = self.mainDir + f'Data/Cleaned_v{self.version}.csv'
+        settings_path = self.mainDir + f'Settings/Cleaning_v{self.version}.json'
 
-        try:
+        if Path(data_path).exists() and Path(settings_path).exists():
             # Load data
             data = self._read_csv(data_path)
+            self.set_data(data)
 
             # Load settings
             self.settings['data_processing'] = json.load(open(settings_path, 'r'))
@@ -677,12 +705,13 @@ class Pipeline:
             if self.verbose > 0:
                 print('[AutoML] Loaded Cleaned Data')
 
-        except FileNotFoundError:
+        else:
             # Cleaning
-            data = self.dataProcessor.fit_transform(data)
+            data = self.dataProcessor.fit_transform(self.data)
+            self.set_data(data)
 
             # Store data
-            self._write_csv(data, data_path)
+            self._write_csv(self.data, data_path)
 
             # Save settings
             self.settings['data_processing'] = self.dataProcessor.get_settings()
@@ -697,13 +726,6 @@ class Pipeline:
             self.floatCols = self.settings['data_processing']['float_cols']
         if self.catCols is None:
             self.catCols = self.settings['data_processing']['cat_cols']
-
-        # Split and store in memory
-        self.data = data
-        self.y = data[self.target]
-        self.x = data
-        if self.includeOutput is False:
-            self.x = self.x.drop(self.target, axis=1)
 
         # Assert classes in case of classification
         self.n_classes = self.y.nunique()
@@ -735,28 +757,23 @@ class Pipeline:
 
         # Only necessary for classification
         if self.mode == 'classification' and self.balance:
-            # Check if exists
-            try:
-                # Load
-                data = self._read_csv(data_path)
 
-                # Split
-                self.y = data[self.target]
-                self.x = data
-                if self.includeOutput is False:
-                    self.x = self.x.drop(self.target, axis=1)
+            if Path(data_path).exists():
+                # Load data
+                data = self._read_csv(data_path)
+                self.set_data(data)
 
                 if self.verbose > 0:
                     print('[AutoML] Loaded Balanced data')
 
-            except FileNotFoundError:
-                # Fit & Resample
-                self.x, self.y = self.dataSampler.fit_resample(self.x, self.y)
+            else:
+                # Fit and resample
+                print('[AutoML] Resampling data')
+                x, y = self.dataSampler.fit_resample(self.x, self.y)
 
                 # Store
-                data = copy.copy(self.x)
-                data[self.target] = self.y
-                self._write_csv(data, data_path)
+                self._set_xy(x, y)
+                self._write_csv(self.data, data_path)
 
     def _sequencing(self):
         """
@@ -770,27 +787,23 @@ class Pipeline:
         data_path = self.mainDir + f'Data/Sequence_v{self.version}.csv'
 
         if self.sequence:
-            try:
+
+            if Path(data_path).exists():
                 # Load data
                 data = self._read_csv(data_path)
-
-                # Split and set to memory
-                self.y = data[self.target]
-                self.x = data
-                if not self.includeOutput:
-                    self.x = self.x.drop(self.target, axis=1)
+                self.set_data(data)
 
                 if self.verbose > 0:
                     print('[AutoML] Loaded Extracted Features')
 
-            except FileNotFoundError:
+            else:
+                # Sequencing
                 print('[AutoML] Sequencing data')
-                self.x, self.y = self.dataSequencer.convert(self.x, self.y)
+                x, y = self.dataSequencer.convert(self.x, self.y)
 
-                # Save
-                data = copy.deepcopy(self.x)
-                data[self.target] = copy.deepcopy(self.y)
-                self._write_csv(data, data_path)
+                # Store
+                self._set_xy(x, y)
+                self._write_csv(self.data, data_path)
 
     def _feature_processing(self):
         """
@@ -803,12 +816,12 @@ class Pipeline:
 
         # Set paths
         data_path = self.mainDir + f'Data/Extracted_v{self.version}.csv'
-        settings_path = self.mainDir + f'Settings/Cleaning_v{self.version}.json'
+        settings_path = self.mainDir + f'Settings/Extracting_v{self.version}.json'
 
-        # Check if exists
-        try:
+        if Path(data_path).exists() and Path(settings_path).exists():
             # Loading data
-            self.x = self._read_csv(data_path)
+            x = self._read_csv(data_path)
+            self._set_x(x)
 
             # Loading settings
             self.settings['feature_processing'] = json.load(open(settings_path, 'r'))
@@ -818,18 +831,63 @@ class Pipeline:
             if self.verbose > 0:
                 print('[AutoML] Loaded Extracted Features')
 
-        except FileNotFoundError:
+        else:
             print('[AutoML] Starting Feature Processor')
 
             # Transform data
-            self.x, self.featureSets = self.featureProcessor.fit_transform(self.x, self.y)
+            x, self.featureSets = self.featureProcessor.fit_transform(self.x, self.y)
 
             # Store data
+            self._set_x(x)
             self._write_csv(self.x, data_path)
 
             # Save settings
             self.settings['feature_processing'] = self.featureProcessor.get_settings()
             json.dump(self.settings['feature_processing'], open(settings_path, 'w'))
+
+    def _interval_analysis(self):
+        """
+        Interval-analyzes the data using ``Amplo.AutoML.IntervalAnalyser``
+        or resorts to pre-computed data, if present.
+        """
+        # Skip analysis when analysis is not possible and/or not desired
+        is_interval_analyzable = len(self.x.index.names) == 2
+        if not (self.useIntervalAnalyser and is_interval_analyzable):
+            return
+
+        self.intervalAnalyser = IntervalAnalyser(target=self.target)
+
+        # Set paths
+        data_path = self.mainDir + f'Data/Interval_Analyzed_v{self.version}.csv'
+        settings_path = self.mainDir + f'Settings/Interval_Analysis_v{self.version}.json'
+
+        if Path(data_path).exists():  # TODO: and Path(settings_path).exists():
+            # Load data
+            data = self._read_csv(data_path)
+            self.set_data(data)
+
+            # TODO implement `IntervalAnalyser.load_settings` and add to `self.load_settings`
+            # # Load settings
+            # self.settings['interval_analysis'] = json.load(open(settings_path, 'r'))
+            # self.intervalAnalyser.load_settings(self.settings['interval_analysis'])
+
+            if self.verbose > 0:
+                print('[AutoML] Loaded interval-analyzed data')
+
+        else:
+            print(f'[AutoML] Interval-analyzing data')
+
+            # Transform data
+            data = self.intervalAnalyser.fit_transform(self.x, self.y)
+
+            # Store data
+            self.set_data(data)
+            self._write_csv(self.data, data_path)
+
+            # TODO implement `IntervalAnalyser.get_settings` and add to `self.get_settings`
+            # # Save settings
+            # self.settings['interval_analysis'] = self.intervalAnalyser.get_settings()
+            # json.dump(self.settings['interval_analysis'], open(settings_path, 'w'))
 
     def _standardizing(self):
         """
@@ -839,21 +897,23 @@ class Pipeline:
         if not self.standardize:
             return
 
-        # Load if exists
-        try:
-            self.settings['standardize'] = json.load(open(self.mainDir + 'Settings/Standardize_v{}.json'
-                                                          .format(self.version), 'r'))
+        # Set paths
+        settings_path = self.mainDir + f'Settings/Standardize_v{self.version}.json'
 
-        # Otherwise fits
-        except FileNotFoundError:
+        if Path(settings_path).exists():
+            # Load data
+            self.settings['standardize'] = json.load(open(settings_path, 'r'))
+
+        else:
+            # Fit data
             self._fit_standardize(self.x, self.y)
 
             # Store Settings
-            json.dump(self.settings['standardize'], open(self.mainDir + 'Settings/Standardize_v{}.json'
-                                                         .format(self.version), 'w'))
+            json.dump(self.settings['standardize'], open(settings_path, 'w'))
 
-        # And transform
-        self.x, self.y = self._transform_standardize(self.x, self.y)
+        # Transform data
+        x, y = self._transform_standardize(self.x, self.y)
+        self._set_xy(x, y)
 
     def _initial_modelling(self):
         """
@@ -906,7 +966,7 @@ class Pipeline:
                 if self.results is None:
                     self.results = results
                 else:
-                    self.results = self.results.append(results)
+                    self.results = pd.concat([self.results, results])
 
             # Save results
             self.results.to_csv(results_path, index=False)
@@ -931,8 +991,8 @@ class Pipeline:
         # Skip grid search and set best initial model as best grid search parameters
         if self.gridSearchType is None or self.gridSearchIterations == 0:
             best_initial_model = self._sort_results(self.results[self.results['version'] == self.version]).iloc[0]
-            best_initial_model['type'] = 'Hyper parameter'
-            self.results = self.results.append(best_initial_model)
+            best_initial_model['type'] = 'Hyper Parameter'
+            self.results = pd.concat([self.results, best_initial_model.to_frame().T], ignore_index=True)
             return
 
         # If arguments are provided
@@ -1130,95 +1190,125 @@ class Pipeline:
         # Append to settings
         self.settings['validation']['{}_{}'.format(type(model).__name__, feature_set)] = documenting.outputMetrics
 
-    def _prepare_production_files(self, model=None, feature_set: str = None, params: dict = None):
-        """
-        Prepares files necessary to deploy a specific model / feature set combination.
-        - Model.joblib
-        - Settings.json
-        - Report.pdf
+    def _parse_production_args(self, model=None, feature_set=None, params=None):
+        if model is not None and not isinstance(model, str):
+            # TODO: This issue is linked with AML-103 (in Jira)
+            #  1. Add to method docstring that it accepts a model instance, too
+            #  2. Change `if`-case to a single `isinstance(model, BasePredictor)`
+            # Get model name
+            model = type(model).__name__
 
-        Parameters
-        ----------
-        model [string] : (optional) Model file for which to prep production files
-        feature_set [string] : (optional) Feature set for which to prep production files
-        params [optional, dict]: (optional) Model parameters for which to prep production files, if None, takes best.
-        """
-        # Path variable
-        prod_path = self.mainDir + 'Production/v{}/'.format(self.version)
-
-        # Create production folder
-        if not os.path.exists(prod_path):
-            os.mkdir(prod_path)
-
-        # Filter results for this version
+        # Get results of current version
         results = self._sort_results(self.results[self.results['version'] == self.version])
 
-        # Filter results if model is provided
         if model is not None:
-            # Take name if model instance is given
-            if not isinstance(model, str):
-                model = type(model).__name__
-
             # Filter results
             results = self._sort_results(results[results['model'] == model])
 
-        # Filter results if feature set is provided
         if feature_set is not None:
+            # Filter results
             results = self._sort_results(results[results['dataset'] == feature_set])
 
-        # Get best parameters
         if params is None:
+            # Get best parameters
             params = results.iloc[0]['params']
 
-        # Otherwise, find best
-        model = results.iloc[0]['model']
-        feature_set = results.iloc[0]['dataset']
-        params = Utils.io.parse_json(params)
+        # Find the best allowed arguments
+        model = model or results.iloc[0]['model']
+        feature_set = feature_set or results.iloc[0]['dataset']
+        params = Utils.io.parse_json(params or results.iloc[0]['params'])
 
-        # Printing action
-        if self.verbose > 0:
-            print('[AutoML] Preparing Production files for {}, {}, {}'.format(model, feature_set, params))
+        return model, feature_set, params
 
-        # Try to load model
-        if os.path.exists(prod_path + 'Model.joblib'):
-            self.bestModel = joblib.load(prod_path + 'Model.joblib')
+    def _prepare_production_model(self, model_path, model, feature_set, params):
+        """
+        Prepare and store `self.bestModel` for production
 
-        # Rerun if not existent, or different than desired
-        if not os.path.exists(prod_path + 'Model.joblib') or \
-            type(self.bestModel).__name__ != model or \
-                self.bestModel.get_params() != params:
+        Parameters
+        ----------
+        model_path : str or Path
+            Where to store model for production
+        model : str, optional
+            Model file for which to prepare production files
+        feature_set : str, optional
+            Feature set for which to prepare production files
+        params : dict, optional
+            Model parameters for which to prepare production files.
+            Default: takes best parameters
 
-            # Stacking needs to be created by a separate script :/
+        Returns
+        -------
+        (str, str)
+            Updated model name and feature set name
+        """
+
+        model_path = Path(model_path)
+
+        # Try to load model from file
+        if model_path.exists():
+            # Load model
+            self.bestModel = joblib.load(Path(model_path))
+            # Reset if it's not the desired model
+            if type(self.bestModel).__name__ != model or self.bestModel.get_params() != params:
+                self.bestModel = None
+        else:
+            self.bestModel = None
+
+        # Set best model
+        if self.bestModel is not None:
+            if self.verbose > 0:
+                print('[AutoML] Loading existing model file')
+
+        else:
+            # Make model
             if 'Stacking' in model:
+                # Create stacking
                 if self.mode == 'regression':
                     self.bestModel = StackingRegressor(n_samples=len(self.x), n_features=len(self.x.keys()))
                 elif self.mode == 'classification':
                     self.bestModel = StackingClassifier(n_samples=len(self.x), n_features=len(self.x.keys()))
                 else:
                     raise NotImplementedError("Mode not set")
-
             else:
-                # Model
+                # Take model as is
                 self.bestModel = Utils.utils.get_model(model, mode=self.mode, samples=len(self.x))
 
-            # Set params, train, & save
+            # Set params, train
             self.bestModel.set_params(**params)
             self.bestModel.fit(self.x[self.featureSets[feature_set]], self.y)
-            joblib.dump(self.bestModel, self.mainDir + 'Production/v{}/Model.joblib'.format(self.version))
+
+            # Save model
+            joblib.dump(self.bestModel, model_path)
 
             if self.verbose > 0:
-                print('[AutoML] Model fully fitted, in-sample {}: {:4f}'
-                      .format(self.objective, self.scorer(self.bestModel, self.x[self.featureSets[feature_set]],
-                                                          self.y)))
+                score = self.scorer(self.bestModel, self.x[self.featureSets[feature_set]], self.y)
+                print(f'[AutoML] Model fully fitted, in-sample {self.objective}: {score:4f}')
 
-        else:
-            if self.verbose > 0:
-                print('[AutoML] Loading existing model file.')
+        return model, feature_set
+
+    def _prepare_production_settings(self, settings_path, model=None, feature_set=None, params=None):
+        """
+        Prepare `self.settings` for production and dump to file
+
+        Parameters
+        ----------
+        settings_path : str or Path
+            Where to save settings for production
+        model : str, optional
+            Model file for which to prepare production files
+        feature_set : str, optional
+            Feature set for which to prepare production files
+        params : dict, optional
+            Model parameters for which to prepare production files.
+            Default: takes best parameters
+        """
+        assert self.bestModel is not None, '`self.bestModel` is not yet prepared'
+        settings_path = Path(settings_path)
 
         # Update pipeline settings
         self.settings['version'] = self.version
-        self.settings['pipeline']['verbose'] = 0
-        self.settings['model'] = model  # The string
+        self.settings['pipeline']['verbose'] = self.verbose
+        self.settings['model'] = model
         self.settings['params'] = params
         self.settings['feature_set'] = feature_set
         self.settings['features'] = self.featureSets[feature_set]
@@ -1235,23 +1325,113 @@ class Pipeline:
             cat_cols=self.dataProcessor.cat_cols,
             date_cols=self.dataProcessor.date_cols
         )
-        self.driftDetector.fit(self.data)
+        self.driftDetector.fit(self.x)
         self.driftDetector.fit_output(self.bestModel, self.x[self.featureSets[feature_set]])
         self.settings['drift_detector'] = self.driftDetector.get_weights()
 
-        # Report
-        if not os.path.exists('{}Documentation/v{}/{}_{}.pdf'.format(self.mainDir, self.version, model, feature_set)):
-            self.document(self.bestModel, feature_set)
-        shutil.copy('{}Documentation/v{}/{}_{}.pdf'.format(self.mainDir, self.version, model, feature_set),
-                    '{}Production/v{}/Report.pdf'.format(self.mainDir, self.version))
-
         # Save settings
-        json.dump(self.settings, open(self.mainDir + 'Production/v{}/Settings.json'
-                                      .format(self.version), 'w'), indent=4)
+        json.dump(self.settings, open(settings_path, 'w'), indent=4)
 
-        return self
+    # Getter Functions / Properties
+    @property
+    def data(self) -> Union[None, pd.DataFrame]:
+        return self._data
+
+    @property
+    def x(self) -> pd.DataFrame:
+        if self.data is None:
+            raise AttributeError('Data is None')
+        if self.includeOutput:
+            return self.data
+        return self.data.drop(self.target, axis=1)
+
+    @property
+    def y(self):
+        if self.data is None:
+            raise AssertionError('`self.data` is empty. Set a value with `set_data`')
+        return self.data[self.target]
+
+    @property
+    def y_orig(self):
+        enc_labels = self.y
+        dec_labels = self.dataProcessor.decode_labels(enc_labels, except_not_fitted=False)
+        return pd.Series(dec_labels, name=self.target, index=enc_labels.index)
+
+    # Setter Functions
+    def set_data(self, new_data: pd.DataFrame):
+        assert isinstance(new_data, pd.DataFrame), 'Invalid data type'
+        assert self.target in new_data, 'No target column present'
+        assert len(new_data.columns) > 1, 'No feature column present'
+        self._data = new_data
+
+    def _set_xy(self, new_x: Union[np.ndarray, pd.DataFrame], new_y: Union[np.ndarray, pd.Series]):
+        if not isinstance(new_y, pd.Series):
+            new_y = pd.Series(new_y, name=self.target)
+        new_data = pd.concat([new_x, new_y], axis=1)
+        self.set_data(new_data)
+
+    def _set_x(self, new_x: Union[np.ndarray, pd.DataFrame]):
+        old_x = self.data.drop(self.target, axis=1)
+        # Convert to dataframe
+        if isinstance(new_x, np.ndarray) and new_x.shape == old_x.shape:
+            new_x = pd.DataFrame(new_x, index=old_x.index, columns=old_x.columns)
+        elif isinstance(new_x, np.ndarray):
+            warnings.warn('Old x-data has more/less columns than new x-data. Setting dummy feature names...')
+            new_x = pd.DataFrame(new_x, index=old_x.index, columns=[f'Feature_{i}' for i in range(new_x.shape[1])])
+        # Assert that target is not in x-data
+        if self.target in new_x:
+            raise AttributeError('Target column name should not be in x-data')
+        self._data = pd.concat([new_x, self.y], axis=1)
+
+    def set_y(self, new_y: Union[np.ndarray, pd.Series]):
+        self._data[self.target] = new_y
 
     # Support Functions
+    @staticmethod
+    def _read_csv(data_path) -> pd.DataFrame:
+        """
+        Read data from given path and set index or multi-index
+
+        Parameters
+        ----------
+        data_path : str or Path
+        """
+        assert Path(data_path).suffix == '.csv', 'Expected a *.csv path'
+
+        data = pd.read_csv(data_path)
+
+        if {'index', 'log'}.issubset(data.columns):
+            # Multi-index: case when IntervalAnalyser was used
+            index = ['log', 'index']
+        elif 'index' in data.columns:
+            index = ['index']
+        else:
+            raise IndexError('No known index was found. '
+                             'Expected to find at least a column named `index`.')
+        return data.set_index(index)
+
+    @staticmethod
+    def _write_csv(data, data_path):
+        """
+        Write data to given path and set index if needed.
+
+        Parameters
+        ----------
+        data : pd.DataFrame or pd.Series
+        data_path : str or Path
+        """
+        assert Path(data_path).suffix == '.csv', 'Expected a *.csv path'
+
+        # Set single-index if not already present
+        if len(data.index.names) == 1 and data.index.name is None:
+            data.index.name = 'index'
+        # Raise error if unnamed index is present
+        if None in data.index.names:
+            raise IndexError(f'Found an unnamed index column ({list(data.index.names)}).')
+
+        # Write data
+        data.to_csv(data_path)
+
     def _load_version(self):
         """
         Upon start, loads version
@@ -1281,7 +1461,8 @@ class Pipeline:
         elif started_versions == completed_versions and self.processData:
             self.version = started_versions + 1
             with open(self.mainDir + 'changelog.txt', 'a') as f:
-                f.write('v{}: {}\n'.format(self.version, input('Changelog v{}:\n'.format(self.version))))
+                notice = input(f'Changelog v{self.version}:\n')
+                f.write(f'v{self.version}: {notice}\n')
 
         # If no new run is started (either continue or rerun)
         else:
@@ -1303,11 +1484,6 @@ class Pipeline:
         """
         Fits a standardization parameters and returns the transformed data
         """
-        # Check if existing
-        if os.path.exists(self.mainDir + 'Settings/Standardize_{}.json'.format(self.version)):
-            self.settings['standardize'] = json.load(open(self.mainDir + 'Settings/Standardize_{}.json'
-                                                          .format(self.version), 'r'))
-            return
 
         # Fit Input
         cat_cols = [k for lst in self.settings['data_processing']['dummies'].values() for k in lst]

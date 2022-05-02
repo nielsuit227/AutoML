@@ -1,4 +1,3 @@
-import unittest
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -10,11 +9,7 @@ from sklearn.datasets import make_regression
 from Amplo.AutoML import FeatureProcessor
 
 
-class TestFeatureProcessor(unittest.TestCase):
-
-    @classmethod
-    def setUpClass(cls):
-        pass
+class TestFeatureProcessor:
 
     def test_regression(self):
         x, y = make_regression()

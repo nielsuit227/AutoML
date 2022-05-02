@@ -1,19 +1,9 @@
-import os
 import shutil
+import os
 
 
-__all__ = ['rmtree_automl']
-
-
-def rmtree_automl(f):
-    """Decorator that removes the directory `AutoML` before and after executing the function."""
-
-    def rmtree_automl_wrapper(*args, **kwargs):
-        if os.path.exists('AutoML'):
-            shutil.rmtree('AutoML')
-        out = f(*args, **kwargs)
-        if os.path.exists('AutoML'):
-            shutil.rmtree('AutoML')
-        return out
-
-    return rmtree_automl_wrapper
+def rmtree(folder='AutoML', must_exist=False):
+    if must_exist and not os.path.exists(folder):
+        raise FileNotFoundError(f'Directory {folder} does not exist')
+    if os.path.exists(folder):
+        shutil.rmtree(folder)

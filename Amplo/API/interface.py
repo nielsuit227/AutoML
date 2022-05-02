@@ -1,13 +1,12 @@
 import re
-import time
 import warnings
 from pathlib import Path
+from copy import deepcopy
 
 from termcolor import cprint
 import pandas as pd
 
 from Amplo import Pipeline
-from Amplo.AutoML import IntervalAnalyser
 from Amplo.API.storage import AzureSynchronizer
 from Amplo.API.platform import PlatformSynchronizer
 
@@ -63,6 +62,8 @@ class API:
         self._download_data = bool(download_data)
         self._train_model = True
         self._upload_model = bool(upload_model)
+
+        # Internal info
         self._trained_model_args = list()  # arguments for uploading model
 
         # Set up storage
@@ -120,57 +121,23 @@ class API:
 
         self.print('Downloading new data...\n', pre='\n')
 
-        def blob_paths(curr_path=None, selection=('*',)):
-            """
-            Get all blob paths
+        # Iterate blob data paths
+        for issue_dir, team, machine, service, issue in self._iterate_data(from_local=False, level='issue'):
 
-            Parameters
-            ----------
-            curr_path : str or None
-            selection : list of str
+            # Logging
+            if self.verbose > 0:
+                self.print('Downloading from: '
+                           f'[Team] {team} - [Machine] {machine} - [Service] {service} - [Issue] {issue}')
 
-            Returns
-            -------
-            list of str
-                All paths that match the selection
-            """
-            all_paths = self.storage.get_dir_paths(curr_path)
-            if '*' in selection:
-                return all_paths
-            return [p for p in all_paths if Path(p).name in selection]
+            # Define local saving directory (note the switch of `data`s position)
+            local_issue_dir = str(self.dataDir / team / machine / service / 'data' / issue)
+            # Clean spaces in path
+            local_issue_dir = re.sub(r'\s+', ' ', local_issue_dir)  # double spaces to single spaces
+            local_issue_dir = re.sub(r'^\s+', '', local_issue_dir)  # remove preceding spaces
+            local_issue_dir = re.sub(r'\s+$', '', local_issue_dir)  # remove subsequent spaces
 
-        # For every team
-        for team_dir in blob_paths(None, self.teams):
-            # For every machine
-            for mc, machine_dir in enumerate(blob_paths(team_dir, self.machines)):
-                # For every service
-                for sc, service_dir in enumerate(blob_paths(f'{machine_dir}/data/', self.services)):
-                    # For every issue
-                    for ic, issue_dir in enumerate(blob_paths(service_dir, self.issues)):
-
-                        # Get names
-                        team = Path(team_dir).name
-                        machine = Path(machine_dir).name
-                        service = Path(service_dir).name
-                        issue = Path(issue_dir).name
-
-                        # Logging
-                        if self.verbose > 0 and all(count == 0 for count in [mc, sc, ic][:self.verbose]):
-                            # Depending on the verbosity, print only part of all logging info.
-                            #  Furthermore, do not print several times the same info.
-                            log_info = [f'Team: {team}', f'Machine: {machine}',
-                                        f'Service: {service}', f'Issue: {issue}']
-                            self.print('Download -- ' + ', '.join(log_info[:self.verbose]))
-
-                        # Define local saving directory (note the switch of `data`s position)
-                        local_issue_dir = str(self.dataDir / team / machine / service / 'data' / issue)
-                        # Clean spaces in path
-                        local_issue_dir = re.sub(r'\s+', ' ', local_issue_dir)  # double spaces to single spaces
-                        local_issue_dir = re.sub(r'^\s+', '', local_issue_dir)  # remove preceding spaces
-                        local_issue_dir = re.sub(r'\s+$', '', local_issue_dir)  # remove subsequent spaces
-
-                        # Synchronize all files of given issue
-                        self.storage.sync_files(issue_dir, local_issue_dir)
+            # Synchronize all files of given issue
+            self.storage.sync_files(issue_dir, local_issue_dir)
 
     def train_models(self, **kwargs):
         """
@@ -193,64 +160,74 @@ class API:
 
         self.print('Start model training...\n', pre='\n')
 
-        for data_path, model_info in self._iter_data():
-            team = model_info['team']
-            machine = model_info['machine']
-            service = model_info['service']
+        for service_dir, team, machine, service in self._iterate_data(from_local=True, level='service'):
 
-            self.print(f'Training models for: {team} / {machine} / {service} \t(team/machine/service)\n', pre='\n')
+            self.print(f'Preparing data for: '
+                       f'[Team] {team} - [Machine] {machine} - [Service] {service}', pre='\n')
 
             # Set up directories
-            read_dir = data_path / 'data'
-            save_dir = data_path / 'data_IA'
-            model_dir = data_path / 'models'
-            save_dir.mkdir(exist_ok=True)
+            read_dir = service_dir / 'data'
+            model_dir = service_dir / 'models'
             model_dir.mkdir(exist_ok=True)
 
-            # Interval-analyze data
-            data = IntervalAnalyser(folder=str(read_dir)).fit_transform()
-            # Read the latest data, if any
-            latest_data = self.read_latest_version(save_dir)
+            # --- Prepare common data (all models will act on the essentially same data)
 
-            # Skip training model when no new data
-            if data.equals(latest_data):
-                self.print(f'Skipped training for machine {machine} as no new data was found.', 'gray')
+            # Set pipeline arguments
+            preparing_pipeline_kwargs = dict(
+                target='labels',
+                extract_features=False,
+                balance=False,
+                grid_search_time_budget=7200,
+                grid_search_candidates=2,
+            )
+            preparing_pipeline_kwargs.update(kwargs)  # allow (optional) manipulation
+            preparing_pipeline_kwargs['main_dir'] = f'{model_dir}/_Data_Preparation/'
+            preparing_pipeline_kwargs['name'] = f'Preparing Pipeline ({team} - {machine} - {service})'
+
+            # Check whether new data has been added
+            checker = Pipeline(no_dirs=True, **preparing_pipeline_kwargs)
+            if Path(checker.mainDir).exists():
+                checker._load_version()  # noqa
+            else:
+                checker.version = 1
+            checker._read_data(read_dir)  # noqa
+            if not checker.has_new_training_data():
+                self.print(f'Skipped training since no new data', 'blue')
                 continue
 
-            # Store for versioning and continue to train model
-            data.to_csv(save_dir / f'training_data_{int(time.time())}.csv')
+            # Set up pipeline and prepare data
+            preparing_pipeline = Pipeline(**preparing_pipeline_kwargs)
+            preparing_pipeline.data_preparation(read_dir)
 
             # Select issues to iterate
-            all_issues = data['labels'].unique()
+            all_issues = preparing_pipeline.y_orig.unique()
             iter_issues = all_issues if '*' in self.issues else self.issues
 
             # Train one model for each issue
             for issue in iter_issues:
-                issue_dir = f'{model_dir}/{issue}/'
-                issue_name = f'{team} - {machine} - {service} - {issue}'
+                self.print(f'Training model for {issue}', 'blue')
 
-                self.print(f'Training model: {issue_name}', 'blue', pre='\n')
-                # Prepare data
-                data_copy = data.copy()
-                data_copy['labels'] = pd.Series(data['labels'] == issue, dtype='int')
-                # Define pipeline arguments
-                pipe_kwargs = dict(
-                    main_dir=issue_dir,
-                    target='labels',
-                    name=issue_name,
-                    extract_features=False,
-                    standardize=False,
-                    balance=False,
-                    grid_search_time_budget=7200,
-                    grid_search_candidates=2,
-                )
-                pipe_kwargs.update(kwargs)  # (optional) manipulation of Pipeline's kwargs
-                # Create and fit pipeline
-                pipe = Pipeline(**pipe_kwargs)
-                pipe.fit(data_copy)
+                # Set up pipeline using a copy from the preparing pipeline
+                pipeline = deepcopy(preparing_pipeline)
+                pipeline.mainDir = f'{model_dir}/{issue}/'
+                pipeline.name = f'{team} - {machine} - {service} - {issue}'
+
+                # Create dirs
+                if not pipeline.noDirs:
+                    pipeline._create_dirs()  # noqa
+                    pipeline._load_version()  # noqa
+
+                # Inject model specific labels
+                new_y = pd.Series(pipeline.y_orig == issue, dtype='int32')
+                pipeline.set_y(new_y)
+                pipeline.n_classes = 2
+
+                # Train models
+                pipeline.model_training()
+                pipeline.conclude_fitting()
 
                 # Append to trained model arguments
-                self._trained_model_args.append([issue_dir, team, machine, service, issue, pipe.version])
+                self._trained_model_args.append([pipeline.mainDir, team, machine, service, issue, pipeline.version])
 
     def upload_models(self, model_args=None):
         """
@@ -303,74 +280,112 @@ class API:
             pre = str(pre) if pre is not None else ''
             cprint(pre + '[AmploAPI] ' + text, fmt)
 
-    def _iter_data(self):
+    def _iterate_data(self, *, from_local=True, level='issue'):
         """
-        Iterate over all services that are specified by `self.teams`, `self.machines` and `self.services`
-        and follow the following directory structure:
-            ``data_dir / team_dir / machine_dir / service_dir``
-
-        Yields
-        ------
-        (Path, dict of {str: str})
-            Tuple of all matches and some info aside.
-
-            Note that the path_info is somehow redundant, as it's recoverable by the data path.
-            Out of convenience, however, we'll keep that info at the side.
-        """
-
-        def iterate_dirs(dir_, match_list):
-            """
-            Iterate directory and yield all subdirectories that match with one of the
-            RegEx expressions in the match list.
-
-            Parameters
-            ----------
-            dir_ : str or Path
-                Directory to search for.
-            match_list : list of str
-                List of RexEx expressions to match directories.
-
-            Yields
-            ------
-            Path
-            """
-            for match in match_list:
-                for sub_dir in Path(dir_).glob(match):
-                    if not sub_dir.is_dir():
-                        continue
-                    yield sub_dir
-
-        for team_dir in iterate_dirs(self.dataDir, self.teams):
-            for machine_dir in iterate_dirs(team_dir, self.machines):
-                for service_dir in iterate_dirs(machine_dir, self.services):
-                    data_path = service_dir.resolve()
-                    path_info = dict(team=team_dir.name, machine=machine_dir.name, service=service_dir.name)
-                    yield data_path, path_info
-
-    @staticmethod
-    def read_latest_version(data_dir):
-        """
-        Read out the latest version of multi-indexed *.csv data and remove unnamed columns.
+        Iterate over directories
 
         Parameters
         ----------
-        data_dir : str or Path
-            directory to search *.csv files
+        from_local : bool
+            Whether `parent_dir` is a local or a blob directory path
+        level : str
+            Select level of iterating data.
+            One of ('team', 'machine', 'service', 'issue')
 
-        Returns
-        -------
-        pd.DataFrame or None
-            The latest version of data, or None if no version was found
+        Yields
+        ------
+        dir : Path
+            Directory of data
+        *info : str
+            Names of team, machine, service and issue.
+            Depends on the `level` parameter!
         """
 
-        # Find path to the latest data version
-        all_versions = list(Path(data_dir).glob('*.csv'))
-        if len(all_versions) == 0:
-            # There is nothing to read
-            return None
+        # Assertions
+        assert level in ('team', 'machine', 'service', 'issue'), 'Unknown argument'
 
-        # Read data
-        path_to_latest = max(all_versions)
-        data = pd.read_csv(path_to_latest, index_col=[0, 1])
+        # Init
+        parent_dir = self.dataDir if from_local else None
 
-        return data
+        # Iterate teams
+        for team_dir in self._iterate_directory(parent_dir, self.teams, from_local=from_local):
+            info = (team_dir.name,)
+
+            if level == 'team':
+                yield team_dir, team_dir.name
+                continue
+
+            # Iterate machines
+            for machine_dir in self._iterate_directory(team_dir, self.machines, from_local=from_local):
+                info = (team_dir.name, machine_dir.name)
+
+                if level == 'machine':
+                    yield machine_dir, *info
+                    continue
+
+                # Adjust search path
+                machine_dir_ = Path(f'{machine_dir}/data/') if not from_local else machine_dir
+
+                # Iterate services
+                for service_dir in self._iterate_directory(machine_dir_, self.services, from_local=from_local):
+                    info = (team_dir.name, machine_dir.name, service_dir.name)
+
+                    if level == 'service':
+                        yield service_dir, *info
+                        continue
+
+                    # Adjust search path
+                    service_dir_ = Path(f'{service_dir}/data/') if from_local else service_dir
+
+                    # Iterate issues
+                    for issue_dir in self._iterate_directory(service_dir_, self.issues, from_local=from_local):
+                        info = (team_dir.name, machine_dir.name, service_dir.name, issue_dir.name)
+
+                        assert level == 'issue'
+                        yield issue_dir, *info
+
+    def _iterate_directory(self, parent_dir=None, selection=None, from_local=True):
+        """
+        Iterate over subdirectories of parent directory
+
+        Parameters
+        ----------
+        parent_dir : str or Path, optional
+            Parent directory
+        selection : iterable object of str, optional
+            Select subdirectories
+        from_local : bool
+            Whether `parent_dir` is a local or a blob directory path
+
+        Yields
+        ------
+        Path
+            Next subdirectory
+        """
+
+        if selection is None:
+            selection = ['*']
+
+        if from_local:
+            # Assertions
+            assert isinstance(parent_dir, (str, Path)), 'Invalid argument type'
+            parent_dir = Path(parent_dir)
+            assert parent_dir.exists(), 'Directory does not exist'
+
+            # Iterate over selection items
+            for match in sorted(selection):
+                for sub_dir in sorted(parent_dir.glob(match)):
+                    # Yield matching subdirectory
+                    if not sub_dir.is_dir():
+                        continue
+                    yield sub_dir.resolve()
+
+        else:
+            # Assertions
+            assert parent_dir is None or isinstance(parent_dir, (str, Path)), 'Invalid argument type'
+
+            # Iterate over all subdirectories
+            for sub_dir in sorted(self.storage.get_dir_paths(parent_dir)):
+                sub_dir = Path(sub_dir)
+                if sub_dir.name in selection:
+                    yield sub_dir

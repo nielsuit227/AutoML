@@ -2,6 +2,11 @@ import re
 import warnings
 import numpy as np
 import pandas as pd
+
+from sklearn.preprocessing import LabelEncoder
+from sklearn.utils.validation import check_is_fitted
+from sklearn.exceptions import NotFittedError
+
 from Amplo.Utils.data import clean_keys
 
 
@@ -86,6 +91,7 @@ class DataProcessor:
         self._q3 = None
         self._means = None
         self._stds = None
+        self._label_encodings = []
 
         # Info for Documenting
         self.is_fitted = False
@@ -117,6 +123,9 @@ class DataProcessor:
         # Clean Keys
         self.data = clean_keys(data)
 
+        # Encode or decode target
+        self._code_target_column(encode=fit)
+
         # Impute columns
         self._impute_columns()
 
@@ -146,10 +155,6 @@ class DataProcessor:
 
         # Convert integer columns
         self.convert_float_int()
-
-        # Clean target
-        if fit:
-            self.clean_target()
 
         return self
 
@@ -204,12 +209,13 @@ class DataProcessor:
         Get settings to recreate fitted object.
         """
         assert self.is_fitted, "Object not yet fitted."
-        return {
+        settings = {
             'num_cols': self.num_cols,
             'float_cols': self.float_cols,
             'int_cols': self.int_cols,
             'date_cols': self.date_cols,
             'cat_cols': self.cat_cols,
+            '_label_encodings': self._label_encodings,
             'missing_values': self.missing_values,
             'outlier_removal': self.outlier_removal,
             'z_score_threshold': self.z_score_threshold,
@@ -226,24 +232,26 @@ class DataProcessor:
                 'removed_duplicate_columns': self.removedDuplicateColumns,
             }
         }
+        return settings
 
     def load_settings(self, settings: dict) -> None:
         """
         Loads settings from dictionary and recreates a fitted object
         """
-        self.num_cols = settings['num_cols'] if 'num_cols' in settings else []
-        self.float_cols = settings['float_cols'] if 'float_cols' in settings else []
-        self.int_cols = settings['int_cols'] if 'int_cols' in settings else []
-        self.cat_cols = settings['cat_cols'] if 'cat_cols' in settings else []
-        self.date_cols = settings['date_cols'] if 'date_cols' in settings else []
-        self.missing_values = settings['missing_values'] if 'missing_values' in settings else []
-        self.outlier_removal = settings['outlier_removal'] if 'outlier_removal' in settings else []
-        self.z_score_threshold = settings['z_score_threshold'] if 'z_score_threshold' in settings else []
+        self.num_cols = settings.get('num_cols', [])
+        self.float_cols = settings.get('float_cols', [])
+        self.int_cols = settings.get('int_cols', [])
+        self.date_cols = settings.get('date_cols', [])
+        self.cat_cols = settings.get('cat_cols', [])
+        self._label_encodings = settings.get('_label_encodings', [])
+        self.missing_values = settings.get('missing_values', [])
+        self.outlier_removal = settings.get('outlier_removal', [])
+        self.z_score_threshold = settings.get('z_score_threshold', [])
         self._means = None if settings['_means'] is None else pd.read_json(settings['_means'])
         self._stds = None if settings['_stds'] is None else pd.read_json(settings['_stds'])
         self._q1 = None if settings['_q1'] is None else pd.read_json(settings['_q1'])
         self._q3 = None if settings['_q3'] is None else pd.read_json(settings['_q3'])
-        self.dummies = settings['dummies'] if 'dummies' in settings else {}
+        self.dummies = settings.get('dummies', {})
         self.is_fitted = True
 
     def infer_data_types(self, data=None):
@@ -577,24 +585,102 @@ class DataProcessor:
                 self.data[key] = pd.to_numeric(self.data[key], errors='coerce', downcast='integer')
         return self.data
 
-    def clean_target(self, data: pd.DataFrame = None) -> pd.DataFrame:
-        """
-        Cleans the target column -- missing values already done, just converting classification classes
-        """
-        if data is not None:
-            self.data = data
+    def _code_target_column(self, encode=True):
+        """En- or decodes target column of `self.data`
 
-        if self.target in self.data:
-            # Object is for sure classification
-            if self.data[self.target].dtype == object:
-                self.data[self.target] = self.data[self.target].astype('category').cat.codes
+        Parameters
+        ----------
+        encode : bool
+            Whether to encode or decode
+        """
 
-            # Classification check
-            elif self.data[self.target].nunique() <= 0.5 * len(self.data):
-                if sorted(set(self.data[self.target])) != [i for i in range(self.data[self.target].nunique())]:
-                    for i, val in enumerate(sorted(set(self.data[self.target]))):
-                        self.data.loc[self.data[self.target] == val, self.target] = i
-        return self.data
+        if self.target not in self.data:
+            return
+
+        # Get labels and encode / decode
+        labels = self.data.loc[:, self.target]
+        if encode:
+            self.data.loc[:, self.target] = self.encode_labels(labels, warn_unencodable=False)
+        else:
+            self.data.loc[:, self.target] = self.decode_labels(labels, except_not_fitted=False)
+
+    def encode_labels(self, labels, *, fit=True, warn_unencodable=True):
+        """Encode labels to numerical dtype
+
+        Parameters
+        ----------
+        labels : np.ndarray or pd.Series
+            Labels to encode
+        fit : bool
+            Whether to (re)fit the label encoder
+        warn_unencodable : bool
+            Whether to warn when labels are assumed being for regression task
+
+        Returns
+        -------
+        np.ndarray
+            Encoded labels or original labels if unencodable
+
+        Raises
+        ------
+        NotFittedError
+            When no label encoder has yet been trained, i.e. `self._label_encodings` is empty
+        """
+        # Convert to pd.Series for convenience
+        labels = pd.Series(labels)
+
+        # It's probably a classification task
+        if labels.dtype == object or labels.nunique() <= labels.size / 2:
+            # Create encoding
+            encoder = LabelEncoder()
+            if fit is True:
+                # Fit
+                encoder.fit(labels)
+                self._label_encodings = pd.Series(encoder.classes_).to_list()
+            elif not self._label_encodings:
+                raise NotFittedError('Encoder it not yet fitted')
+            else:
+                encoder.classes_ = np.ndarray(self._label_encodings)
+            # Encode
+            return encoder.transform(labels)
+
+        # It's probably a regression task, thus no encoding needed
+        if warn_unencodable:
+            warnings.warn(UserWarning('Labels are probably for regression. No encoding happened...'))
+        return labels.to_numpy()
+
+    def decode_labels(self, labels, *, except_not_fitted=True):
+        """Decode labels from numerical dtype to original value
+
+        Parameters
+        ----------
+        labels : np.ndarray or pd.Series
+            Labels to decode
+        except_not_fitted : bool
+            Whether to raise an exception when label encoder is not fitted
+
+        Returns
+        -------
+        np.ndarray
+            Decoded labels or original labels if label encoder is not fitted and `except_not_fitted` is True
+
+        Raises
+        ------
+        NotFittedError
+            When `except_not_fitted` is True and label encoder is not fitted
+        """
+        try:
+            if len(self._label_encodings) == 0:
+                raise NotFittedError('Encoder it not yet fitted. Try first calling `encode_target` '
+                                     'to set an encoding')
+            encoder = LabelEncoder()
+            encoder.classes_ = np.array(self._label_encodings)
+            return encoder.inverse_transform(labels)
+        except NotFittedError as err:
+            if except_not_fitted:
+                raise err
+            else:
+                return labels.to_numpy() if isinstance(labels, pd.Series) else labels
 
     def _impute_columns(self, data: pd.DataFrame = None) -> pd.DataFrame:
         """

@@ -1,9 +1,9 @@
+import pytest
+
 import json
-import unittest
 import numpy as np
 import pandas as pd
-from sklearn.datasets import load_iris
-from sklearn.datasets import fetch_california_housing
+from sklearn.datasets import load_iris, fetch_california_housing
 
 # TODO: Make use of the dummy data creator
 #  from Amplo.Utils.testing import (DummyDataSampler, make_data, make_cat_data, make_num_data)
@@ -11,28 +11,32 @@ from Amplo.AutoML import DataProcessor
 from Amplo.Utils.data import check_dataframe_quality
 
 
-class TestDataProcessor(unittest.TestCase):
-
-    @classmethod
-    def setUpClass(cls):
-        # Make classification data
+@pytest.fixture(scope='class', params=['regression', 'classification'])
+def make_mode(request):
+    mode = request.param
+    target = 'target'
+    if mode == 'classification':
         x, y = load_iris(return_X_y=True, as_frame=True)
-        x.columns = [f'feature_{i}' for i in range(len(x.columns))]
-        cls.classification = pd.concat([x, y.to_frame('target')], axis=1)
-        # Make regression data
+    elif mode == 'regression':
         x, y = fetch_california_housing(return_X_y=True, as_frame=True)
-        x.columns = [f'feature_{i}' for i in range(len(x.columns))]
-        cls.regression = pd.concat([x, y.to_frame('target')], axis=1)
+    else:
+        raise NotImplementedError('Invalid mode')
+    x.columns = [f'Feature_{i}' for i in range(len(x.columns))]
+    request.cls.mode = mode
+    request.cls.target = target
+    request.cls.data = pd.concat([x, y.to_frame(target)], axis=1)
+    yield
 
-    def test_regression(self):
-        dp = DataProcessor('target')
-        cleaned = dp.fit_transform(self.regression)
+
+@pytest.mark.usefixtures('make_mode')
+class TestMode:
+    def test_mode(self):
+        dp = DataProcessor(self.target)
+        cleaned = dp.fit_transform(self.data)
         assert check_dataframe_quality(cleaned)
 
-    def test_classification(self):
-        dp = DataProcessor('target')
-        cleaned = dp.fit_transform(self.classification)
-        assert check_dataframe_quality(cleaned)
+
+class TestDataProcessor:
 
     def test_interpolation(self):
         dp = DataProcessor()
@@ -177,13 +181,17 @@ class TestDataProcessor(unittest.TestCase):
         assert 'a_hoi' in list(df.keys()), f'Categorical column not properly converted: {df.keys()}'
 
     def test_settings(self):
-        x = pd.DataFrame({'a': ['a', 'b', 'c', 'b', 'c', 'a'], 'b': [1, 1, 1, 1, 1, 1]})
-        dp = DataProcessor(cat_cols=['a'])
+        target = 'target'
+        x = pd.DataFrame({'a': ['a', 'b', 'c', 'b', 'c', 'a'],
+                          'b': [1, 1, 1, 1, 1, 1],
+                          target: ['a', 'b', 'c', 'b', 'c', 'a']})
+        dp = DataProcessor(cat_cols=['a'], target=target)
         xt = dp.fit_transform(x)
-        assert len(xt.keys()) == x['a'].nunique()
+        assert len(xt.drop(target, axis=1).keys()) == x['a'].nunique()
         settings = dp.get_settings()
         dp2 = DataProcessor()
         dp2.load_settings(settings)
+        assert isinstance(dp2.get_settings()['_label_encodings'], list)
         xt2 = dp2.transform(pd.DataFrame({'a': ['a', 'b'], 'b': [1, 2]}))
         assert np.allclose(pd.DataFrame({'b': [1.0, 2.0], 'a_a': [1, 0], 'a_b': [0, 1], 'a_c': [0, 0]}).values,
                            xt2.values)
@@ -210,3 +218,14 @@ class TestDataProcessor(unittest.TestCase):
         xt = dp.fit_transform(df)
         assert 'a' in xt
         assert np.allclose(xt['a'].values, np.array([0, 1, 2, 1, 2, 0]))
+
+    def test_target_encoding(self):
+        target = 'target'
+        orig_labels = pd.Series(['a', 'b', 'c', 'b', 'c', 'a'], name=target)
+        dp = DataProcessor(target=target)
+        enc_labels = pd.Series(dp.encode_labels(orig_labels))
+        assert enc_labels.nunique() == orig_labels.nunique()
+        assert enc_labels.min() == 0, 'Encoding must start at zero'
+        assert pd.api.types.is_integer_dtype(enc_labels), 'Encoding must be of dtype `int`'
+        dec_labels = pd.Series(dp.decode_labels(enc_labels))
+        assert (dec_labels == orig_labels).all(), 'Decoding does not result in original dataframe'

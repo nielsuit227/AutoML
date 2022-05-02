@@ -1,15 +1,10 @@
-import unittest
 import numpy as np
 import pandas as pd
 from sklearn.datasets import make_classification
 from Amplo.AutoML import DataSampler
 
 
-class TestDataSampler(unittest.TestCase):
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        pass
+class TestDataSampler:
 
     def test_binary_small_under(self):
         print('Binary Small Under')

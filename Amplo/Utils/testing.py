@@ -6,8 +6,6 @@ import scipy.stats
 import numpy as np
 import pandas as pd
 
-from Amplo.AutoML import IntervalAnalyser
-
 
 __all__ = ['DummyDataSampler',
            'make_data', 'make_cat_data', 'make_num_data',
@@ -99,7 +97,7 @@ def make_num_data(num_samples: int, num_dists=None):
     return make_data(num_samples, cat_choices=False, num_dists=num_dists)
 
 
-def make_interval_data(n_logs=2, n_labels=2, directory=None):
+def make_interval_data(n_logs=2, n_labels=2, directory=None, target='labels', **kwargs):
     """
     Create dummy data for Amplo`s IntervalAnalyser
 
@@ -112,6 +110,10 @@ def make_interval_data(n_logs=2, n_labels=2, directory=None):
     directory : str or Path, optional
         Parent directory where interval data will be stored.
         If no directory is provided it will return a pandas.DataFrame instead.
+    target : str
+        Name of target column
+    **kwargs
+        Keyword arguments will be passed to ``make_data`` function
 
     Returns
     -------
@@ -129,7 +131,7 @@ def make_interval_data(n_logs=2, n_labels=2, directory=None):
         for label in label_names:
 
             num_samples = 20
-            x, _ = make_data(num_samples)
+            x, _ = make_data(num_samples, **kwargs)
 
             if directory:
                 # Save in folder / label / log.csv
@@ -138,10 +140,10 @@ def make_interval_data(n_logs=2, n_labels=2, directory=None):
                 x.to_csv(save_dir / f'{log}.csv', index=False)
             else:
                 # Set multi-index
-                index = pd.MultiIndex.from_arrays([num_samples * [log], range(num_samples)])
-                x = x.set_index(index)
+                index = pd.MultiIndex.from_arrays([num_samples * [log], range(num_samples)], names=['log', 'index'])
+                x.set_index(index, inplace=True)
                 # Add label column
-                x[IntervalAnalyser.target] = label
+                x[target] = label
                 # Append to list
                 dfs += [x]
 

@@ -1,62 +1,58 @@
+import pytest
 import os
-import shutil
-import unittest
+
 import numpy as np
 import pandas as pd
 from sklearn.datasets import make_classification, make_regression
+
 from Amplo import Pipeline
 from Amplo.AutoML import Modeller
-from tests import rmtree_automl
 
 
-class TestPipeline(unittest.TestCase):
+@pytest.fixture
+def make_data(mode):
+    if mode == 'classification':
+        x, y = make_classification()
+    elif mode == 'regression':
+        x, y = make_regression()
+    else:
+        raise ValueError('Invalid mode')
+    yield pd.DataFrame(x), pd.Series(y)
 
-    def test_main_predictors(self):
-        @rmtree_automl
-        def test_predictor_by_(mode):
-            if mode == 'classification':
-                x, y = make_classification()
-            else:
-                x, y = make_regression()
-            x, y = pd.DataFrame(x), pd.Series(y)
-            pipeline = Pipeline(grid_search_iterations=1, grid_search_candidates=1, plot_eda=False)
-            pipeline.fit(x, y)
-            for samples in [100, 25001]:
-                for model in Modeller(mode=mode, samples=samples).return_models():
-                    print(model)
-                    x_c, _ = pipeline.convert_data(x)
-                    model.fit(x_c, y)
-                    pipeline.bestModel = model
-                    pipeline.predict(x)
-                    assert isinstance(pipeline._main_predictors, dict), 'Main predictors not dictionary.'
 
-        for mode_ in ['classification', 'regression']:
-            test_predictor_by_(mode_)
+class TestPipeline:
 
-    @rmtree_automl
+    @pytest.mark.parametrize('mode', ['classification', 'regression'])
+    @pytest.mark.parametrize('n_samples', [100, 100_000])
+    def test_main_predictors(self, mode, make_data, n_samples):
+        # Test mode
+        x, y = make_data
+        pipeline = Pipeline(grid_search_iterations=1, grid_search_candidates=1, plot_eda=False)
+        pipeline.fit(x, y)
+        for model in Modeller(mode=mode, samples=n_samples).return_models():
+            print(model)
+            x_c, _ = pipeline.convert_data(x)
+            model.fit(x_c, y)
+            pipeline.bestModel = model
+            pipeline.predict(x)
+            assert isinstance(pipeline._main_predictors, dict), 'Main predictors not dictionary.'
+
     def test_no_dirs(self):
         pipeline = Pipeline(no_dirs=True)
         assert not os.path.exists('AutoML'), 'Directory created'
 
-    @rmtree_automl
     def test_no_args(self):
         x, y = make_regression()
         pipeline = Pipeline(grid_search_iterations=0)
         pipeline.fit(x, y)
 
-    def test_mode_detector(self):
-        x, y = make_regression()
-        pipeline = Pipeline(grid_search_iterations=0)
-        pipeline.fit(x, y)
-        assert pipeline.mode == 'regression'
-        shutil.rmtree('AutoML')
-        x, y = make_classification()
-        pipeline = Pipeline(grid_search_iterations=0)
-        pipeline.fit(x, y)
-        assert pipeline.mode == 'classification'
-        shutil.rmtree('AutoML')
+    @pytest.mark.parametrize('mode', ['classification', 'regression'])
+    def test_mode_detector(self, mode, make_data):
+        x, y = make_data
+        pipeline = Pipeline()
+        pipeline._read_data(x, y)._mode_detector()
+        assert pipeline.mode == mode
 
-    @rmtree_automl
     def test_create_folders(self):
         x, y = make_classification()
         pipeline = Pipeline(grid_search_iterations=0)

@@ -1,10 +1,10 @@
-import unittest
 import numpy as np
 import pandas as pd
+
 from Amplo.AutoML import Sequencer
 
 
-class TestSequence(unittest.TestCase):
+class TestSequence:
 
     def test_init(self):
         assert Sequencer(), 'Class initiation failed'
@@ -153,7 +153,3 @@ class TestSequence(unittest.TestCase):
             assert seq_x.shape[0] == seq_y.shape[0], 'seq_x and seq_y inconsistent samples'
             revert = seq.revert(seq_y, y[back - 1:back - 1 + forward[0]])
             assert np.allclose(revert, y[back - 1:]), 'reverted seq_y incorrect'
-
-
-if __name__ == '__main__':
-    TestSequence()

@@ -1,28 +1,14 @@
+import pytest
 import itertools
 import random
-import pandas as pd
 
 from Amplo.API import API
 from Amplo.Utils.testing import make_interval_data, make_production_data
-from tests.Unit.API import APITestCase
+
+from tests.unit.api import TestAPI
 
 
-class TestInterface(APITestCase):
-
-    def test_read_latest_version(self):
-        # Create dummy data
-        self.sync_dir.mkdir()
-        for version in range(5):
-            # Create dummy df
-            latest_data = pd.DataFrame(2 * [[version for _ in range(7)]])
-            # Make multi-index and convert columns to string
-            latest_data.index = pd.MultiIndex.from_tuples([(0, 1), (0, 2)])
-            latest_data.columns = [str(col) for col in latest_data.columns]
-            # Store
-            latest_data.to_csv(self.sync_dir / f'version_{version}.csv')
-        # Read the latest version
-        read_data = API.read_latest_version(self.sync_dir)
-        assert all(read_data == latest_data), 'Incorrect data read'  # noqa
+class TestInterface(TestAPI):
 
     def test_iter_data(self):
         # Create dummy dataset
@@ -59,9 +45,9 @@ class TestInterface(APITestCase):
         for kwargs in select_kwargs:
             # Get all paths from ``_iter_data``
             paths_actual, infos_actual = [], []
-            for path, info in API(self.sync_dir, **kwargs)._iter_data():
+            for path, team, machine, service in API(self.sync_dir, **kwargs)._iterate_data(level='service'):
                 paths_actual += [path]
-                infos_actual += [info]
+                infos_actual += [dict(team=team, machine=machine, service=service)]
 
             # Define subset
             paths_target, infos_target = [], []
@@ -91,7 +77,7 @@ class TestInterface(APITestCase):
     def test_training(self):
         # Create a small dummy dataset
         dummy_data_path = self.sync_dir / 'DummyTeam' / 'DummyMachine' / 'DummyService' / 'data'
-        make_interval_data(directory=dummy_data_path)
+        make_interval_data(n_labels=3, directory=dummy_data_path)
         # Set up api and train models
         api = API(self.sync_dir, verbose=2)
         api.train_models(grid_search_iterations=0)
@@ -107,13 +93,13 @@ class TestInterface(APITestCase):
         - Also does upload_latest_model truly take the latest?
         - What if latest locally and in the cloud are outdated? It needs to go in the right folder.
         """
+        # TODO: Implement as soon as platform is out of beta mode
+        pytest.skip('Test not yet implemented')
 
-        # # Make dummy production data
-        # issue_dir, kwargs = make_production_data(
-        #     self.sync_dir, team='Demo', machine='Charger 75kW', service='Diagnostics')
-        # # Set up api and upload model
-        # api = API(self.sync_dir, verbose=2)
-        # api.upload_models([[issue_dir, kwargs['team'], kwargs['machine'], kwargs['service'],
-        #                     kwargs['issue'], kwargs['version']]])
-
-        pass  # TODO: implement as soon as platform is out of beta mode
+        # Make dummy production data
+        issue_dir, kwargs = make_production_data(
+            self.sync_dir, team='Demo', machine='Charger 75kW', service='Diagnostics')
+        # Set up api and upload model
+        api = API(self.sync_dir, verbose=2)
+        api.upload_models([[issue_dir, kwargs['team'], kwargs['machine'], kwargs['service'],
+                            kwargs['issue'], kwargs['version']]])

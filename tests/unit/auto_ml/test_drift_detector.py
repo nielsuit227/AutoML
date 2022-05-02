@@ -1,5 +1,4 @@
 import json
-import unittest
 import warnings
 import scipy.stats
 import numpy as np
@@ -14,7 +13,7 @@ class DummyPredictor(DummyDataSampler):
         return self.sample_data(len(data))
 
 
-class TestDriftDetector(unittest.TestCase):
+class TestDriftDetector:
 
     def test_distribution_fits(self):
         # Setup

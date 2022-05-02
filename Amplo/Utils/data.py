@@ -1,8 +1,11 @@
 import re
 import pandas as pd
 
+from sklearn.feature_selection import r_regression  # pearson coefficient
+from sklearn.preprocessing import LabelEncoder
 
-__all__ = ['influx_query_to_df', 'clean_keys', 'check_dataframe_quality']
+
+__all__ = ['influx_query_to_df', 'clean_keys', 'check_dataframe_quality', 'check_pearson_correlation']
 
 
 def influx_query_to_df(result):
@@ -34,3 +37,13 @@ def check_dataframe_quality(data: pd.DataFrame) -> bool:
     assert not (data.dtypes == str).any().any()
     assert data.max().max() < 1e38 and data.min().min() > -1e38
     return True
+
+
+def check_pearson_correlation(features: pd.DataFrame, labels: pd.Series) -> bool:
+    if labels.dtype == 'object':
+        labels = LabelEncoder().fit_transform(labels)
+    pearson_corr = r_regression(features, labels)
+    if abs(pearson_corr).mean() > 0.5:
+        return False
+    else:
+        return True

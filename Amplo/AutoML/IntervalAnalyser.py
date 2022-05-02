@@ -1,28 +1,25 @@
-import os
-import copy
 import warnings
-from typing import Union
 from pathlib import Path
+from typing import Union
 
 import faiss
 import numpy as np
 import pandas as pd
 
-from Amplo.AutoML import DataProcessor, FeatureProcessor
+from Amplo.Utils.io import merge_logs
+from Amplo.Utils.data import check_dataframe_quality, check_pearson_correlation
 
 
 class IntervalAnalyser:
 
-    target = 'labels'
     noise = 'Noise'
 
     def __init__(self,
-                 folder: str = None,
+                 target: str = None,
                  norm: str = 'euclidean',  # TODO: implement functionality
                  min_length: int = 1000,
                  n_neighbors: int = None,
                  n_trees: int = 10,
-                 pipeline=None,
                  verbose: int = 1,
                  ):
         """
@@ -44,8 +41,8 @@ class IntervalAnalyser:
 
         Parameters
         ----------
-        folder : str
-            Parent folder of labels
+        target : str
+            Target column name
         norm : str
             Optimization metric for K-Nearest Neighbors
             NOTE: This option has no effect, yet!
@@ -55,15 +52,12 @@ class IntervalAnalyser:
             Quantity of neighbors, default to 3 * log length
         n_trees : int
             Quantity of trees
-        pipeline : Pipeline, optional
-            Pipeline instance in order to call `_data_processing()` and thus synchronize behavior
         """
         # Test
         assert norm in ['euclidean', 'manhattan', 'angular', 'hamming', 'dot']
-        assert pipeline is None or type(pipeline).__name__ == 'Pipeline', 'Invalid argument'
 
         # Parameters
-        self.folder = folder + '/' if len(folder) == 0 or folder[-1] != '/' else folder
+        self.target = target or 'labels'
         self.min_length = min_length
         self.norm = norm
         self.n_trees = n_trees
@@ -71,50 +65,237 @@ class IntervalAnalyser:
         self.verbose = verbose
 
         # Initializers
-        self.keys = None
-        self.n_keys = None
-        self.samples = None
-        self.avg_samples = None
-        self.n_files = 0
-        self.n_folders = 0
-        self._df = None
-        self._mins = pd.DataFrame(index=[0])
-        self._maxs = pd.DataFrame(index=[0])
         self._labels = None
+        self._features = None
+        self._metadata = None  # optional metadata from `merge_logs`
+        # self._mins = pd.DataFrame(index=[0])
+        # self._maxs = pd.DataFrame(index=[0])
         self._engine = None
         self._distributions = None
-        self._str_labels = None
-        self._pipeline = pipeline
+        self._noise_indices = None
+        self.avg_samples = None
+        self.n_samples = None
+        self.n_columns = None
+        self.n_files = None
+        self.n_folders = None
 
-    def fit_transform(self) -> pd.DataFrame:
+        # Flags
+        self.is_fitted = False
+
+    @property
+    def orig_data(self) -> pd.DataFrame:
         """
-        Function that runs the K-Nearest Neighbors and returns a NumPy array with the sensitivities.
+        Returns
+        -------
+        pd.DataFrame
+            Original data containing both, feature and label columns
+        """
+        return pd.concat([self._features, self._labels], axis=1)
+
+    @property
+    def data_with_noise(self) -> pd.DataFrame:
+        """
+        Returns
+        -------
+        pd.DataFrame
+            Original data where noise is labelled as ``self.noise``
+
+        Notes
+        -----
+        Depending on the dtype of the noise attribute, the dtype of the labels' column will be affected.
+        """
+        data = self.orig_data
+        data.loc[self._noise_indices, self.target] = self.noise
+        return data
+
+    @property
+    def data_without_noise(self) -> pd.DataFrame:
+        """
+        Returns
+        -------
+        pd.DataFrame
+            Original data but without noise rows
+        """
+        return self.orig_data.drop(self._noise_indices)
+
+    def fit_transform(self, data_or_path: Union[pd.DataFrame, str, Path], labels: pd.Series = None) -> pd.DataFrame:
+        """
+        Function that runs the K-Nearest Neighbors and returns a dataframe with the sensitivities.
+
+        Parameters
+        ----------
+        data_or_path : pd.DataFrame or str or Path
+            Multi-indexed dataset containing feature (and target) columns
+            or path to folder that is correctly structured (see Notes)
+        labels : pd.Series, optional
+            Multi-indexed dataset containing target columns.
+
+        Notes
+        -----
+        In case you provide a path-like argument to ``features_or_path``,
+        make sure that each protocol is located in a sub folder whose name represents the respective label.
+
+        A directory structure example:
+            |   ``path_to_folder``
+            |   ``├─ Label_1``
+            |   ``│   ├─ Log_1.*``
+            |   ``│   └─ Log_2.*``
+            |   ``├─ Label_2``
+            |   ``│   └─ Log_3.*``
+            |   ``└─ ...``
 
         Returns
         -------
-        np.array: Estimation of strength of correlation
+        pd.DataFrame
+            Estimation of correlation strength
         """
-        # Get data
-        df, labels = self._parse_data()
+
+        # Parse data
+        features, labels = self._parse_data(data_or_path, labels)
 
         # Set up Annoy Engine (only now that n_keys is known)
-        self._engine = self._build_engine(df)
+        self._build_engine(features)
 
         # Make distribution
-        self._distributions = self._make_distribution(df, labels)
+        self._make_distribution(features, labels)
 
-        # Return new dataset
-        return self._create_dataset(df, labels)
+        # Filter dataset
+        self._set_noise_indices()
 
-    def _create_dataset(self, df: pd.DataFrame, labels: pd.Series) -> pd.DataFrame:
+        # Set flags
+        self.is_fitted = True
+
+        return self.data_without_noise
+
+    def _parse_data(self, data_or_path: Union[pd.DataFrame, str, Path], labels: pd.Series = None):
+        """
+        Parse data for interval analysis and store it internally
+
+        Parameters
+        ----------
+        data_or_path : pd.DataFrame or str or Path
+            Multi-indexed dataset containing feature (and target) columns
+            or path to folder that is correctly structured (see Notes)
+        labels : pd.Series, optional
+            Multi-indexed dataset containing target columns
+        """
+        # Verbose
+        if self.verbose > 0:
+            print('[AutoML] Parsing data for interval analyser.')
+
+        # Parse data
+        if isinstance(data_or_path, (str, Path)):
+            # Read from path
+            features, metadata = merge_logs(data_or_path, self.target)
+            labels = features.pop(self.target)
+            # Store metadata in self
+            self._metadata = metadata
+        else:
+            assert isinstance(data_or_path, pd.DataFrame), 'Invalid data type'
+            # Check if target in `data_or_path`
+            if self.target in data_or_path.columns:
+                features = data_or_path.drop(self.target, axis=1)
+                labels = data_or_path.loc[:, self.target]
+            else:
+                assert isinstance(labels, pd.Series), 'Invalid data type'
+                features = data_or_path
+
+        # Tests
+        assert list(features.index.names) == ['log', 'index'], 'Invalid multi-indexed data detected'
+        # assert features.index.size == features.index.unique().size, 'Not all indices are unique'
+        assert all(features.index == labels.index), 'Indices mismatch: Features and labels cannot be concatenated'
+        assert len(features) == len(labels), 'Length mismatch: Features and labels cannot be concatenated'
+        assert self.target not in features.columns, 'Target column is already present in feature data'
+
+        # Check data
+        assert check_dataframe_quality(features), 'Data quality is insufficient'
+        if not check_pearson_correlation(features, labels):
+            warnings.warn(UserWarning('Data is correlated. No good results are expected.'))
+
+        # Set name of labels
+        if self.target != labels.name:
+            warnings.warn('Expected target name does not match the actual name. '
+                          f'Name will be fixed from {labels.name} to {self.target}.')
+            labels.name = self.target
+
+        # Store data in self
+        self._features = features
+        self._labels = labels
+
+        # Remove datetime columns
+        _date_cols = [col for col in features.columns
+                      if pd.api.types.is_datetime64_any_dtype(features[col])]
+        if len(_date_cols) != 0:
+            features.drop(_date_cols, axis=1, inplace=True)
+
+        # # Normalize
+        # self._mins, self._maxs = features.min(), features.max()
+        # features = (features - features.min()) / (features.max() - features.min())
+
+        # Change float64 to float32
+        #  See: https://github.com/facebookresearch/faiss/issues/461
+        for col in features.select_dtypes(include=['float64']).columns:
+            features[col] = features[col].astype('float32')
+
+        # Set sizes
+        self.n_folders = labels.nunique()
+        self.n_files = features.index.get_level_values(0).nunique()
+        self.n_samples, self.n_columns = features.shape
+        if self.n_neighbors is None:
+            self.n_neighbors = min(3 * self.n_samples // self.n_files, 5000)
+
+        return features, labels
+
+    def _build_engine(self, features: pd.DataFrame):
+        """
+        Builds the ANNOY engine.
+
+        Parameters
+        ----------
+        features : pd.DataFrame
+            Multi-indexed dataset containing feature columns
+        """
+        # Create engine
+        if self.verbose > 0:
+            print('[AutoML] Building interval analyser engine.')
+        engine = faiss.IndexFlatL2(self.n_columns)
+
+        # Add the data to ANNOY
+        engine.add(np.ascontiguousarray(features.values))  # noqa
+
+        # Set class attribute
+        self._engine = engine
+
+    def _make_distribution(self, features: pd.DataFrame, labels: pd.Series):
+        """
+        Given a build K-Nearest Neighbors, returns the label distribution
+
+        Parameters
+        ----------
+        features : pd.DataFrame
+            Multi-indexed dataset containing feature columns
+        labels : pd.Series
+            Multi-indexed dataset containing target columns
+        """
+        if self.verbose > 0:
+            print('[AutoML] Calculating interval within-class distributions.')
+
+        # Search nearest neighbors for all samples -- has to be iterative for large files -.-
+        distribution = []
+        for i, row in features.iterrows():
+            _, neighbors = self._engine.search(np.ascontiguousarray(row.values.reshape((1, -1))), int(self.n_neighbors))
+            match_mask = labels.iloc[neighbors.reshape(-1)] == labels.loc[i]
+            distribution.append(pd.Series(match_mask).sum() / self.n_neighbors)
+
+        # Parse into list of lists
+        self._distributions = pd.Series(distribution, index=self._labels.index)
+
+    def _set_noise_indices(self):
         """
         This function selects samples given the calculated distributions. It only removes samples from logs which are
         longer (> min_length), and only the samples with lower in-class neighbors.
 
         One could come up with a fancier logic, using the total dataset samples, the class-balance & sample redundancy.
-
-        parameters
-        ----------
         """
         # Verbose
         if self.verbose > 0:
@@ -125,194 +306,58 @@ class IntervalAnalyser:
         # label_samples = labels.value_counts()
 
         # Initialize
-        ind_remove = []
+        data_index = self._features.index
+        noise_indices = []
 
         # Iterate through labels and see if we should remove values
-        for i in range(self.n_files):
+        for file_id in range(self.n_files):
 
             # Check length and continue if short
-            if sum(df.index.get_level_values(0) == i) < self.min_length:
+            if sum(data_index.get_level_values(0) == file_id) < self.min_length:
                 continue
 
             # Check distribution and find cut-off
-            dist = self._distributions[i]
-            ind_remove.extend([(i, j) for j in np.where(dist < dist.mean())[0]])
+            dist = self._distributions[file_id]
+            ind_remove_label = [(file_id, j) for j in np.where(dist < dist.mean())[0]]
+            # Extend list to keep track
+            noise_indices.extend(ind_remove_label)
 
             # Verbose
-            if len(ind_remove) > 0 and self.verbose > 1:
-                print(f'[AutoML] Removing {len(ind_remove)} samples from {os.listdir(self.folder)[labels[(i, 0)]]}')
+            if len(noise_indices) > 0 and self.verbose > 1:
+                filename = self._metadata.iloc[file_id]['file'] \
+                    if isinstance(self._metadata, pd.DataFrame) else None
+                print(f'[AutoML] Removing {len(ind_remove_label)} samples from `{filename or file_id}`')
 
-        # Return stored df and remove samples
-        self._df[self.target][ind_remove] = self.noise
-        return self._df
+        # Set noise indices
+        self._noise_indices = noise_indices
 
-    def _parse_data(self):
-        """
-        Reads all files and sets a multi index
+    # @staticmethod
+    # def _get_label_means(labels, dists):
+    #     # Init
+    #     label_means = {k: [] for k in labels.unique()}
+    #
+    #     # Append distributions
+    #     for i, d in enumerate(dists):
+    #         # Skip failed reads
+    #         if i not in labels:
+    #             continue
+    #
+    #         # Extend distribution
+    #         label_means[labels[(i, 0)]].extend(d)
+    #
+    #     # Return means
+    #     return {k: np.mean(v) for k, v in label_means.items()}
 
-        Returns
-        -------
-        pd.DataFrame: all log files
-        """
-        # Verbose
-        if self.verbose > 0:
-            print('[AutoML] Parsing data for interval analyser.')
+    # --- Deprecation Properties ---
 
-        # Result init
-        dfs = []
+    @property
+    def samples(self):
+        warnings.warn(DeprecationWarning('This pseudo-attribute will be removed in a future version. '
+                                         'Consider using `n_samples` instead.'))
+        return self.n_samples
 
-        # Loop through files
-        for folder in Path(self.folder).glob('*'):
-
-            # Skip if not a folder
-            if not folder.is_dir():
-                continue
-
-            for file in folder.glob('*.*'):
-
-                # Verbose
-                if self.verbose > 1:
-                    print(f"[AutoML] {file}")
-
-                # Read df
-                try:
-                    df = self._read(file)
-                except pd.errors.EmptyDataError as e:
-                    # Skip when empty
-                    warnings.warn(f'[AutoML] Empty file detected: {file} - {e}')
-                    continue
-
-                # Set label
-                df[self.target] = folder.name
-
-                # Set second index
-                df = df.set_index(pd.MultiIndex.from_product([[self.n_files], df.index.values], names=['log', 'index']))
-
-                # Add to list
-                dfs.append(df)
-
-                # Increment
-                self.n_files += 1
-            self.n_folders += 1
-
-        if len(dfs) == 1:
-            # Omit concatenation when only one item
-            dfs = dfs[0]
-        else:
-            # Concatenate dataframes
-            dfs = pd.concat(dfs)
-
-        # Extract string labels
-        self._str_labels = copy.deepcopy(dfs[self.target])
-
-        # Clean data
-        if self._pipeline is not None:
-            self._pipeline._data_processing(dfs, add_to_name='_Interval')  # noqa
-            dp = self._pipeline.dataProcessor
-        else:
-            dp = DataProcessor(missing_values='zero', target=self.target)
-        dfs = dp.fit_transform(dfs)
-
-        # Store copy
-        self._df = copy.deepcopy(dfs)
-        self._df[self.target] = self._str_labels
-
-        # Remove datetime columns
-        if len(dp.date_cols) != 0:
-            dfs = dfs.drop(dp.date_cols, axis=1)
-
-        # Remove classes
-        labels = dfs[self.target]
-        dfs = dfs.drop(self.target, axis=1)
-
-        # Select features -- bit hacky to avoid memory
-        fp = FeatureProcessor(extract_features=False, mode='classification')
-        fp.x, fp.y = dfs, labels
-        features, _ = fp._sel_gini_impurity()  # noqa
-        dfs = dfs[features]
-
-        # Normalize
-        self._mins, self._maxs = dfs.min(), dfs.max()
-        dfs = (dfs - dfs.min()) / (dfs.max() - dfs.min())
-
-        # Change float64 to float32
-        for col in dfs.select_dtypes(include=['float64']).keys():
-            dfs[col] = dfs[col].astype('float32')
-
-        # Set sizes
-        self.samples = len(dfs)
-        self.n_keys = len(dfs.keys())
-        if self.n_neighbors is None:
-            self.n_neighbors = min(int(3 * self.samples / self.n_files), 5000)
-
-        # Return
-        return dfs, labels
-
-    def _build_engine(self, df):
-        """
-        Builds the ANNOY engine.
-        """
-        # Create engine
-        if self.verbose > 0:
-            print('[AutoML] Building interval analyser engine.')
-        engine = faiss.IndexFlatL2(self.n_keys)
-
-        # Add the data to ANNOY
-        engine.add(np.ascontiguousarray(df.values))
-
-        return engine
-
-    def _read(self, path: Union[str, Path]) -> pd.DataFrame:
-        """
-        Wrapper for various read functions
-        """
-        f_ext = Path(path).suffix
-        if f_ext == '.csv':
-            return pd.read_csv(path)
-        elif f_ext == '.json':
-            return pd.read_json(path)
-        elif f_ext == '.xml':
-            return pd.read_xml(path)
-        elif f_ext == '.feather':
-            return pd.read_feather(path)
-        elif f_ext == '.parquet':
-            return pd.read_parquet(path)
-        elif f_ext == '.stata':
-            return pd.read_stata(path)
-        elif f_ext == '.pickle':
-            return pd.read_pickle(path)
-        else:
-            raise NotImplementedError('File format not supported.')
-
-    def _make_distribution(self, df: pd.DataFrame, labels: pd.Series) -> pd.Series:
-        """
-        Given a build K-Nearest Neighbors, returns the label distribution
-        """
-        if self.verbose > 0:
-            print('[AutoML] Calculating interval within-class distributions.')
-
-        # Search nearest neighbors for all samples -- has to be iterative for large files -.-
-        distribution = []
-        for i, row in df.iterrows():
-            _, neighbors = self._engine.search(np.ascontiguousarray(row.values.reshape((1, -1))), self.n_neighbors)
-            distribution.append(sum(labels.iloc[neighbors.reshape(-1)] == labels.loc[i]) / self.n_neighbors)
-
-        # Parse into list of lists
-        return pd.Series(distribution, index=labels.index)
-
-    @staticmethod
-    def _get_label_means(labels, dists):
-        # Init
-        label_means = {k: [] for k in labels.unique()}
-
-        # Append distributions
-        for i, d in enumerate(dists):
-            # Skip failed reads
-            if i not in labels:
-                continue
-
-            # Extend distribution
-            label_means[labels[(i, 0)]].extend(d)
-
-        # Return means
-        return {k: np.mean(v) for k, v in label_means.items()}
+    @property
+    def n_keys(self):
+        warnings.warn(DeprecationWarning('This pseudo-attribute will be removed in a future version. '
+                                         'Consider using `n_columns` instead.'))
+        return self.n_columns
