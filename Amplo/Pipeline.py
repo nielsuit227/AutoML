@@ -1,3 +1,4 @@
+import itertools
 import re
 import os
 import time
@@ -308,7 +309,7 @@ class Pipeline:
         self.data_preparation(*args, **kwargs)
 
         # Train / optimize models
-        self.model_training()
+        self.model_training(**kwargs)
 
         # Conclude fitting
         self.conclude_fitting(**kwargs)
@@ -359,22 +360,27 @@ class Pipeline:
         # Therefore, it needs to be after sequencing & feature processing, as this alters scales
         self._standardizing()
 
-    def model_training(self):
-        """
-        Train models
-            1. Initial Modelling
-                Runs various off the shelf models with default parameters for all feature sets
-                If Sequencing is enabled, this is where it happens, as here, the feature set is generated.
-            2. Grid Search
-                Optimizes the hyperparameters of the best performing models
-            3. (optional) Create Stacking model
-            4. (optional) Create documentation
+    def model_training(self, **kwargs):
+        """Train models
+
+        1. Initial Modelling
+            Runs various off the shelf models with default parameters for all feature sets
+            If Sequencing is enabled, this is where it happens, as here, the feature set is generated.
+        2. Grid Search
+            Optimizes the hyperparameters of the best performing models
+        3. (optional) Create Stacking model
+        4. (optional) Create documentation
+
+        Parameters
+        ----------
+        kwargs : optional
+            Keyword arguments that will be passed to `self.grid_search`.
         """
         # Run initial models
         self._initial_modelling()
 
         # Optimize Hyper parameters
-        self.grid_search()
+        self.grid_search(**kwargs)
 
         # Create stacking model
         self._create_stacking()
@@ -391,10 +397,10 @@ class Pipeline:
 
         Parameters
         ----------
-        model : str, optional
-            Model file for which to prepare production files
-        feature_set : str, optional
-            Feature set for which to prepare production files
+        model : str or list of str, optional
+            Model file for which to prepare production files. If multiple, selects the best.
+        feature_set : str or list of str, optional
+            Feature set for which to prepare production files. If multiple, selects the best.
         params : dict, optional
             Model parameters for which to prepare production files.
             Default: takes best parameters
@@ -971,111 +977,101 @@ class Pipeline:
             # Save results
             self.results.to_csv(results_path, index=False)
 
-    def grid_search(self, model=None, feature_set: str = None, parameter_set: str = None):
-        """
-        Runs a grid search. By default, takes the self.results, and runs for the top 3 optimizations.
-        There is the option to provide a model & feature_set, but both have to be provided. In this case,
-        the model & data set combination will be optimized.
-        Implemented types, Base, Halving, Optuna
+    def grid_search(self, model=None, feature_set=None, parameter_set=None, **kwargs):
+        """Runs a grid search.
+
+        By default, takes ``self.results`` and runs for the top ``n=self.gridSearchIterations`` optimizations.
+        There is the option to provide ``model`` and ``feature_set``, but **both** have to be provided. In this
+        case, the model and dataset combination will be optimized.
+
+        Implemented types, Base, Halving, Optuna.
 
         Parameters
         ----------
-        model [Object or str]- (optional) Which model to run grid search for.
-        feature_set [str]- (optional) Which feature set to run grid search for 'rft', 'rfi' or 'pps'
-        parameter_set [dict]- (optional) Parameter grid to optimize over
-        """
+        model : list of (str or object) or object or str, optional
+            Which model to run grid search for.
+        feature_set : list of str or str, optional
+            Which feature set to run gid search for. Must be provided when `model` is not None.
+            Options: ``RFT``, ``RFI``, ``ShapThreshold`` or ``ShapIncrement``
+        parameter_set : dict, optional
+            Parameter grid to optimize over.
 
-        assert (model is not None and feature_set is not None) or model == feature_set, \
-            'Model & feature_set need to be either both None or both provided.'
+        Notes
+        -----
+        When both parameters, ``model`` and ``feature_set``, are provided, the grid search behaves as follows:
+            - When both parameters are either of dtype ``str`` or have the same length, then grid search will
+              treat them as pairs.
+            - When one parameter is an iterable and the other parameter is either a string or an iterable
+              of different length, then grid search will happen for each unique combination of these parameters.
+        """
 
         # Skip grid search and set best initial model as best grid search parameters
         if self.gridSearchType is None or self.gridSearchIterations == 0:
-            best_initial_model = self._sort_results(self.results[self.results['version'] == self.version]).iloc[0]
+            best_initial_model = self._sort_results(self.results[self.results['version'] == self.version]).iloc[:1]
             best_initial_model['type'] = 'Hyper Parameter'
-            self.results = pd.concat([self.results, best_initial_model.to_frame().T], ignore_index=True)
-            return
+            self.results = pd.concat([self.results, best_initial_model], ignore_index=True)
+            return self
 
-        # If arguments are provided
-        if model is not None:
+        # Define models
+        if model is None:
+            # Run through first best initial models (n=`self.gridSearchIterations`)
+            selected_results = self.sort_results(self.results[np.logical_and(
+                self.results['type'] == 'Initial modelling',
+                self.results['version'] == self.version,
+            )]).iloc[:self.gridSearchIterations]
+            models = [Utils.utils.get_model(model_name, mode=self.mode, samples=len(self.x))
+                      for model_name in selected_results['model']]
+            feature_sets = selected_results['dataset']
 
-            # Get model string
-            if isinstance(model, str):
-                model = Utils.utils.get_model(model, mode=self.mode, samples=len(self.x))
+        elif feature_set is None:
+            raise AttributeError('When `model` is provided, `feature_set` cannot be None. '
+                                 'Provide either both params or neither of them.')
 
-            # Organise existing results
-            results = self.results[np.logical_and(
+        else:
+            models = [Utils.utils.get_model(model, mode=self.mode, samples=len(self.x))] \
+                if isinstance(model, str) else [model]
+            feature_sets = [feature_set] if isinstance(feature_set, str) else list(feature_set)
+            if len(models) != len(feature_sets):
+                # Create each combination
+                combinations = list(itertools.product(np.unique(models), np.unique(feature_sets)))
+                models = [elem[0] for elem in combinations]
+                feature_sets = [elem[1] for elem in combinations]
+
+        # Iterate and grid search over each pair of model and feature_set
+        for model, feature_set in zip(models, feature_sets):
+
+            # Organise existing model results
+            m_results = self.results[np.logical_and(
                 self.results['model'] == type(model).__name__,
                 self.results['version'] == self.version,
             )]
-            results = self._sort_results(results[results['dataset'] == feature_set])
+            m_results = self._sort_results(m_results[m_results['dataset'] == feature_set])
 
-            # Check if exists and load
-            if ('Hyper Parameter' == results['type']).any():
+            # Skip grid search if optimized model already exists
+            if ('Hyper Parameter' == m_results['type']).any():
                 print('[AutoML] Loading optimization results.')
-                hyper_opt_results = results[results['type'] == 'Hyper Parameter']
-                params = Utils.io.parse_json(hyper_opt_results.iloc[0]['params'])
+                grid_search_results = m_results[m_results['type'] == 'Hyper Parameter']
 
-            # Or run
+            # Run grid search otherwise
             else:
-                # Run grid search
-                grid_search_results = self._sort_results(self._grid_search_iteration(model, parameter_set, feature_set))
+                # Run grid search for model
+                grid_search_results = self._grid_search_iteration(model, parameter_set, feature_set)
+                grid_search_results = self.sort_results(grid_search_results)
 
                 # Store results
-                grid_search_results['model'] = type(model).__name__
                 grid_search_results['version'] = self.version
                 grid_search_results['dataset'] = feature_set
                 grid_search_results['type'] = 'Hyper Parameter'
-                self.results = self.results.append(grid_search_results)
+                self.results = pd.concat([self.results, grid_search_results], ignore_index=True)
                 self.results.to_csv(self.mainDir + 'Results.csv', index=False)
-
-                # Get params for validation
-                params = Utils.io.parse_json(grid_search_results.iloc[0]['params'])
 
             # Validate
             if self.documentResults:
-                self.document(model.set_params(**params), feature_set)
-            return
-
-        # If arguments aren't provided, run through promising models
-        results = self._sort_results(self.results[np.logical_and(
-            self.results['type'] == 'Initial modelling',
-            self.results['version'] == self.version,
-        )])
-        for iteration in range(self.gridSearchIterations):
-            # Grab settings
-            settings = results.iloc[iteration]  # IndexError
-            model = Utils.utils.get_model(settings['model'], mode=self.mode, samples=len(self.x))
-            feature_set = settings['dataset']
-
-            # Check whether exists
-            model_results = self.results[np.logical_and(
-                self.results['model'] == type(model).__name__,
-                self.results['version'] == self.version,
-            )]
-            model_results = self._sort_results(model_results[model_results['dataset'] == feature_set])
-
-            # If exists
-            if ('Hyper Parameter' == model_results['type']).any():
-                hyper_opt_res = model_results[model_results['type'] == 'Hyper Parameter']
-                params = Utils.io.parse_json(hyper_opt_res.iloc[0]['params'])
-
-            # Else run
-            else:
-                # For one model
-                grid_search_results = self._sort_results(self._grid_search_iteration(
-                    copy.deepcopy(model), parameter_set, feature_set))
-
-                # Store
-                grid_search_results['version'] = self.version
-                grid_search_results['dataset'] = feature_set
-                grid_search_results['type'] = 'Hyper Parameter'
-                self.results = self.results.append(grid_search_results)
-                self.results.to_csv(self.mainDir + 'Results.csv', index=False)
                 params = Utils.io.parse_json(grid_search_results.iloc[0]['params'])
-
-            # Validate
-            if self.documentResults:
+                # TODO: What about other than our custom models? They don't have `set_params()` method
                 self.document(model.set_params(**params), feature_set)
+
+        return self
 
     def _create_stacking(self):
         """
@@ -1191,6 +1187,26 @@ class Pipeline:
         self.settings['validation']['{}_{}'.format(type(model).__name__, feature_set)] = documenting.outputMetrics
 
     def _parse_production_args(self, model=None, feature_set=None, params=None):
+        """
+        Parse production arguments. Selects the best model, feature set and parameter combination.
+
+        Parameters
+        ----------
+        model : str or list of str, optional
+            Model constraint(s)
+        feature_set : str or list of str, optional
+            Feature set constraint(s)
+        params : dict, optional
+            Parameter constraint(s)
+        Returns
+        -------
+        model : str
+            Best model given the `model` restraint(s).
+        feature_set : str
+            Best feature set given the `feature_set` restraint(s).
+        params : dict
+            Best model parameters given the `params` restraint(s).
+        """
         if model is not None and not isinstance(model, str):
             # TODO: This issue is linked with AML-103 (in Jira)
             #  1. Add to method docstring that it accepts a model instance, too
@@ -1202,21 +1218,25 @@ class Pipeline:
         results = self._sort_results(self.results[self.results['version'] == self.version])
 
         if model is not None:
+            if isinstance(model, str):
+                model = [model]
             # Filter results
-            results = self._sort_results(results[results['model'] == model])
+            results = self._sort_results(results[results['model'].isin(model)])
 
         if feature_set is not None:
+            if isinstance(feature_set, str):
+                feature_set = [feature_set]
             # Filter results
-            results = self._sort_results(results[results['dataset'] == feature_set])
+            results = self._sort_results(results[results['dataset'].isin(feature_set)])
 
         if params is None:
             # Get best parameters
             params = results.iloc[0]['params']
 
         # Find the best allowed arguments
-        model = model or results.iloc[0]['model']
-        feature_set = feature_set or results.iloc[0]['dataset']
-        params = Utils.io.parse_json(params or results.iloc[0]['params'])
+        model = results.iloc[0]['model']
+        feature_set = results.iloc[0]['dataset']
+        params = Utils.io.parse_json(results.iloc[0]['params'])
 
         return model, feature_set, params
 
@@ -1238,8 +1258,10 @@ class Pipeline:
 
         Returns
         -------
-        (str, str)
-            Updated model name and feature set name
+        model : str
+            Updated name of model
+        feature_set : str
+            Updated name of feature set
         """
 
         model_path = Path(model_path)
@@ -1577,12 +1599,12 @@ class Pipeline:
         # Parse & return best parameters (regardless of if it's optimized)
         return Utils.io.parse_json(results.iloc[0]['params'])
 
-    def _grid_search_iteration(self, model, parameter_set: str, feature_set: str):
+    def _grid_search_iteration(self, model, parameter_set: Union[str, None], feature_set: str):
         """
         INTERNAL | Grid search for defined model, parameter set and feature set.
         """
-        print('\n[AutoML] Starting Hyper Parameter Optimization for {} on {} features ({} samples, {} features)'.format(
-            type(model).__name__, feature_set, len(self.x), len(self.featureSets[feature_set])))
+        print(f'\n[AutoML] Starting Hyper Parameter Optimization for {type(model).__name__} on '
+              f'{feature_set} features ({len(self.x)} samples, {len(self.featureSets[feature_set])} features)')
 
         # Cross-Validator
         cv_args = {'n_splits': self.cvSplits, 'shuffle': self.shuffle,
@@ -1617,10 +1639,8 @@ class Pipeline:
             scaled = np.array(param['best']) / (param['max'] - param['min'])
             # Check if too close and warn if so
             if not (tol < scaled < 1 - tol):
-                warn_message = ('WARNING: Optimal value for parameter {} '
-                                'is very close to edge case.\t({} = {})'
-                                ).format(param.name, param.name, param['best'])
-                warnings.warn(warn_message)
+                warnings.warn(f'Optimal value for parameter is very close to edge case: '
+                              f'{param.name}={param["best"]} (range: {param["min"]}...{param["max"]})')
 
         params.apply(lambda p: warn_when_too_close_to_edge(p), axis=1)
 

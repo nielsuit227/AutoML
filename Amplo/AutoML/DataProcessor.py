@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 
 from sklearn.preprocessing import LabelEncoder
-from sklearn.utils.validation import check_is_fitted
 from sklearn.exceptions import NotFittedError
 
 from Amplo.Utils.data import clean_keys
@@ -118,13 +117,9 @@ class DataProcessor:
         -------
         DataProcessor
         """
-        print('USING LOCAL')
 
         # Clean Keys
         self.data = clean_keys(data)
-
-        # Encode or decode target
-        self._code_target_column(encode=fit)
 
         # Impute columns
         self._impute_columns()
@@ -133,11 +128,10 @@ class DataProcessor:
         if fit and not self.includeOutput and self.target is not None and self.target in self.data:
             self.data = self.data.drop(self.target, axis=1)
 
-        # Remove Duplicates
-        self.remove_duplicates()
-
-        # Infer data-types
         if fit:
+            # Remove Duplicates
+            self.remove_duplicates()
+            # Infer data-types
             self.infer_data_types()
 
         # Convert data types
@@ -155,6 +149,9 @@ class DataProcessor:
 
         # Convert integer columns
         self.convert_float_int()
+
+        # Encode or decode target
+        self._code_target_column(fit=fit)
 
         return self
 
@@ -585,13 +582,13 @@ class DataProcessor:
                 self.data[key] = pd.to_numeric(self.data[key], errors='coerce', downcast='integer')
         return self.data
 
-    def _code_target_column(self, encode=True):
+    def _code_target_column(self, fit):
         """En- or decodes target column of `self.data`
 
         Parameters
         ----------
-        encode : bool
-            Whether to encode or decode
+        fit : bool
+            Whether to fit the encoder
         """
 
         if self.target not in self.data:
@@ -599,10 +596,9 @@ class DataProcessor:
 
         # Get labels and encode / decode
         labels = self.data.loc[:, self.target]
-        if encode:
-            self.data.loc[:, self.target] = self.encode_labels(labels, warn_unencodable=False)
-        else:
-            self.data.loc[:, self.target] = self.decode_labels(labels, except_not_fitted=False)
+
+        # Encode
+        self.data.loc[:, self.target] = self.encode_labels(labels, fit=fit, warn_unencodable=False)
 
     def encode_labels(self, labels, *, fit=True, warn_unencodable=True):
         """Encode labels to numerical dtype
@@ -640,7 +636,7 @@ class DataProcessor:
             elif not self._label_encodings:
                 raise NotFittedError('Encoder it not yet fitted')
             else:
-                encoder.classes_ = np.ndarray(self._label_encodings)
+                encoder.fit(self._label_encodings)
             # Encode
             return encoder.transform(labels)
 

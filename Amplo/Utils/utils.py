@@ -5,11 +5,11 @@ import warnings
 __all__ = ['get_model', 'hist_search']
 
 
-def get_model(model_str, **args):
+def get_model(model_str, **kwargs):
     # Import here to prevent ImportError (due to circular import)
     from Amplo.AutoML.Modeller import Modeller
     try:
-        model = [mod for mod in Modeller(**args).return_models()
+        model = [mod for mod in Modeller(**kwargs).return_models()
                  if type(mod).__name__ == model_str]
         return model[0]
     except IndexError:

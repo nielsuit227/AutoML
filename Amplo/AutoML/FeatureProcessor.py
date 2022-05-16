@@ -103,6 +103,14 @@ class FeatureProcessor:
         self.extractFeatures = extract_features
         self.verbosity = verbosity
 
+    def fit(self, x=None, y=None):
+        # TODO: This is a quick and dirty version.
+        #  For more info see https://amplo.atlassian.net/browse/AML-116
+        warnings.warn('Calling `fit` is not yet completely clean code and runs '
+                      'redundant calculations. This will be fixed in a future '
+                      'version of AutoML.')
+        self.fit_transform(x, y)
+
     def fit_transform(self, x: pd.DataFrame, y: pd.Series) -> [pd.DataFrame, dict]:
         """
         Extracts features, and selects them
@@ -164,7 +172,7 @@ class FeatureProcessor:
 
         return self.x, self.featureSets
 
-    def transform(self, data: pd.DataFrame, feature_set: str) -> pd.DataFrame:
+    def transform(self, data: pd.DataFrame, feature_set: str = 'RFI') -> pd.DataFrame:
         """
         Transforms dataset features into enriched and selected features
 
