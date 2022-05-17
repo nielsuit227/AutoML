@@ -1,14 +1,60 @@
-import pytest
 import itertools
+import pytest
 import random
 
 from Amplo.API import API
-from Amplo.Utils.testing import make_interval_data, make_production_data
-
+from Amplo.Utils.testing import make_interval_data
+from Amplo.Utils.testing import make_production_data
 from tests.unit.api import TestAPI
 
 
 class TestInterface(TestAPI):
+
+    def test_iterate_directory_local(self):
+        api = API(self.sync_dir, verbose=2)
+
+        # Make local dummy folders
+        dummy_subdirs = [(self.sync_dir / dummy_subdir).resolve()
+                         for dummy_subdir in ('test1', 'test2', 'third_folder')]
+        for folder in dummy_subdirs:
+            (self.sync_dir / folder).mkdir(parents=True)
+
+        # Check yielding `all` subdirectories
+        for selection in (None, '*', '.*'):
+            all_subdirs = list(api._iterate_directory(
+                parent_dir=self.sync_dir, selection=selection, from_local=True))
+            assert set(dummy_subdirs) == set(all_subdirs), (
+                f'Setting ``selection={selection}`` should return all '
+                'subdirectories in the dummy folder.')
+
+        # Check yielding an explicit selection
+        test_subdirs = list(api._iterate_directory(
+            parent_dir=self.sync_dir, selection='test1', from_local=True))
+        assert set(i.resolve() for i in self.sync_dir.glob('test1')) \
+               == set(test_subdirs), 'Invalid explicit selection.'
+        test_subdirs_via_list = list(api._iterate_directory(
+            parent_dir=self.sync_dir, selection=['test1'], from_local=True))
+        assert set(test_subdirs_via_list) == set(test_subdirs), \
+            'Giving either a str or list of str should yield the same results.'
+
+        # Check yielding a selection via RegEx
+        test_subdirs = list(api._iterate_directory(
+            parent_dir=self.sync_dir, selection='test.*', from_local=True))
+        assert set(i.resolve() for i in self.sync_dir.glob('test*')) \
+               == set(test_subdirs), 'Invalid RegEx selection.'
+
+    def test_iterate_directory_blob(self):
+        api = API(self.sync_dir, verbose=2)
+
+        all_subdirs = list(api._iterate_directory(
+            parent_dir='Demo', selection='*', from_local=False))
+        test_subdirs = list(api._iterate_directory(
+            parent_dir='Demo', selection='test.*', from_local=False))
+        assert len(test_subdirs) > 0, 'List of directories should not be empty.'
+        assert set(test_subdirs).issubset(all_subdirs), \
+            '`test` directories should be a subset of `all` directories.'
+        assert set(test_subdirs) != set(all_subdirs), \
+            '`test` directories should not be equal to `all` directories.'
 
     def test_iter_data(self):
         # Create dummy dataset

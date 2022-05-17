@@ -10,7 +10,6 @@ from Amplo import Pipeline
 from Amplo.API.storage import AzureSynchronizer
 from Amplo.API.platform import PlatformSynchronizer
 
-
 __all__ = ['API']
 
 
@@ -312,7 +311,7 @@ class API:
             info = (team_dir.name,)
 
             if level == 'team':
-                yield team_dir, team_dir.name
+                yield team_dir, *info
                 continue
 
             # Iterate machines
@@ -346,46 +345,64 @@ class API:
 
     def _iterate_directory(self, parent_dir=None, selection=None, from_local=True):
         """
-        Iterate over subdirectories of parent directory
+        Iterate over subdirectories of parent directory.
 
         Parameters
         ----------
         parent_dir : str or Path, optional
-            Parent directory
-        selection : iterable object of str, optional
-            Select subdirectories
+            Parent directory.
+        selection : str or list of str, optional
+            Select subdirectories.
         from_local : bool
-            Whether `parent_dir` is a local or a blob directory path
+            Whether `parent_dir` is a local or a blob directory path.
+
+        Notes
+        -----
+        The parameter `selection` recognizes RegEx flags. For example,
+        ``selection="folder.*"`` would yield each subdirectory that begins with
+        ``folder`` (``folder1``, ``folder_two``, ...).
 
         Yields
         ------
         Path
-            Next subdirectory
+            Next subdirectory.
         """
 
-        if selection is None:
-            selection = ['*']
+        # Input checks
+        if not isinstance(parent_dir, (str, Path)):
+            err = ValueError(f'Invalid argument type: {type(parent_dir)}')
+            if from_local:
+                raise err
+            elif parent_dir is not None:
+                raise err
+        if from_local and not Path(parent_dir).exists():
+            raise FileNotFoundError(f'Directory does not exist: {parent_dir}')
+        if selection is not None:
+            if not hasattr(selection, '__iter__'):
+                raise ValueError(f'Selection is not iterable: {selection}')
+            elif not all(isinstance(sel, str) for sel in selection):
+                raise ValueError(f'Selection must be an iterable of strings.')
 
-        if from_local:
-            # Assertions
-            assert isinstance(parent_dir, (str, Path)), 'Invalid argument type'
-            parent_dir = Path(parent_dir)
-            assert parent_dir.exists(), 'Directory does not exist'
-
-            # Iterate over selection items
-            for match in sorted(selection):
-                for sub_dir in sorted(parent_dir.glob(match)):
-                    # Yield matching subdirectory
-                    if not sub_dir.is_dir():
-                        continue
-                    yield sub_dir.resolve()
-
+        # Make selection regex-able
+        if isinstance(selection, str):
+            selection = [selection]
+        if selection is None or any(sel in ('*', '.*') for sel in selection):
+            selection = ['.*']
         else:
-            # Assertions
-            assert parent_dir is None or isinstance(parent_dir, (str, Path)), 'Invalid argument type'
+            selection = [sel + '$' for sel in selection]
 
-            # Iterate over all subdirectories
-            for sub_dir in sorted(self.storage.get_dir_paths(parent_dir)):
-                sub_dir = Path(sub_dir)
-                if sub_dir.name in selection:
-                    yield sub_dir
+        # Define sorted subdirectory iterator
+        if from_local:
+            subdirectories = sorted(
+                child.resolve() for child in Path(parent_dir).iterdir()
+                if child.is_dir())
+        else:
+            subdirectories = sorted(
+                Path(child) for child in self.storage.get_dir_paths(parent_dir))
+
+        # Yield matching subdirectories
+        for subdir in subdirectories:
+            # Note that matches for `re.match` must match at the beginning of a
+            # given string. Otherwise, `re.find` would have been used.
+            if any(re.match(match, subdir.name) for match in selection):
+                yield subdir
