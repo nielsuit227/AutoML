@@ -1,13 +1,16 @@
 from abc import abstractmethod
-from typing import Any, Dict, List, Tuple, Optional, Union
+import multiprocessing as mp
 import re
+from typing import Any, Dict, List, Tuple, Optional, Union
 
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import KFold
 from sklearn.metrics import SCORERS
+from sklearn.metrics._scorer import _BaseScorer  # noqa
 
-import multiprocessing as mp
+
+__all__ = ['_GridSearch']
 
 
 class _GridSearch:
@@ -21,17 +24,39 @@ class _GridSearch:
             scoring='accuracy',
             verbose=0,
     ):
+        """
+        Abstract base class for grid search.
+
+        Purposes:
+            - Enforces to inheriting classes to implement all abstract methods.
+            - Defines the hyperparameter search space as it's the same for all
+              grid search methods.
+
+        Parameters
+        ----------
+        model : Amplo.AutoML.Modeller.ModelType
+            Model object to optimize.
+        params : optional
+            Parameters to optimize. Has no effect for `OptunaGridSearch`.
+        candidates : int
+            Limit the number of candidates to search.
+        timeout : int
+            Limit the time for optimization.
+        cv : sklearn.model_selection.BaseCrossValidator
+            Cross validation object.
+        scoring : str or sklearn.metrics._scorer._BaseScorer
+            A valid string for `sklearn.metrics.SCORERS`
+        verbose : int
+            Verbose logging.
+        """
         # Input tests
-        assert model is not None, 'Need to provide a model'
-        if hasattr(model, 'is_fitted'):
-            assert not model.is_fitted(), 'Model already fitted'
-        if scoring is None:
-            if 'Classifier' in type(model).__name__:
-                self.scoring = SCORERS['accuracy']
-            elif 'Regressor' in type(model).__name__:
-                self.scoring = SCORERS['neg_mean_squared_error']
-            else:
-                raise ValueError('Model mode unknown')
+        if hasattr(model, 'is_fitted') and model.is_fitted():
+            raise AssertionError('Model already fitted')
+        if isinstance(scoring, str):
+            self.scoring = SCORERS[scoring]
+        elif not issubclass(type(scoring), _BaseScorer):
+            raise ValueError('Parameter `scoring` must originate from `sklearn.metrics.make_scorer()` '
+                             'or must be a valid string for `sklearn.metrics.SCORERS`.')
 
         # Set class attributes
         self.model = model
@@ -295,12 +320,15 @@ class _GridSearch:
         raise NotImplementedError('Hyper parameter tuning not implemented for {}'.format(model_name))
 
     def get_parameter_min_max(self) -> pd.DataFrame:
-        """Get all min and max values from model-specific set of parameters.
+        """
+        Get all min and max values from model-specific set of parameters.
+
         Omit categorical parameters as min and max values are ambiguous.
 
         Returns
         -------
-        param_min_max (pd.DataFrame)
+        param_min_max : pd.DataFrame
+            Min and max values.
         """
 
         # Get all model's parameters
@@ -330,13 +358,18 @@ class _GridSearch:
 
     @abstractmethod
     def _get_hyper_params(self, *args, **kwargs) -> Dict[str, Any]:
-        """Translate `self._hyper_parameter_values` to grid-search specific
-        distributions or samples.
+        """
+        Get grid search specific distributions or samples.
+
+        This function translates `self._hyper_parameter_values` to the expected
+        format for the given grid search.
 
         Parameters
         ----------
-        *args (optional): grid-search specific arguments
-        **kwargs (optional): grid-search specific arguments
+        args : optional
+            Grid search specific arguments.
+        kwargs : optional
+            Grid search specific keyword arguments.
 
         Returns
         -------
@@ -346,15 +379,19 @@ class _GridSearch:
 
     @abstractmethod
     def fit(self, x, y) -> pd.DataFrame:
-        """Run fit with model-specific set of parameters
+        """
+        Run fit with model-specific set of parameters.
 
         Parameters
         ----------
-        x (array-type): data features
-        y (array-type): data labels
+        x : array
+            Data features.
+        y : array
+            Data labels
 
         Returns
         -------
-        results (pd.DataFrame)
+        results : pd.DataFrame
+            Results of the grid search.
         """
         pass

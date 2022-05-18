@@ -110,6 +110,11 @@ class AzureSynchronizer:
         -------
         found_new_data : bool
             Whether new data has been downloaded
+
+        Notes
+        -----
+        The data in the `.metadata` file is currently only used for checking the last
+        modification date, thus telling whether files have to be downloaded / updated.
         """
         # Set up paths
         blob_dir = Path(blob_dir)
@@ -148,7 +153,7 @@ class AzureSynchronizer:
             blob = self.container.get_blob_client(str(blob_dir / file))
             blob_properties = blob.get_blob_properties()
 
-            # Save file if new or modified
+            # Download and save if file is new or modified
             file_created: datetime = blob_properties.creation_time
             file_last_modified: datetime = blob_properties.last_modified
             if file_last_modified > last_updated:

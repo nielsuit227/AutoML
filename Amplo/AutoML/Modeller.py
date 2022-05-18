@@ -1,22 +1,88 @@
-import os
 import copy
-import time
+from datetime import datetime
 import joblib
+import os
+import time
+from typing import TypeVar
+
 import numpy as np
 import pandas as pd
-from datetime import datetime
+from sklearn import ensemble
+from sklearn import linear_model
+from sklearn import metrics
+from sklearn import svm
 from sklearn.model_selection import KFold
 from sklearn.model_selection import StratifiedKFold
-from sklearn import linear_model
-from sklearn import ensemble
-from sklearn import svm
-from sklearn import metrics
 
-from Amplo.Classifiers import CatBoostClassifier, XGBClassifier, LGBMClassifier
-from Amplo.Regressors import CatBoostRegressor, XGBRegressor, LGBMRegressor
+from Amplo.Classifiers import CatBoostClassifier
+from Amplo.Classifiers import LGBMClassifier
+from Amplo.Classifiers import XGBClassifier
+from Amplo.Regressors import CatBoostRegressor
+from Amplo.Regressors import LGBMRegressor
+from Amplo.Regressors import XGBRegressor
+
+
+__all__ = ['ClassificationType', 'Modeller', 'ModelType', 'RegressionType']
+
+
+ClassificationType = TypeVar(
+    'ClassificationType', CatBoostClassifier, ensemble.BaggingClassifier,
+    linear_model.RidgeClassifier, LGBMClassifier, svm.SVC, XGBClassifier)
+RegressionType = TypeVar(
+    'RegressionType', CatBoostRegressor, ensemble.BaggingRegressor,
+    linear_model.LinearRegression, LGBMRegressor, svm.SVR, XGBRegressor)
+ModelType = TypeVar(
+    'ModelType', CatBoostClassifier, CatBoostRegressor,
+    ensemble.BaggingClassifier, ensemble.BaggingRegressor,
+    linear_model.LinearRegression, linear_model.RidgeClassifier,
+    LGBMClassifier, LGBMRegressor, svm.SVC, svm.SVR, XGBClassifier,
+    XGBRegressor)
 
 
 class Modeller:
+    """
+    Modeller for classification or regression tasks.
+
+    Supported models:
+        - linear models from ``scikit-learn``
+        - random forest from ``scikit-learn``
+        - bagging model from ``scikit-learn``
+        - ~~gradient boosting from ``scikit-learn``~~
+        - ~~histogram-based gradient boosting from ``scikit-learn``~~
+        - XGBoost from DMLC
+        - Catboost from Yandex
+        - LightGBM from Microsoft
+
+    Parameters
+    ----------
+    mode : str
+        Model mode. Either `regression` or `classification`.
+    shuffle : bool
+        Whether to shuffle samples from training / validation.
+    n_splits : int
+        Number of cross-validation splits.
+    objective : str
+        Performance metric to optimize. Must be a valid string for
+        `sklearn.metrics.SCORERS`.
+    samples : int
+        Hypothetical number of samples in dataset. Useful to manipulate behavior
+        of `return_models()` function.
+    needs_proba : bool
+        Whether the modelling needs a probability.
+    folder : str
+        Folder to store models and/or results.
+    dataset : str
+        Name of feature set. For documentation purposes only.
+    store_models : bool
+        Whether to store the trained models. If true, `folder` must be
+        specified to take effect.
+    store_results : bool
+        Whether to store the results. If true, `folder` must be specified.
+
+    See Also
+    --------
+    [Sklearn scorers](https://scikit-learn.org/stable/modules/model_evaluation.html
+    """
 
     def __init__(self,
                  mode='regression',
@@ -29,32 +95,6 @@ class Modeller:
                  dataset='set_0',
                  store_models=False,
                  store_results=True):
-        """
-        Runs various regression or classification models.
-        Includes:
-        - Scikit's Linear Model
-        - Scikit's Random Forest
-        - Scikit's Bagging
-        - Scikit's GradientBoosting
-        - Scikit's HistGradientBoosting
-        - DMLC's XGBoost
-        - Catboost's Catboost
-        - Microsoft's LightGBM
-
-        Parameters
-        ----------
-        mode str: 'regression' or 'classification'
-        shuffle bool: Whether to shuffle samples for training / validation
-        n_splits int: Number of cross-validation splits
-        objective str: Performance metric from SciKit Scorers*
-        samples int: Samples in dataset, does not need to be specified but useful for calling return_models()
-        folder str: Folder to store models and / or results
-        dataset str: Name of feature set, documentation purpose
-        store_models bool: Whether to store the trained models
-        store_results bool:Whether to store the results
-
-        * https://scikit-learn.org/stable/modules/model_evaluation.html
-        """
         # Test
         assert mode in ['classification', 'regression'], 'Unsupported mode'
         assert isinstance(shuffle, bool)
@@ -105,6 +145,14 @@ class Modeller:
             return self._fit(x, y, cv)
 
     def return_models(self):
+        """
+        Get all models that are considered appropriate for training.
+
+        Returns
+        -------
+        list of ModelType
+            Models that apply for given dataset size and mode.
+        """
         models = []
 
         # All classifiers

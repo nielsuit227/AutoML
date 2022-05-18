@@ -136,7 +136,7 @@ class API:
             local_issue_dir = re.sub(r'\s+$', '', local_issue_dir)  # remove subsequent spaces
 
             # Synchronize all files of given issue
-            self.storage.sync_files(issue_dir, local_issue_dir)
+            self.storage.sync_files(issue_dir, local_issue_dir)  # TODO give `last_updated` argument
 
     def train_models(self, **kwargs):
         """
@@ -189,6 +189,7 @@ class API:
                 checker._load_version()  # noqa
             else:
                 checker.version = 1
+            # TODO: load settings directly, if present
             checker._read_data(read_dir)  # noqa
             if not checker.has_new_training_data():
                 self.print(f'Skipped training since no new data', 'blue')

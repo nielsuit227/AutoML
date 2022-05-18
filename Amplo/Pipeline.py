@@ -30,16 +30,14 @@ from Amplo.AutoML.DataProcessor import DataProcessor
 from Amplo.AutoML.DriftDetector import DriftDetector
 from Amplo.AutoML.FeatureProcessor import FeatureProcessor
 from Amplo.AutoML.IntervalAnalyser import IntervalAnalyser
-from Amplo.Regressors.StackingRegressor import StackingRegressor
 from Amplo.Classifiers.StackingClassifier import StackingClassifier
-
-from .GridSearch.BaseGridSearch import BaseGridSearch
-from .GridSearch.HalvingGridSearch import HalvingGridSearch
-from .GridSearch.OptunaGridSearch import OptunaGridSearch
-
-from .Documenting.MultiDocumenting import MultiDocumenting
-from .Documenting.BinaryDocumenting import BinaryDocumenting
-from .Documenting.RegressionDocumenting import RegressionDocumenting
+from Amplo.Documenting import BinaryDocumenting
+from Amplo.Documenting import MultiDocumenting
+from Amplo.Documenting import RegressionDocumenting
+from Amplo.GridSearch import BaseGridSearch
+from Amplo.GridSearch import HalvingGridSearch
+from Amplo.GridSearch import OptunaGridSearch
+from Amplo.Regressors.StackingRegressor import StackingRegressor
 
 
 class Pipeline:
@@ -213,7 +211,6 @@ class Pipeline:
         if self.objective is not None:
             assert isinstance(self.objective, str), 'Objective needs to be a string'
             assert self.objective in metrics.SCORERS.keys(), 'Metric not supported, look at sklearn.metrics'
-            self.scorer = metrics.SCORERS[self.objective]
 
         # Required sub-classes
         self.dataSampler = DataSampler()
@@ -403,7 +400,9 @@ class Pipeline:
             Feature set for which to prepare production files. If multiple, selects the best.
         params : dict, optional
             Model parameters for which to prepare production files.
-            Default: takes best parameters
+            Default: takes the best parameters
+        kwargs
+            Collecting container for keyword arguments that are passed through `self.fit()`.
         """
         # Set up production path
         prod_dir = self.mainDir + f'Production/v{self.version}/'
@@ -563,6 +562,8 @@ class Pipeline:
             y-data (target)
         data : pd.DataFrame or str or Path, optional
             Contains both, x and y, OR provides a path to folder structure
+        kwargs
+            Collecting container for keyword arguments that are passed through `self.fit()`.
 
         Returns
         -------
@@ -632,14 +633,7 @@ class Pipeline:
         self.set_data(data)
 
         # Store metadata in settings
-        file_metadata = dict()
-        if metadata is not None:
-            for _, row in metadata.iterrows():
-                folder = row.pop('folder')
-                file = row.pop('file')
-                # Set metadata
-                file_metadata[f'{folder}/{file}'] = row.to_dict()
-        self.settings['file_metadata'] = file_metadata
+        self.settings['file_metadata'] = metadata or dict()
 
         return self
 
@@ -650,13 +644,21 @@ class Pipeline:
 
         # Get previous and current file metadata
         curr_metadata = self.settings['file_metadata']
-        last_metadata = self.get_settings(self.version - 1)['files']
-        # Return True if metadata do not match
-        if set(curr_metadata.keys()) != set(last_metadata.keys()):
-            return True
-        # Check modification date of each file
-        return any(curr_metadata[file]['last_modified'] != last_metadata[file]['last_modified']
-                   for file in curr_metadata.keys())
+        last_metadata = self.get_settings(self.version - 1)['file_metadata']
+
+        # Check each settings file
+        for file_id in curr_metadata:
+            # Get file specific metadata
+            curr = curr_metadata[file_id]
+            last = last_metadata.get(file_id, dict())
+            # Compare metadata
+            same_folder = curr['folder'] == last.get('folder')
+            same_file = curr['file'] == last.get('file')
+            same_mtime = curr['last_modified'] == last.get('last_modified')
+            if not all([same_folder, same_file, same_mtime]):
+                return False
+
+        return True
 
     def _mode_detector(self):
         """
@@ -668,12 +670,14 @@ class Pipeline:
             # Classification if string
             if self.y.dtype == str or self.y.nunique() < 0.1 * len(self.data):
                 self.mode = 'classification'
-                self.objective = 'neg_log_loss'
+                self.objective = self.objective or 'neg_log_loss'
 
             # Else regression
             else:
                 self.mode = 'regression'
-                self.objective = 'neg_mean_absolute_error'
+                self.objective = self.objective or 'neg_mean_absolute_error'
+
+            # Set scorer
             self.scorer = metrics.SCORERS[self.objective]
 
             # Copy to settings

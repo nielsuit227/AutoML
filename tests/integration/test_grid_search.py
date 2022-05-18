@@ -36,7 +36,6 @@ class TestGridSearch:
 
     @pytest.mark.parametrize('test_case', ['grid_search_type', 'grid_search_iterations'])
     def test_no_grid_search(self, test_case):
-        return
         # Set keyword arguments
         kwargs = dict(extract_features=False, sequence=False, plot_eda=False)
         if test_case == 'grid_search_type':

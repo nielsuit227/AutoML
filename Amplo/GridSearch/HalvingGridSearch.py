@@ -7,9 +7,9 @@ from scipy.stats import uniform
 from scipy.stats import randint
 from scipy.stats import loguniform
 from sklearn.experimental import enable_halving_search_cv  # noqa
-from sklearn.model_selection import HalvingRandomSearchCV
+from sklearn.model_selection import HalvingRandomSearchCV  # noqa
 
-from ._GridSearch import _GridSearch
+from Amplo.GridSearch._GridSearch import _GridSearch
 
 
 class HalvingGridSearch(_GridSearch):

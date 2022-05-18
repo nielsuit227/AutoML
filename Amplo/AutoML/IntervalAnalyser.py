@@ -324,8 +324,7 @@ class IntervalAnalyser:
 
             # Verbose
             if len(noise_indices) > 0 and self.verbose > 1:
-                filename = self._metadata.iloc[file_id]['file'] \
-                    if isinstance(self._metadata, pd.DataFrame) else None
+                filename = self._metadata[file_id]['file'] if isinstance(self._metadata, dict) else None
                 print(f'[AutoML] Removing {len(ind_remove_label)} samples from `{filename or file_id}`')
 
         # Set noise indices
