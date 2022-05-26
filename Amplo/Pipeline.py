@@ -37,6 +37,8 @@ from Amplo.Documenting import RegressionDocumenting
 from Amplo.GridSearch import BaseGridSearch
 from Amplo.GridSearch import HalvingGridSearch
 from Amplo.GridSearch import OptunaGridSearch
+from Amplo.Observation import DataObserver
+from Amplo.Observation import ProductionObserver
 from Amplo.Regressors.StackingRegressor import StackingRegressor
 
 
@@ -331,6 +333,10 @@ class Pipeline:
         # Reading data
         self._read_data(*args, **kwargs)
 
+        # Check data
+        obs = DataObserver(pipeline=self)
+        obs.observe()
+
         # Detect mode (classification / regression)
         self._mode_detector()
 
@@ -420,6 +426,14 @@ class Pipeline:
 
         # Set and store production settings
         self._prepare_production_settings(prod_dir + 'Settings.json', model, feature_set, params)
+
+        # Observe production
+        # TODO[TS, 25.05.2022]: Currently, we are observing the data also here.
+        #  However, in a future version we probably will only observe the data
+        #  directly after :func:`_read_data()`. For now we wait...
+        obs = ProductionObserver(pipeline=self)
+        obs.observe()
+        self.settings['production_observation'] = obs.observations
 
         # Report
         report_path = self.mainDir + f'Documentation/v{self.version}/{model}_{feature_set}.pdf'

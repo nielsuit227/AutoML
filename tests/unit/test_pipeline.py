@@ -9,24 +9,13 @@ from Amplo import Pipeline
 from Amplo.AutoML import Modeller
 
 
-@pytest.fixture
-def make_data(mode):
-    if mode == 'classification':
-        x, y = make_classification()
-    elif mode == 'regression':
-        x, y = make_regression()
-    else:
-        raise ValueError('Invalid mode')
-    yield pd.DataFrame(x), pd.Series(y)
-
-
 class TestPipeline:
 
     @pytest.mark.parametrize('mode', ['classification', 'regression'])
     @pytest.mark.parametrize('n_samples', [100, 100_000])
-    def test_main_predictors(self, mode, make_data, n_samples):
+    def test_main_predictors(self, mode, make_x_y, n_samples):
         # Test mode
-        x, y = make_data
+        x, y = make_x_y
         pipeline = Pipeline(grid_search_iterations=1, grid_search_candidates=1, plot_eda=False)
         pipeline.fit(x, y)
         for model in Modeller(mode=mode, samples=n_samples).return_models():
@@ -41,20 +30,22 @@ class TestPipeline:
         pipeline = Pipeline(no_dirs=True)
         assert not os.path.exists('AutoML'), 'Directory created'
 
-    def test_no_args(self):
-        x, y = make_regression()
+    @pytest.mark.parametrize('mode', ['regression'])
+    def test_no_args(self, mode, make_x_y):
+        x, y = make_x_y
         pipeline = Pipeline(grid_search_iterations=0)
         pipeline.fit(x, y)
 
     @pytest.mark.parametrize('mode', ['classification', 'regression'])
-    def test_mode_detector(self, mode, make_data):
-        x, y = make_data
+    def test_mode_detector(self, mode, make_x_y):
+        x, y = make_x_y
         pipeline = Pipeline()
         pipeline._read_data(x, y)._mode_detector()
         assert pipeline.mode == mode
 
-    def test_create_folders(self):
-        x, y = make_classification()
+    @pytest.mark.parametrize('mode', ['classification'])
+    def test_create_folders(self, mode, make_x_y):
+        x, y = make_x_y
         pipeline = Pipeline(grid_search_iterations=0)
         pipeline.fit(x, y)
 

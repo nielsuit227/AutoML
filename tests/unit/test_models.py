@@ -28,17 +28,18 @@ def setup_class(request):
 
     if 'Classifier' in model.__name__:
         x, y = make_classification(n_classes=5, n_informative=15)
-        model_type = 'Classifier'
         is_classification = True
     elif 'Regressor' in model.__name__:
         x, y = make_regression(n_informative=15)
-        model_type = 'Regressor'
         is_classification = False
     else:
         raise ValueError('Invalid model requested')
 
     if 'Stacking' in model.__name__:
-        model_params = {f'CatBoost{model_type}': {'depth': 10}}
+        if is_classification:
+            model_params = {'CatBoostClassifier': {'depth': 10}}
+        else:
+            model_params = {'CatBoostRegressor': {'depth': 10}}
     else:
         model_params = {'max_depth': 10}
 
