@@ -156,7 +156,7 @@ class TestPipeline:
         pipeline.fit(data_dir)
 
         # Check if IntervalAnalyser is fitted
-        assert pipeline.intervalAnalyser.is_fitted, 'IntervalAnalyser was not fitted'
+        assert pipeline.interval_analyser.is_fitted, 'IntervalAnalyser was not fitted'
 
         # Check data handling
         assert Path('AutoML/Data/Interval_Analyzed_v1.csv').exists(), \

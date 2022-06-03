@@ -137,7 +137,7 @@ class PipelineObserver(BaseObserver, metaclass=abc.ABCMeta):
 
     @property
     def model(self):
-        return deepcopy(self._pipe.bestModel)
+        return deepcopy(self._pipe.best_model)
 
     @property
     def scorer(self):

@@ -22,12 +22,15 @@ class TestPipeline:
             print(model)
             x_c, _ = pipeline.convert_data(x)
             model.fit(x_c, y)
-            pipeline.bestModel = model
+            pipeline.best_model = model
             pipeline.predict(x)
             assert isinstance(pipeline._main_predictors, dict), 'Main predictors not dictionary.'
 
-    def test_no_dirs(self):
-        pipeline = Pipeline(no_dirs=True)
+    @pytest.mark.parametrize('mode', ['classification'])
+    def test_no_dirs(self, mode, make_x_y):
+        x, y = make_x_y
+        pipeline = Pipeline(no_dirs=True, grid_search_iterations=0, extract_features=0)
+        pipeline.fit(x, y)
         assert not os.path.exists('AutoML'), 'Directory created'
 
     @pytest.mark.parametrize('mode', ['regression'])
@@ -66,18 +69,26 @@ class TestPipeline:
 
         # Test single index
         data_write = pd.DataFrame(np.random.randint(0, 100, size=(10, 10)),
-                                  columns=[f'feature_{i}' for i in range(10)])
+                                  columns=[f'feature_{i}' for i in range(10)], dtype='int64')
         data_write.index.name = 'index'
-        Pipeline._write_csv(data_write, data_path)
+        Pipeline()._write_csv(data_write, data_path)
         data_read = Pipeline._read_csv(data_path)
         assert data_write.equals(data_read), 'Read data should be equal to original data'
 
         # Test multi-index (cf. IntervalAnalyser)
         data_write = data_write.set_index(data_write.columns[-2:].to_list())
         data_write.index.names = ['log', 'index']
-        Pipeline._write_csv(data_write, data_path)
+        Pipeline()._write_csv(data_write, data_path)
         data_read = Pipeline._read_csv(data_path)
         assert data_write.equals(data_read), 'Read data should be equal to original data'
 
         # Remove data
         os.remove(data_path)
+
+    @pytest.mark.parametrize('mode', ['classification'])
+    def test_capital_target(self, mode, make_x_y):
+        x, y = make_x_y
+        df = pd.DataFrame(x)
+        df['TARGET'] = y
+        pipeline = Pipeline(target='TARGET', grid_search_iterations=0, extract_features=False)
+        pipeline.fit(df)

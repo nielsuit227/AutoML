@@ -185,7 +185,7 @@ class API:
 
             # Check whether new data has been added
             checker = Pipeline(no_dirs=True, **preparing_pipeline_kwargs)
-            if Path(checker.mainDir).exists():
+            if Path(checker.main_dir).exists():
                 checker._load_version()  # noqa
             else:
                 checker.version = 1
@@ -209,11 +209,11 @@ class API:
 
                 # Set up pipeline using a copy from the preparing pipeline
                 pipeline = deepcopy(preparing_pipeline)
-                pipeline.mainDir = f'{model_dir}/{issue}/'
+                pipeline.main_dir = f'{model_dir}/{issue}/'
                 pipeline.name = f'{team} - {machine} - {service} - {issue}'
 
                 # Create dirs
-                if not pipeline.noDirs:
+                if not pipeline.no_dirs:
                     pipeline._create_dirs()  # noqa
                     pipeline._load_version()  # noqa
 
@@ -227,7 +227,7 @@ class API:
                 pipeline.conclude_fitting()
 
                 # Append to trained model arguments
-                self._trained_model_args.append([pipeline.mainDir, team, machine, service, issue, pipeline.version])
+                self._trained_model_args.append([pipeline.main_dir, team, machine, service, issue, pipeline.version])
 
     def upload_models(self, model_args=None):
         """

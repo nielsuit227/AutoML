@@ -51,60 +51,34 @@ def _check_logging_level(level):
     return rv
 
 
-def get_logger(name='AutoML', log_path=None, level=logging.NOTSET, capture_warnings=True) -> logging.Logger:
-    """
-    Create a logging Logger
+# Get custom logger
+logger = logging.getLogger('AutoML')
+logger.setLevel("INFO")
 
-    Parameters
-    ----------
-    name : str
-        Name of the logger
-    log_path : str or Path, optional
-        Specifies the logging path, in case you want to store the logs in a file.
-    level : int or str, optional
-        Logging level
-    capture_warnings : bool
-        Whether to capture `warnings.warn(...)` with the logger.
-        Note that this option is set globally!
+# Set console handler
+console_formatter = colorlog.ColoredFormatter(
+    '%(white)s[%(name)s] %(log_color)s%(levelname)s: %(message)s %(white)s<%(filename)s:%(lineno)d>')
+console_handler = logging.StreamHandler()
+console_handler.setLevel("INFO")
+console_handler.setFormatter(console_formatter)
+logger.addHandler(console_handler)
 
-    Returns
-    -------
-    logging.Logger
-    """
-    # TODO: Add option `parent` to use `parent.getChild()`
-    #  -> This is part of https://amplo.atlassian.net/browse/AML-71
+# Set file handler
+file_formatter = logging.Formatter('[%(name)s] %(levelname)s: %(message)s')
+file_handler = logging.FileHandler('AutoML.log', mode='a')
+file_handler.setLevel("INFO")
+file_handler.setFormatter(file_formatter)
+logger.addHandler(file_handler)
 
-    # Safety check for logging level
-    level = _check_logging_level(level)
+# Capture warnings from `warnings.warn(...)`
+logging.captureWarnings(True)
+py_warnings_logger = logging.getLogger('py.warnings')
+warnings_formatter = colorlog.ColoredFormatter('%(white)s[%(name)s] %(log_color)s%(levelname)s: %(message)s')
+warnings_handler = logging.StreamHandler()
+warnings_handler.setLevel('WARNING')
+warnings_handler.setFormatter(warnings_formatter)
+py_warnings_logger.addHandler(warnings_handler)
 
-    # Get custom logger
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
 
-    # Set console handler
-    console_formatter = colorlog.ColoredFormatter(
-        '%(white)s[%(name)s] %(log_color)s%(levelname)s: %(message)s %(white)s<%(filename)s:%(lineno)d>')
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(level)
-    console_handler.setFormatter(console_formatter)
-    logger.addHandler(console_handler)
-
-    # Set file handler
-    if log_path is not None:
-        if Path(log_path).suffix != '.log':
-            logger.warning('It is recommended naming a log file as `*.log`')
-        file_formatter = logging.Formatter('[%(name)s] %(levelname)s: %(message)s')
-        file_handler = logging.FileHandler(log_path)
-        file_handler.setLevel(level)
-        file_handler.setFormatter(file_formatter)
-        logger.addHandler(file_handler)
-
-    # Capture warnings
-    if capture_warnings:
-        # Capture warnings from `warnings.warn(...)`
-        logging.captureWarnings(True)
-        # Get py-warnings logger and add handler
-        py_warnings_logger = logging.getLogger('py.warnings')
-        py_warnings_logger.addHandler(console_handler)
-
-    return logger
+def remove_file_handler():
+    logger.removeHandler(file_handler)

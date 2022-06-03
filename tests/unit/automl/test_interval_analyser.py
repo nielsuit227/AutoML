@@ -35,19 +35,19 @@ def create_test_folders(directory: Path, n_samples, n_features):
 
 class TestIntervalAnalyser:
 
-    @pytest.fixture(autouse=True)
-    def setup_and_teardown(self):
-        self.ia_folder = Path('IA')
-        rmtree(self.ia_folder)
-        yield
-        rmtree(self.ia_folder, must_exist=True)
+    @classmethod
+    def setup_class(cls):
+        cls.n_samples = 50
+        cls.n_features = 25
+        cls.ia_folder = Path('IA')
+        rmtree(cls.ia_folder)
+        create_test_folders(cls.ia_folder, cls.n_samples, cls.n_features)
+
+    @classmethod
+    def teardown_class(cls):
+        rmtree(cls.ia_folder)
 
     def test_all(self):
-        # Create dummy data
-        n_samples = 50
-        n_features = 25
-        create_test_folders(self.ia_folder, n_samples, n_features)
-
         # Set up IntervalAnalyser
         ia = IntervalAnalyser(min_length=10)
         ia.fit_transform(self.ia_folder)
@@ -67,7 +67,7 @@ class TestIntervalAnalyser:
         data_full = ia.data_with_noise
         assert len(data_full) == ia.n_samples and len(data_no_noise) == ia.n_samples // 2, 'Incorrect number of samples'
         assert data_full.index.get_level_values(0).nunique() == ia.n_files, 'Files skipped'
-        assert len(ia._features.columns) == n_features, 'Incorrect number of features'
+        assert len(ia._features.columns) <= self.n_features, 'Incorrect number of features'
 
     def test_parse_data(self):
         # Test receiving dataframe and receiving directory
@@ -107,3 +107,11 @@ class TestIntervalAnalyser:
             # Other checks
             assert not ia.is_fitted, 'IntervalAnalyser should not yet be fitted'
             assert ia._noise_indices is None, 'No noise indices should be set yet'
+
+    # TODO test correlation warning
+    # TODO test data quality warning
+    # TODO test multi-index error
+    # TODO test index misalignment error
+    # TODO test feature/sample length error
+    # TODO test target in features error
+    # TODO test target != labels.name

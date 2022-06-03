@@ -16,8 +16,8 @@ from sklearn.ensemble import RandomForestRegressor
 class Documenter:
 
     def __init__(self, pipeline):
-        if not os.path.exists(pipeline.mainDir + 'Documentation/v{}'.format(pipeline.version)):
-            os.makedirs(pipeline.mainDir + 'Documentation/v{}'.format(pipeline.version))
+        if not os.path.exists(pipeline.main_dir + 'Documentation/v{}'.format(pipeline.version)):
+            os.makedirs(pipeline.main_dir + 'Documentation/v{}'.format(pipeline.version))
         self.mName = None
         self.p = pipeline
         self.model = None
@@ -45,7 +45,7 @@ class Documenter:
 
         # Normalize
         if self.p.normalize:
-            normalize_features = [k for k in x.keys() if k not in self.p.dateCols + self.p.catCols]
+            normalize_features = [k for k in x.keys() if k not in self.p.date_cols + self.p.cat_cols]
             x[normalize_features] = self.p.bestScaler.transform(x[normalize_features])
             if self.mode == 'regression':
                 self.y_not_normalized = y.values.reshape(-1, 1)
@@ -142,17 +142,17 @@ class Documenter:
         f1_score = []
         area_under_curves = []
         true_positive_rates = []
-        cm = np.zeros((self.p.cvSplits, 2, 2))
+        cm = np.zeros((self.p.cv_splits, 2, 2))
         mean_fpr = np.linspace(0, 1, 100)
 
         # Plot Initiator
-        fig, ax = plt.subplots(math.ceil(self.p.cvSplits / 2), 2, sharex='all', sharey='all', figsize=[12, 8])
+        fig, ax = plt.subplots(math.ceil(self.p.cv_splits / 2), 2, sharex='all', sharey='all', figsize=[12, 8])
         fig.suptitle('{}-Fold Cross Validated Predictions - {} ({})'.format(
-            self.p.cvSplits, type(self.model).__name__, self.featureSet))
+            self.p.cv_splits, type(self.model).__name__, self.featureSet))
         fig2, ax2 = plt.subplots(figsize=[12, 8])
 
         # Modelling
-        self.cv = StratifiedKFold(n_splits=self.p.cvSplits, shuffle=self.p.shuffle)
+        self.cv = StratifiedKFold(n_splits=self.p.cv_splits, shuffle=self.p.shuffle)
         for i, (t, v) in enumerate(self.cv.split(self.x, self.y)):
             n = len(v)
             xt, xv, yt, yv = self.x[t], self.x[v], self.y[t].reshape((-1)), self.y[v].reshape((-1))
@@ -233,9 +233,9 @@ class Documenter:
         ax2.set(xlim=[-0.05, 1.05], ylim=[-0.05, 1.05],
                 title="ROC Curve - {}".format(self.mName))
         ax2.legend(loc="lower right")
-        roc_path = self.p.mainDir + 'Documentation/v{}/ROC_{}.png'.format(self.p.version, self.mName)
+        roc_path = self.p.main_dir + 'Documentation/v{}/ROC_{}.png'.format(self.p.version, self.mName)
         fig2.savefig(roc_path, format='png', dpi=200)
-        cross_val_path = self.p.mainDir + 'Documentation/v{}/Cross_Val_{}.png'.format(self.p.version, self.mName)
+        cross_val_path = self.p.main_dir + 'Documentation/v{}/Cross_Val_{}.png'.format(self.p.version, self.mName)
         fig.savefig(cross_val_path, format='png', dpi=200)
 
         # Markdown
@@ -315,17 +315,17 @@ This model has been selected based on the {} score.
 
     def multiclass_markdown(self):
         # Initiating
-        fig, ax = plt.subplots(math.ceil(self.p.cvSplits / 2), 2, sharex='all', sharey='all')
+        fig, ax = plt.subplots(math.ceil(self.p.cv_splits / 2), 2, sharex='all', sharey='all')
         fig.suptitle('{}-Fold Cross Validated Predictions - {} ({})'.format(
-            self.p.cvSplits, self.mName, self.featureSet))
+            self.p.cv_splits, self.mName, self.featureSet))
         n_classes = len(self.classes_)
-        f1_score = np.zeros((self.p.cvSplits, n_classes))
-        log_loss = np.zeros(self.p.cvSplits)
-        avg_acc = np.zeros(self.p.cvSplits)
-        cm = np.zeros((self.p.cvSplits, n_classes, n_classes))
+        f1_score = np.zeros((self.p.cv_splits, n_classes))
+        log_loss = np.zeros(self.p.cv_splits)
+        avg_acc = np.zeros(self.p.cv_splits)
+        cm = np.zeros((self.p.cv_splits, n_classes, n_classes))
 
         # Modelling
-        self.cv = StratifiedKFold(n_splits=self.p.cvSplits, shuffle=self.p.shuffle)
+        self.cv = StratifiedKFold(n_splits=self.p.cv_splits, shuffle=self.p.shuffle)
         for i, (t, v) in enumerate(self.cv.split(self.x, self.y)):
             xt, xv, yt, yv = self.x[t], self.x[v], self.y[t].reshape((-1)), self.y[v].reshape((-1))
             model = copy.copy(self.model)
@@ -428,7 +428,7 @@ Model performance is analysed by various metrics. Below you find various metrics
 All experiments are cross validated. This means that every time a model's performance is evaluated, it's trained on one part of the data, and tested on another. Therefore, the model is always tested against data it has not yet been trained for. This gives the best approximation for real world (out of sample) performance.
 The current validation strategy used {}, with {} splits and {} shuffling the data.
 
-""".format(type(self.cv).__name__, self.p.cvSplits, 'with' if self.p.shuffle else 'without')
+""".format(type(self.cv).__name__, self.p.cv_splits, 'with' if self.p.shuffle else 'without')
 
     @staticmethod
     def split_param_table(params):
@@ -468,7 +468,7 @@ The optimized model has the following parameters:
 
     def features_markdown(self):
         # Calculate feature importance
-        feature_importance_url = self.p.mainDir + 'Documentation/v{}/Feature_Importance_{}.png'.format(
+        feature_importance_url = self.p.main_dir + 'Documentation/v{}/Feature_Importance_{}.png'.format(
             self.p.version, self.mName)
         if not os.path.exists(feature_importance_url):
             rf = None
@@ -487,13 +487,13 @@ The optimized model has the following parameters:
             fig.savefig(feature_importance_url, format='png', dpi=200)
 
         # Number of Features
-        n_co_linear = len(self.p.featureProcessor.coLinearFeatures)
-        n_cross = len(self.p.featureProcessor.crossFeatures)
-        n_additive = len(self.p.featureProcessor.addFeatures)
-        n_trigonometry = len(self.p.featureProcessor.trigoFeatures)
-        n_k_means = len(self.p.featureProcessor.kMeansFeatures)
-        n_lagged = len(self.p.featureProcessor.laggedFeatures)
-        n_diff = len(self.p.featureProcessor.diffFeatures)
+        n_co_linear = len(self.p.feature_processor.coLinearFeatures)
+        n_cross = len(self.p.feature_processor.crossFeatures)
+        n_additive = len(self.p.feature_processor.addFeatures)
+        n_trigonometry = len(self.p.feature_processor.trigoFeatures)
+        n_k_means = len(self.p.feature_processor.kMeansFeatures)
+        n_lagged = len(self.p.feature_processor.laggedFeatures)
+        n_diff = len(self.p.feature_processor.diffFeatures)
         return """## Features
 
 ### Feature Extraction
@@ -524,14 +524,14 @@ Top 20 features:
 
 <img src="{}" width="400" height="600">
 
-""".format(self.p.informationThreshold * 100,
-           n_co_linear, ', '.join([i for i in self.p.featureProcessor.coLinearFeatures]),
-           n_cross, ', '.join([i for i in self.p.featureProcessor.crossFeatures]),
-           n_additive, ', '.join([i for i in self.p.featureProcessor.addFeatures]),
-           n_trigonometry, ', '.join([i for i in self.p.featureProcessor.trigoFeatures]),
-           n_k_means, ', '.join([i for i in self.p.featureProcessor.kMeansFeatures]),
-           n_lagged, ', '.join([i for i in self.p.featureProcessor.laggedFeatures]),
-           n_diff, ', '.join([i for i in self.p.featureProcessor.diffFeatures]),
+""".format(self.p.information_threshold * 100,
+           n_co_linear, ', '.join([i for i in self.p.feature_processor.coLinearFeatures]),
+           n_cross, ', '.join([i for i in self.p.feature_processor.crossFeatures]),
+           n_additive, ', '.join([i for i in self.p.feature_processor.addFeatures]),
+           n_trigonometry, ', '.join([i for i in self.p.feature_processor.trigoFeatures]),
+           n_k_means, ', '.join([i for i in self.p.feature_processor.kMeansFeatures]),
+           n_lagged, ', '.join([i for i in self.p.feature_processor.laggedFeatures]),
+           n_diff, ', '.join([i for i in self.p.feature_processor.diffFeatures]),
            'Feature_Importance_{}.png'.format(self.mName))
 
     def data_markdown(self):
@@ -543,10 +543,10 @@ Data cleaning steps:
 3. Imputed {} missing values with {}
 4. Removed {} columns with only constant values
 
-""".format(self.p.dataProcessor.removedDuplicateColumns, self.p.dataProcessor.removedDuplicateRows,
-           self.p.outlierRemoval,
-           self.p.dataProcessor.imputedMissingValues, self.p.missingValues,
-           self.p.dataProcessor.removedConstantColumns)
+""".format(self.p.data_processor.removedDuplicateColumns, self.p.data_processor.removedDuplicateRows,
+           self.p.outlier_removal,
+           self.p.data_processor.imputedMissingValues, self.p.missing_values,
+           self.p.data_processor.removedConstantColumns)
 
     def modelling_markdown(self):
         top_ten_table = "| Model | {} | Parameters |\n| --- | ---: | --- |\n".format(self.p.objective.ljust(16))

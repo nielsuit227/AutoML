@@ -56,7 +56,7 @@ def read_pandas(path: Union[str, Path]) -> pd.DataFrame:
         raise NotImplementedError(f'File format {file_extension} not supported.')
     else:
         reader = FILE_READERS[file_extension]
-        return reader(path)
+        return reader(path, low_memory=False)
 
 
 def merge_logs(path_to_folder, target='labels'):
@@ -91,6 +91,13 @@ def merge_logs(path_to_folder, target='labels'):
         Target column depicts the folder name.
     metadata : dict
         File metadata
+
+    Warns
+    --------
+    EmptyDataError
+        Whenever an empty file is found.
+    NotImplementedError
+        Whenever a file with an unknown format is found.
     """
     # Tests
     if not Path(path_to_folder).is_dir():
@@ -109,10 +116,17 @@ def merge_logs(path_to_folder, target='labels'):
     # Loop through file paths in metadata
     for file_id in metadata:
         # Read data
-        datum = read_pandas(metadata[file_id]['full_path'])
+        try:
+            datum = read_pandas(metadata[file_id]['full_path'])
+        except pd.errors.EmptyDataError:
+            warnings.warn(f"Empty file: {metadata[file_id]}")
+            continue
+        except NotImplementedError:
+            warnings.warn(f"Unknown file format: {metadata[file_id]}")
 
         # Set labels
         datum[target] = metadata[file_id]['folder']
+
         # Set index
         datum.set_index(pd.MultiIndex.from_product([[file_id], datum.index.values], names=['log', 'index']),
                         inplace=True)

@@ -32,7 +32,7 @@ class TestModelObserver:
         pipeline = Pipeline(grid_search_iterations=0)
         pipeline._read_data(x, y)
         pipeline._mode_detector()
-        pipeline.bestModel = RandomPredictor(mode=mode)
+        pipeline.best_model = RandomPredictor(mode=mode)
 
         # Observe
         obs = ModelObserver(pipeline=pipeline)

@@ -66,7 +66,7 @@ class BinaryDocumenting(FPDF):
         """
         # Asserts
         assert model is not None, 'Model cannot be none.'
-        assert feature_set in self.p.featureSets.keys(), 'Feature set unavailable'
+        assert feature_set in self.p.feature_sets.keys(), 'Feature set unavailable'
 
         # Set variables
         self.model = model
@@ -78,7 +78,7 @@ class BinaryDocumenting(FPDF):
         self.analyse()
 
         # Check if folder needs creation
-        path = self.p.mainDir + 'Documentation/v{}/{}_{}.pdf'.format(self.p.version, self.mName, feature_set)
+        path = self.p.main_dir + 'Documentation/v{}/{}_{}.pdf'.format(self.p.version, self.mName, feature_set)
         if not os.path.exists(path[:path.rfind('/')]):
             os.makedirs(path[:path.rfind('/')])
 
@@ -93,7 +93,7 @@ class BinaryDocumenting(FPDF):
         self.features()
         self.data()
         self.score_board()
-        self.output(self.p.mainDir + 'Documentation/v{}/{}_{}.pdf'.format(self.p.version, self.mName, self.feature_set))
+        self.output(self.p.main_dir + 'Documentation/v{}/{}_{}.pdf'.format(self.p.version, self.mName, self.feature_set))
 
     def prepare_data(self):
         """
@@ -113,17 +113,17 @@ class BinaryDocumenting(FPDF):
         f1_score = []
         area_under_curves = []
         true_positive_rates = []
-        cm = np.zeros((self.p.cvSplits, 2, 2))
+        cm = np.zeros((self.p.cv_splits, 2, 2))
         mean_fpr = np.linspace(0, 1, 100)
 
         # Plot Initiator
-        fig, ax = plt.subplots(math.ceil(self.p.cvSplits / 2), 2, sharex='all', sharey='all', figsize=[12, 8])
+        fig, ax = plt.subplots(math.ceil(self.p.cv_splits / 2), 2, sharex='all', sharey='all', figsize=[12, 8])
         fig.suptitle('{}-Fold Cross Validated Predictions - {} ({})'.format(
-            self.p.cvSplits, self.mName, self.feature_set))
+            self.p.cv_splits, self.mName, self.feature_set))
         fig2, ax2 = plt.subplots(figsize=[12, 8])
 
         # Modelling
-        self.cv = StratifiedKFold(n_splits=self.p.cvSplits, shuffle=self.p.shuffle)
+        self.cv = StratifiedKFold(n_splits=self.p.cv_splits, shuffle=self.p.shuffle)
         for i, (t, v) in enumerate(self.cv.split(self.x, self.y)):
             n = len(v)
             xt, xv, yt, yv = self.x[t], self.x[v], self.y[t].reshape((-1)), self.y[v].reshape((-1))
@@ -222,25 +222,25 @@ class BinaryDocumenting(FPDF):
         ax2.set(xlim=[-0.05, 1.05], ylim=[-0.05, 1.05],
                 title="ROC Curve - {}".format(self.mName))
         ax2.legend(loc="lower right")
-        if not os.path.exists(self.p.mainDir + 'EDA/Validation/v{}/'.format(self.p.version)):
-            os.makedirs(self.p.mainDir + 'EDA/Validation/v{}/'.format(self.p.version))
-        roc_path = self.p.mainDir + 'EDA/Validation/v{}/ROC_{}.png'.format(self.p.version, self.mName)
+        if not os.path.exists(self.p.main_dir + 'EDA/Validation/v{}/'.format(self.p.version)):
+            os.makedirs(self.p.main_dir + 'EDA/Validation/v{}/'.format(self.p.version))
+        roc_path = self.p.main_dir + 'EDA/Validation/v{}/ROC_{}.png'.format(self.p.version, self.mName)
         fig2.savefig(roc_path, format='png', dpi=200)
-        cross_val_path = self.p.mainDir + 'EDA/Validation/v{}/Cross_Val_{}.png'.format(self.p.version, self.mName)
+        cross_val_path = self.p.main_dir + 'EDA/Validation/v{}/Cross_Val_{}.png'.format(self.p.version, self.mName)
         fig.savefig(cross_val_path, format='png', dpi=200)
 
         # Feature Importance (only if EDA is not run)
-        if not os.path.exists(self.p.mainDir + 'EDA/Features/v{}/RF.png'.format(self.p.version)):
-            if not os.path.exists(self.p.mainDir + 'EDA/Features/v{}'.format(self.p.version)):
-                os.makedirs(self.p.mainDir + 'EDA/Features/v{}/'.format(self.p.version))
+        if not os.path.exists(self.p.main_dir + 'EDA/Features/v{}/RF.png'.format(self.p.version)):
+            if not os.path.exists(self.p.main_dir + 'EDA/Features/v{}'.format(self.p.version)):
+                os.makedirs(self.p.main_dir + 'EDA/Features/v{}/'.format(self.p.version))
             fig, ax = plt.subplots(figsize=[4, 6], constrained_layout=True)
             plt.subplots_adjust(left=0.5, top=1, bottom=0)
             ax.spines['right'].set_visible(False)
             ax.spines['bottom'].set_visible(False)
             ax.spines['top'].set_visible(False)
-            keys, fi = self.p.featureProcessor.featureImportance['rf']
+            keys, fi = self.p.feature_processor.featureImportance['rf']
             plt.barh(keys[:15], width=fi[:15], color='#2369ec')
-            fig.savefig(self.p.mainDir + 'EDA/Features/v{}/RF.png'.format(self.p.version), format='png', dpi=200)
+            fig.savefig(self.p.main_dir + 'EDA/Features/v{}/RF.png'.format(self.p.version), format='png', dpi=200)
 
     def check_new_page(self, margin=220):
         if self.get_y() > margin:
@@ -395,7 +395,7 @@ class BinaryDocumenting(FPDF):
         self.ln(self.lh * 2)
         self.add_h3('Area Under Curve & Cross Validation Plots')
         x, y = self.get_x(), self.get_y()
-        path = self.p.mainDir + 'EDA/Validation/v{}/ROC_{}.png'.format(self.p.version, self.mName)
+        path = self.p.main_dir + 'EDA/Validation/v{}/ROC_{}.png'.format(self.p.version, self.mName)
         self.image(x=x, y=y, w=90, h=60, name=path)
         path = path[:path.rfind('/')] + '/Cross_Val_{}.png'.format(self.mName)
         self.image(x=x + self.WIDTH / 2 - self.pm, y=y, w=90, h=60, name=path)
@@ -407,7 +407,7 @@ class BinaryDocumenting(FPDF):
                       "the model is always test against data it has not yet been trained for. This gives the best "
                       "approximation for real world (out of sample) performance. The current validation strategy used "
                       "is {}, with {} splits and {} shuffling the data."
-                      .format(type(self.cv).__name__, self.p.cvSplits, 'with' if self.p.shuffle else 'without'))
+                      .format(type(self.cv).__name__, self.p.cv_splits, 'with' if self.p.shuffle else 'without'))
         self.ln(self.lh)
 
     def parameters(self):
@@ -456,14 +456,14 @@ class BinaryDocumenting(FPDF):
 
     def features(self):
         features = {
-            'Co-Linear Features': self.p.featureProcessor.coLinearFeatures,
-            'Linear Features': self.p.featureProcessor.linearFeatures,
-            'Arithmetic Features': self.p.featureProcessor.crossFeatures,
-            'Trigonometric Features': self.p.featureProcessor.trigonometricFeatures,
-            'Inverse Features': self.p.featureProcessor.inverseFeatures,
-            'K-Means Features': self.p.featureProcessor.kMeansFeatures,
-            'Lagged Features': self.p.featureProcessor.laggedFeatures,
-            'Differentiated Features': self.p.featureProcessor.diffFeatures,
+            'Co-Linear Features': self.p.feature_processor.coLinearFeatures,
+            'Linear Features': self.p.feature_processor.linearFeatures,
+            'Arithmetic Features': self.p.feature_processor.crossFeatures,
+            'Trigonometric Features': self.p.feature_processor.trigonometricFeatures,
+            'Inverse Features': self.p.feature_processor.inverseFeatures,
+            'K-Means Features': self.p.feature_processor.kMeansFeatures,
+            'Lagged Features': self.p.feature_processor.laggedFeatures,
+            'Differentiated Features': self.p.feature_processor.diffFeatures,
         }
         if not self.check_new_page():
             self.ln(20)
@@ -473,7 +473,7 @@ class BinaryDocumenting(FPDF):
         self.add_h3('Feature Extraction')
         self.add_text('First, features that are co-linear (a * x = y) up to {} % were removed. This resulted in {} '
                       'removed features: {}{}'
-                      .format(self.p.informationThreshold * 100, len(features['Co-Linear Features']),
+                      .format(self.p.information_threshold * 100, len(features['Co-Linear Features']),
                               ', '.join([i for i in features['Co-Linear Features'][:20]]),
                               ', ...' if len(features['Co-Linear Features']) > 20 else ' ', ))
         self.check_new_page(margin=220)
@@ -506,7 +506,7 @@ class BinaryDocumenting(FPDF):
                             "to create two feature sets, one that contains 85% of all feature importance, and one that "
                             "contains all features that contribute more than 1% to the total feature importance.\nThe "
                             "top 15 feature with their mean decrease in Gini impurity are visualized on the right.")
-        path = self.p.mainDir + 'EDA/Features/v{}/RF.png'.format(self.p.version)
+        path = self.p.main_dir + 'EDA/Features/v{}/RF.png'.format(self.p.version)
         self.image(name=path, x=110 + self.pm, y=y - 10, w=80, h=120)
 
     def data(self):
@@ -518,10 +518,10 @@ class BinaryDocumenting(FPDF):
                       "  2.  Removed {} outliers with {}\n"
                       "  3.  Imputed {} missing values with {}\n"
                       "  4.  Removed {} columns with constant values\n"
-                      .format(self.p.dataProcessor.removedDuplicateColumns, self.p.dataProcessor.removedDuplicateRows,
-                              self.p.dataProcessor.removedOutliers, self.p.dataProcessor.outlier_removal,
-                              self.p.dataProcessor.imputedMissingValues, self.p.dataProcessor.missing_values,
-                              self.p.dataProcessor.removedConstantColumns))
+                      .format(self.p.data_processor.removedDuplicateColumns, self.p.data_processor.removedDuplicateRows,
+                              self.p.data_processor.removedOutliers, self.p.data_processor.outlier_removal,
+                              self.p.data_processor.imputedMissingValues, self.p.data_processor.missing_values,
+                              self.p.data_processor.removedConstantColumns))
 
     def score_board(self):
         if not self.check_new_page():

@@ -1,3 +1,4 @@
+import re
 import logging
 import warnings
 
@@ -60,3 +61,17 @@ def hist_search(array, value):
 
     warnings.warn(RuntimeWarning('Operation took too long. Returning -1 (no match).'))
     return -1
+
+
+def clean_feature_name(feature_name):
+    """With the purpose to have a central feature cleaning, this function cleans feature names.
+
+    Parameters
+    ----------
+    feature_name : string
+
+    Returns
+    -------
+    cleaned_feature_name : string
+    """
+    return re.sub('[^a-z0-9]', '_', feature_name.lower())

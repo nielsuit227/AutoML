@@ -14,14 +14,14 @@ class MultiDocumenting(BinaryDocumenting):
 
     def analyse(self):
         # Initiating
-        f1_score = np.zeros((self.p.cvSplits, self.p.n_classes))
-        log_loss = np.zeros(self.p.cvSplits)
-        avg_acc = np.zeros(self.p.cvSplits)
-        cm = np.zeros((self.p.cvSplits, self.p.n_classes, self.p.n_classes))
+        f1_score = np.zeros((self.p.cv_splits, self.p.n_classes))
+        log_loss = np.zeros(self.p.cv_splits)
+        avg_acc = np.zeros(self.p.cv_splits)
+        cm = np.zeros((self.p.cv_splits, self.p.n_classes, self.p.n_classes))
 
         # Modelling
         model = None
-        self.cv = StratifiedKFold(n_splits=self.p.cvSplits, shuffle=self.p.shuffle)
+        self.cv = StratifiedKFold(n_splits=self.p.cv_splits, shuffle=self.p.shuffle)
         for i, (t, v) in enumerate(self.cv.split(self.x, self.y)):
             xt, xv, yt, yv = self.x[t], self.x[v], self.y[t].reshape((-1)), self.y[v].reshape((-1))
             model = copy.copy(self.model)
@@ -63,17 +63,17 @@ class MultiDocumenting(BinaryDocumenting):
             print('Log Loss:         {:.2f} \u00B1 {:.2f}'.format(np.mean(log_loss), np.std(log_loss)))
             self.metrics['Log Loss'] = [np.mean(log_loss), np.std(log_loss)]
 
-        if not os.path.exists(self.p.mainDir + 'EDA/Features/v{}/RF.png'.format(self.p.version)):
-            if not os.path.exists(self.p.mainDir + 'EDA/Features/v{}'.format(self.p.version)):
-                os.makedirs(self.p.mainDir + 'EDA/Features/v{}/'.format(self.p.version))
+        if not os.path.exists(self.p.main_dir + 'EDA/Features/v{}/RF.png'.format(self.p.version)):
+            if not os.path.exists(self.p.main_dir + 'EDA/Features/v{}'.format(self.p.version)):
+                os.makedirs(self.p.main_dir + 'EDA/Features/v{}/'.format(self.p.version))
             fig, ax = plt.subplots(figsize=[4, 6], constrained_layout=True)
             plt.subplots_adjust(left=0.5, top=1, bottom=0)
             ax.spines['right'].set_visible(False)
             ax.spines['bottom'].set_visible(False)
             ax.spines['top'].set_visible(False)
-            keys, fi = self.p.featureProcessor.featureImportance['rf']
+            keys, fi = self.p.feature_processor.featureImportance['rf']
             plt.barh(keys[:15], width=fi[:15], color='#2369ec')
-            fig.savefig(self.p.mainDir + 'EDA/Features/v{}/RF.png'.format(self.p.version), format='png', dpi=200)
+            fig.savefig(self.p.main_dir + 'EDA/Features/v{}/RF.png'.format(self.p.version), format='png', dpi=200)
 
     def model_performance(self):
         self.ln(self.lh)
@@ -137,4 +137,4 @@ class MultiDocumenting(BinaryDocumenting):
                       "the model is always test against data it has not yet been trained for. This gives the best "
                       "approximation for real world (out of sample) performance. The current validation strategy used "
                       "is {}, with {} splits and {} shuffling the data."
-                      .format(type(self.cv).__name__, self.p.cvSplits, 'with' if self.p.shuffle else 'without'))
+                      .format(type(self.cv).__name__, self.p.cv_splits, 'with' if self.p.shuffle else 'without'))

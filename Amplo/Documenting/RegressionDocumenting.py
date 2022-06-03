@@ -16,8 +16,8 @@ class RegressionDocumenting(BinaryDocumenting):
 
     def analyse(self):
         # Cross-Validation Plots
-        fig, ax = plt.subplots(math.ceil(self.p.cvSplits / 2), 2, sharex='all', sharey='all', figsize=[24, 8])
-        fig.suptitle('{}-Fold Cross Validated Predictions - {}'.format(self.p.cvSplits, self.mName))
+        fig, ax = plt.subplots(math.ceil(self.p.cv_splits / 2), 2, sharex='all', sharey='all', figsize=[24, 8])
+        fig.suptitle('{}-Fold Cross Validated Predictions - {}'.format(self.p.cv_splits, self.mName))
 
         # Initialize iterables
         mae = []
@@ -25,7 +25,7 @@ class RegressionDocumenting(BinaryDocumenting):
         r2 = []
         max_error = []
         rel_error = []
-        self.cv = KFold(n_splits=self.p.cvSplits, shuffle=self.p.shuffle)
+        self.cv = KFold(n_splits=self.p.cv_splits, shuffle=self.p.shuffle)
         # Cross Validate
         i = 0
         for i, (t, v) in enumerate(self.cv.split(self.x, self.y)):
@@ -63,9 +63,9 @@ class RegressionDocumenting(BinaryDocumenting):
 
         # Save figure
         ax[i // 2][i % 2].legend(['Output', 'Prediction'])
-        if not os.path.exists(self.p.mainDir + 'EDA/Validation/v{}/'.format(self.p.version)):
-            os.makedirs(self.p.mainDir + 'EDA/Validation/v{}/'.format(self.p.version))
-        cross_val_path = self.p.mainDir + 'EDA/Validation/v{}/Cross_Val_{}.png'.format(self.p.version, self.mName)
+        if not os.path.exists(self.p.main_dir + 'EDA/Validation/v{}/'.format(self.p.version)):
+            os.makedirs(self.p.main_dir + 'EDA/Validation/v{}/'.format(self.p.version))
+        cross_val_path = self.p.main_dir + 'EDA/Validation/v{}/Cross_Val_{}.png'.format(self.p.version, self.mName)
         fig.savefig(cross_val_path, format='png', dpi=200)
 
         # Print & Finish plot
@@ -78,17 +78,17 @@ class RegressionDocumenting(BinaryDocumenting):
             np.mean(rel_error), np.std(rel_error)))
 
         # Feature Importance
-        if not os.path.exists(self.p.mainDir + 'EDA/Features/v{}/RF.png'.format(self.p.version)):
-            if not os.path.exists(self.p.mainDir + 'EDA/Features/v{}'.format(self.p.version)):
-                os.makedirs(self.p.mainDir + 'EDA/Features/v{}/'.format(self.p.version))
+        if not os.path.exists(self.p.main_dir + 'EDA/Features/v{}/RF.png'.format(self.p.version)):
+            if not os.path.exists(self.p.main_dir + 'EDA/Features/v{}'.format(self.p.version)):
+                os.makedirs(self.p.main_dir + 'EDA/Features/v{}/'.format(self.p.version))
             fig, ax = plt.subplots(figsize=[4, 6], constrained_layout=True)
             plt.subplots_adjust(left=0.5, top=1, bottom=0)
             ax.spines['right'].set_visible(False)
             ax.spines['bottom'].set_visible(False)
             ax.spines['top'].set_visible(False)
-            keys, fi = self.p.featureProcessor.featureImportance['rf']
+            keys, fi = self.p.feature_processor.featureImportance['rf']
             plt.barh(keys[:15], width=fi[:15], color='#2369ec')
-            fig.savefig(self.p.mainDir + 'EDA/Features/v{}/RF.png'.format(self.p.version), format='png', dpi=200)
+            fig.savefig(self.p.main_dir + 'EDA/Features/v{}/RF.png'.format(self.p.version), format='png', dpi=200)
 
     def model_performance(self):
         if not self.check_new_page():
@@ -115,7 +115,7 @@ class RegressionDocumenting(BinaryDocumenting):
 
         self.add_h3('Cross Validation Plot')
         x, y = self.get_x(), self.get_y()
-        path = self.p.mainDir + 'EDA/Validation/v{}/Cross_Val_{}.png'.format(self.p.version, self.mName)
+        path = self.p.main_dir + 'EDA/Validation/v{}/Cross_Val_{}.png'.format(self.p.version, self.mName)
         self.image(x=(self.WIDTH - 200) / 2, y=y, w=200, h=90, name=path)
         self.add_page()
 
@@ -125,4 +125,4 @@ class RegressionDocumenting(BinaryDocumenting):
                       "the model is always test against data it has not yet been trained for. This gives the best "
                       "approximation for real world (out of sample) performance. The current validation strategy used "
                       "is {}, with {} splits and {} shuffling the data."
-                      .format(type(self.cv).__name__, self.p.cvSplits, 'with' if self.p.shuffle else 'without'))
+                      .format(type(self.cv).__name__, self.p.cv_splits, 'with' if self.p.shuffle else 'without'))

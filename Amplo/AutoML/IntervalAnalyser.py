@@ -6,13 +6,17 @@ import faiss
 import numpy as np
 import pandas as pd
 
+from Amplo.AutoML import DataProcesser
+from Amplo.AutoML import FeatureProcesser
 from Amplo.Utils.io import merge_logs
 from Amplo.Utils.data import check_dataframe_quality, check_pearson_correlation
+from Amplo.Utils.logging import logger
 
 
 class IntervalAnalyser:
 
-    noise = 'Noise'
+    # noise = 'Noise'
+    noise = -1
 
     def __init__(self,
                  target: str = None,
@@ -54,7 +58,9 @@ class IntervalAnalyser:
             Quantity of trees
         """
         # Test
-        assert norm in ['euclidean', 'manhattan', 'angular', 'hamming', 'dot']
+        self.available_norms = ['euclidean', 'manhattan', 'angular', 'hamming', 'dot']
+        if norm not in self.available_norms:
+            raise ValueError(f'Unknown norm, pick from {self.available_norms}')
 
         # Parameters
         self.target = target or 'labels'
@@ -165,7 +171,7 @@ class IntervalAnalyser:
         # Set flags
         self.is_fitted = True
 
-        return self.data_without_noise
+        return self.data_with_noise
 
     def _parse_data(self, data_or_path: Union[pd.DataFrame, str, Path], labels: pd.Series = None):
         """
@@ -181,7 +187,7 @@ class IntervalAnalyser:
         """
         # Verbose
         if self.verbose > 0:
-            print('[AutoML] Parsing data for interval analyser.')
+            logger.info('Parsing data for interval analyser.')
 
         # Parse data
         if isinstance(data_or_path, (str, Path)):
@@ -191,26 +197,39 @@ class IntervalAnalyser:
             # Store metadata in self
             self._metadata = metadata
         else:
-            assert isinstance(data_or_path, pd.DataFrame), 'Invalid data type'
+            if not isinstance(data_or_path, pd.DataFrame):
+                raise ValueError('Invalid data_or_path type.')
             # Check if target in `data_or_path`
             if self.target in data_or_path.columns:
                 features = data_or_path.drop(self.target, axis=1)
                 labels = data_or_path.loc[:, self.target]
             else:
-                assert isinstance(labels, pd.Series), 'Invalid data type'
+                if not isinstance(labels, pd.Series):
+                    raise ValueError('Invalid labels data type.')
                 features = data_or_path
 
         # Tests
-        assert list(features.index.names) == ['log', 'index'], 'Invalid multi-indexed data detected'
-        # assert features.index.size == features.index.unique().size, 'Not all indices are unique'
-        assert all(features.index == labels.index), 'Indices mismatch: Features and labels cannot be concatenated'
-        assert len(features) == len(labels), 'Length mismatch: Features and labels cannot be concatenated'
-        assert self.target not in features.columns, 'Target column is already present in feature data'
+        if list(features.index.names) != ['log', 'index']:
+            raise ValueError('Invalid multi-indexed data detected.')
+        if not all(features.index == labels.index):
+            raise ValueError('Indices mismatch: Features and labels cannot be concatenated.')
+        if len(features) != len(labels):
+            raise ValueError('Length mismatch: Features and labels cannot be concatenated.')
+        if self.target in features.columns:
+            raise ValueError('Target column is present in feature data.')
 
-        # Check data
-        assert check_dataframe_quality(features), 'Data quality is insufficient'
+        # Check data quality
+        if not check_dataframe_quality(features):
+            # Warn & clean
+            warnings.warn('Data quality is insufficient, starting DataProcessor.')
+            features = DataProcesser().fit_transform(features)
+
+        # Check collinearity
         if not check_pearson_correlation(features, labels):
-            warnings.warn(UserWarning('Data is correlated. No good results are expected.'))
+            # Warn & select
+            warnings.warn('Data is correlated, starting FeatureProcessor.')
+            features, feature_sets = FeatureProcesser(extract_features=False).fit_transform(features, labels)
+            features = features[feature_sets['RFI']]        # Just pick Random Forest Increment
 
         # Set name of labels
         if self.target != labels.name:
@@ -218,24 +237,24 @@ class IntervalAnalyser:
                           f'Name will be fixed from {labels.name} to {self.target}.')
             labels.name = self.target
 
-        # Store data in self
-        self._features = features
-        self._labels = labels
-
         # Remove datetime columns
         _date_cols = [col for col in features.columns
                       if pd.api.types.is_datetime64_any_dtype(features[col])]
         if len(_date_cols) != 0:
             features.drop(_date_cols, axis=1, inplace=True)
 
-        # # Normalize
-        # self._mins, self._maxs = features.min(), features.max()
-        # features = (features - features.min()) / (features.max() - features.min())
+        # Normalize
+        self._mins, self._maxs = features.min(), features.max()
+        features = (features - features.min()) / (features.max() - features.min())
 
         # Change float64 to float32
         #  See: https://github.com/facebookresearch/faiss/issues/461
         for col in features.select_dtypes(include=['float64']).columns:
             features[col] = features[col].astype('float32')
+
+        # Store data in self
+        self._features = features
+        self._labels = labels
 
         # Set sizes
         self.n_folders = labels.nunique()
@@ -257,7 +276,7 @@ class IntervalAnalyser:
         """
         # Create engine
         if self.verbose > 0:
-            print('[AutoML] Building interval analyser engine.')
+            logger.info('Building interval analyser engine.')
         engine = faiss.IndexFlatL2(self.n_columns)
 
         # Add the data to ANNOY
@@ -278,7 +297,7 @@ class IntervalAnalyser:
             Multi-indexed dataset containing target columns
         """
         if self.verbose > 0:
-            print('[AutoML] Calculating interval within-class distributions.')
+            logger.info('Calculating interval within-class distributions.')
 
         # Search nearest neighbors for all samples -- has to be iterative for large files -.-
         distribution = []
@@ -299,7 +318,7 @@ class IntervalAnalyser:
         """
         # Verbose
         if self.verbose > 0:
-            print('[AutoML] Creating filtered dataset')
+            logger.info('Creating filtered dataset')
 
         # Get in-class means and number of samples for each label
         # label_means = self._get_label_means(labels, self._distributions)
@@ -325,7 +344,7 @@ class IntervalAnalyser:
             # Verbose
             if len(noise_indices) > 0 and self.verbose > 1:
                 filename = self._metadata[file_id]['file'] if isinstance(self._metadata, dict) else None
-                print(f'[AutoML] Removing {len(ind_remove_label)} samples from `{filename or file_id}`')
+                logger.info(f'Removing {len(ind_remove_label)} samples from `{filename or file_id}`')
 
         # Set noise indices
         self._noise_indices = noise_indices
@@ -352,11 +371,11 @@ class IntervalAnalyser:
     @property
     def samples(self):
         warnings.warn(DeprecationWarning('This pseudo-attribute will be removed in a future version. '
-                                         'Consider using `n_samples` instead.'))
+                                       'Consider using `n_samples` instead.'))
         return self.n_samples
 
     @property
     def n_keys(self):
         warnings.warn(DeprecationWarning('This pseudo-attribute will be removed in a future version. '
-                                         'Consider using `n_columns` instead.'))
+                                       'Consider using `n_columns` instead.'))
         return self.n_columns
