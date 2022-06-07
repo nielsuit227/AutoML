@@ -5,6 +5,7 @@ from sklearn import metrics
 import matplotlib.pyplot as plt
 from sklearn.model_selection import StratifiedKFold
 from .BinaryDocumenting import BinaryDocumenting
+from Amplo.Utils.logging import logger
 
 
 class MultiDocumenting(BinaryDocumenting):
@@ -55,12 +56,12 @@ class MultiDocumenting(BinaryDocumenting):
         }
 
         # Print
-        print('F1 scores:')
-        print(''.join([' Class {} |'.format(i) for i in range(self.p.n_classes)]))
-        print(''.join([' {:.2f} % '.ljust(11).format(f1) + '|' for f1 in np.mean(f1_score, axis=0)]))
-        print('Average Accuracy: {:.2f} \u00B1 {:.2f} %'.format(np.mean(avg_acc), np.std(avg_acc)))
+        logger.info('F1 scores:')
+        logger.info(''.join([' Class {} |'.format(i) for i in range(self.p.n_classes)]))
+        logger.info(''.join([' {:.2f} % '.ljust(11).format(f1) + '|' for f1 in np.mean(f1_score, axis=0)]))
+        logger.info('Average Accuracy: {:.2f} \u00B1 {:.2f} %'.format(np.mean(avg_acc), np.std(avg_acc)))
         if hasattr(model, 'predict_proba'):
-            print('Log Loss:         {:.2f} \u00B1 {:.2f}'.format(np.mean(log_loss), np.std(log_loss)))
+            logger.info('Log Loss:         {:.2f} \u00B1 {:.2f}'.format(np.mean(log_loss), np.std(log_loss)))
             self.metrics['Log Loss'] = [np.mean(log_loss), np.std(log_loss)]
 
         if not os.path.exists(self.p.main_dir + 'EDA/Features/v{}/RF.png'.format(self.p.version)):

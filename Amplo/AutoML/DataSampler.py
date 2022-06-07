@@ -16,16 +16,18 @@ from imblearn.under_sampling import OneSidedSelection
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.under_sampling import EditedNearestNeighbours
 
+from Amplo.Utils.logging import logger
+
 
 class DataSampler:
 
     def __init__(self,
-                 method: str = 'both',
+                 method: str = "both",
                  margin: float = 0.1,
                  cv_splits: int = 3,
                  shuffle: bool = True,
                  fast_run: bool = False,
-                 objective: str = 'neg_log_loss',
+                 objective: str = "neg_log_loss",
                  verbosity: int = 1,
                  ):
         """
@@ -40,7 +42,7 @@ class DataSampler:
 
         Parameters
         ----------
-        method str: Whether to under-sample, over-sample, or a combination from the both ('under', 'over', or 'both')
+        method str: Whether to under-sample, over-sample, or a combination from the both ("under", "over", or "both")
         margin float: If the imbalance is smaller than this margin, skip the balancing, should be within [0, 1]
         fast_run bool: If true, skips exhaustive samplers
         objective str: Scikit-Learn metric
@@ -53,8 +55,8 @@ class DataSampler:
         if objective is not None:
             self.objective = objective
         else:
-            self.objective = 'neg_log_loss'
-        assert objective in metrics.SCORERS.keys(), 'Metric not supported, look at sklearn.metrics.SCORERS.keys()'
+            self.objective = "neg_log_loss"
+        assert objective in metrics.SCORERS.keys(), "Metric not supported, look at sklearn.metrics.SCORERS.keys()"
         self.scorer = metrics.SCORERS[self.objective]
 
         # Parse
@@ -71,8 +73,8 @@ class DataSampler:
         # Results
         self.is_fitted = False
         self.opt_sampler = None
-        self.results = pd.DataFrame(columns=['sampler', 'mean_objective', 'std_objective', 'worst_case', 'mean_time',
-                                             'std_time'])
+        self.results = pd.DataFrame(columns=["sampler", "mean_objective", "std_objective", "worst_case", "mean_time",
+                                             "std_time"])
 
     def get_samplers(self, y: pd.Series) -> list:
         """
@@ -86,8 +88,8 @@ class DataSampler:
         n_samples = len(y)
         imbalance = y.value_counts().values / n_samples
         n_min_samples = y.value_counts().min() - 2
-        print('[AutoML] Data Balancer: Found class balance: {}.'
-              .format(', '.join(['{:.1f}%'.format(i * 100) for i in imbalance])))
+        logger.info("Data Balancer: Found class balance: {}."
+              .format(", ".join(["{:.1f}%".format(i * 100) for i in imbalance])))
 
         # If imbalance is negligible, return nothing
         if np.min(imbalance) > (1 - self.margin) / n_classes:
@@ -97,28 +99,28 @@ class DataSampler:
         samplers = []
 
         # Under Samplers
-        if self.method != 'over' and n_samples > self.min_samples:
-            samplers.append(OneSidedSelection(sampling_strategy='not minority', n_seeds_S=int(n_samples / 10)))
-            samplers.append(RandomUnderSampler(sampling_strategy='not minority'))
+        if self.method != "over" and n_samples > self.min_samples:
+            samplers.append(OneSidedSelection(sampling_strategy="not minority", n_seeds_S=int(n_samples / 10)))
+            samplers.append(RandomUnderSampler(sampling_strategy="not minority"))
             if not self.fast_run:
-                samplers.append(TomekLinks(sampling_strategy='not minority'))
+                samplers.append(TomekLinks(sampling_strategy="not minority"))
 
         # Over Samplers
-        if self.method != 'under' and n_samples < self.max_samples:
-            samplers.append(RandomOverSampler(sampling_strategy='not majority'))
+        if self.method != "under" and n_samples < self.max_samples:
+            samplers.append(RandomOverSampler(sampling_strategy="not majority"))
             if not self.fast_run:
-                samplers.append(SMOTE(sampling_strategy='not majority', k_neighbors=min(n_min_samples - 1, 6)))
-                samplers.append(BorderlineSMOTE(sampling_strategy='not majority', k_neighbors=min(n_min_samples - 1, 5),
+                samplers.append(SMOTE(sampling_strategy="not majority", k_neighbors=min(n_min_samples - 1, 6)))
+                samplers.append(BorderlineSMOTE(sampling_strategy="not majority", k_neighbors=min(n_min_samples - 1, 5),
                                                 m_neighbors=min(n_min_samples, 10)))
 
-        if self.method == 'both' and self.min_samples < n_samples < self.max_samples and not self.fast_run:
+        if self.method == "both" and self.min_samples < n_samples < self.max_samples and not self.fast_run:
             samplers.append(
-                SMOTETomek(sampling_strategy='all',
-                           smote=SMOTE(sampling_strategy='all', k_neighbors=min(n_min_samples, 6))))
+                SMOTETomek(sampling_strategy="all",
+                           smote=SMOTE(sampling_strategy="all", k_neighbors=min(n_min_samples, 6))))
             samplers.append(
-                SMOTEENN(sampling_strategy='all',
-                         enn=EditedNearestNeighbours(sampling_strategy='all', n_neighbors=min(n_min_samples, 3)),
-                         smote=SMOTE(sampling_strategy='all', k_neighbors=min(n_min_samples, 6))))
+                SMOTEENN(sampling_strategy="all",
+                         enn=EditedNearestNeighbours(sampling_strategy="all", n_neighbors=min(n_min_samples, 3)),
+                         smote=SMOTE(sampling_strategy="all", k_neighbors=min(n_min_samples, 6))))
 
         return samplers
 
@@ -175,25 +177,25 @@ class DataSampler:
         # Get samplers
         samplers = self.get_samplers(y)
 
-        # If samplers are empty, we don't need sampling
+        # If samplers are empty, we don"t need sampling
         if len(samplers) == 0:
             self.opt_sampler = None
 
         else:
             if self.verbosity > 0:
-                print('[AutoML] Balancing data with {:.0f} samplers'.format(len(samplers)))
+                logger.info("Balancing data with {:.0f} samplers".format(len(samplers)))
 
             # Get baseline
             scores, times = self._score(None, x, y)
             self.results = self.results.append({
-                'sampler': 'Baseline',
-                'mean_objective': np.mean(scores), 'std_objective': np.std(scores),
-                'worst_case': np.mean(scores) - np.std(scores),
-                'mean_time': np.mean(times), 'std_time': np.std(scores),
+                "sampler": "Baseline",
+                "mean_objective": np.mean(scores), "std_objective": np.std(scores),
+                "worst_case": np.mean(scores) - np.std(scores),
+                "mean_time": np.mean(times), "std_time": np.std(scores),
             }, ignore_index=True)
             if self.verbosity > 0:
-                print('[AutoML] Fitted {} {}: {:.4f} \u00B1 {:.4f}'.format(
-                    'Baseline'.ljust(25), self.objective, np.mean(scores), np.std(scores)))
+                logger.info("Fitted {} {}: {:.4f} \u00B1 {:.4f}".format(
+                    "Baseline".ljust(25), self.objective, np.mean(scores), np.std(scores)))
 
             # Iterate through samplers
             for sampler in samplers:
@@ -204,21 +206,21 @@ class DataSampler:
 
                 # Store results
                 self.results = self.results.append({
-                    'sampler': name,
-                    'mean_objective': np.mean(scores), 'std_objective': np.std(scores),
-                    'worst_case': np.mean(scores) - np.std(scores),
-                    'mean_time': np.mean(times), 'std_time': np.std(times),
+                    "sampler": name,
+                    "mean_objective": np.mean(scores), "std_objective": np.std(scores),
+                    "worst_case": np.mean(scores) - np.std(scores),
+                    "mean_time": np.mean(times), "std_time": np.std(times),
                     }, ignore_index=True)
 
                 # Print results
                 if self.verbosity > 0:
-                    print('[AutoML] Fitted {} {}: {:.4f} \u00B1 {:.4f}'
+                    logger.info("Fitted {} {}: {:.4f} \u00B1 {:.4f}"
                           .format(name.ljust(25), self.objective, np.mean(scores), np.std(scores)))
 
             # Set optimal sampler
-            opt_sampler = self.results.loc[self.results['worst_case'] == self.results['worst_case'].max(), 'sampler'] \
+            opt_sampler = self.results.loc[self.results["worst_case"] == self.results["worst_case"].max(), "sampler"] \
                 .iloc[0]
-            if opt_sampler != 'Baseline':
+            if opt_sampler != "Baseline":
                 self.opt_sampler = [s for s in samplers if type(s).__name__ == opt_sampler][0]
 
         # Set fitted
@@ -243,14 +245,14 @@ class DataSampler:
 
         # Check if we need sampling at all
         if self.opt_sampler is None:
-            print('[AutoML] No balancing needed :)')
+            logger.info("No balancing needed :)")
             return x, y
 
         else:
 
             # Print start
             if self.verbosity > 0:
-                print('[AutoML] Resampling data with {}'.format(type(self.opt_sampler).__name__))
+                logger.info("Resampling data with {}".format(type(self.opt_sampler).__name__))
 
             # Resample
             x_res, y_res = self.opt_sampler.fit_resample(x, y)

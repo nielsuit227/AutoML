@@ -9,6 +9,7 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import RocCurveDisplay
 from sklearn.metrics import auc
 from urllib.error import URLError
+from Amplo.Utils.logging import logger
 
 
 class BinaryDocumenting(FPDF):
@@ -184,19 +185,19 @@ class BinaryDocumenting(FPDF):
         self.outputMetrics['True Negatives'] = [means[1, 1], stds[1, 1]]
 
         # Print Results
-        print('[AutoML] Accuracy:        {:.2f} \u00B1 {:.2f} %'.format(np.mean(accuracy), np.std(accuracy)))
-        print('[AutoML] Precision:       {:.2f} \u00B1 {:.2f} %'.format(np.mean(precision), np.std(precision)))
-        print('[AutoML] Sensitivity:     {:.2f} \u00B1 {:.2f} %'.format(
+        logger.info('[AutoML] Accuracy:        {:.2f} \u00B1 {:.2f} %'.format(np.mean(accuracy), np.std(accuracy)))
+        logger.info('[AutoML] Precision:       {:.2f} \u00B1 {:.2f} %'.format(np.mean(precision), np.std(precision)))
+        logger.info('[AutoML] Sensitivity:     {:.2f} \u00B1 {:.2f} %'.format(
             np.mean(sensitivity), np.std(sensitivity)))
-        print('[AutoML] Specificity:     {:.2f} \u00B1 {:.2f} %'.format(
+        logger.info('[AutoML] Specificity:     {:.2f} \u00B1 {:.2f} %'.format(
             np.mean(specificity), np.std(specificity)))
-        print('[AutoML] F1-score:        {:.2f} \u00B1 {:.2f} %'.format(np.mean(f1_score), np.std(f1_score)))
-        print('[AutoML] Confusion Matrix:')
-        print('[AutoML] Prediction / true |     Faulty     |    Healthy      ')
-        print('[AutoML]       Faulty      | {} |  {}'.format(
+        logger.info('[AutoML] F1-score:        {:.2f} \u00B1 {:.2f} %'.format(np.mean(f1_score), np.std(f1_score)))
+        logger.info('[AutoML] Confusion Matrix:')
+        logger.info('[AutoML] Prediction / true |     Faulty     |    Healthy      ')
+        logger.info('[AutoML]       Faulty      | {} |  {}'.format(
             ('{:.1f} \u00B1 {:.1f} %'.format(means[0, 0], stds[0, 0])).ljust(14),
             ('{:.1f} \u00B1 {:.1f} %'.format(means[0, 1], stds[0, 1])).ljust(14)))
-        print('[AutoML]       Healthy     | {} |  {}'.format(
+        logger.info('[AutoML]       Healthy     | {} |  {}'.format(
             ('{:.1f} \u00B1 {:.1f} %'.format(means[1, 0], stds[1, 0])).ljust(14),
             ('{:.1f} \u00B1 {:.1f} %'.format(means[1, 1], stds[1, 1])).ljust(14)))
 

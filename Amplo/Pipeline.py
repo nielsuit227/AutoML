@@ -51,72 +51,114 @@ class Pipeline:
         Parameters
         ----------
         Main Parameters:
-        main_dir [str]: Main directory of Pipeline (for documentation)
-        target [str]: Column name of the output/dependent/regressand variable.
-        name [str]: Name of the project (for documentation)
-        version [int]: Pipeline version (set automatically)
-        mode [str]: 'classification' or 'regression'
-        objective [str]: from sklearn metrics and scoring
+        main_dir : str
+            Main directory of Pipeline (for documentation)
+        target : str
+            Column name of the output/dependent/regressand variable.
+        name : str
+            Name of the project (for documentation)
+        version : str
+            Pipeline version (set automatically)
+        mode : str
+            'classification' or 'regression'
+        objective : str
+            from sklearn metrics and scoring
 
         Data Processor:
-        int_cols [list[str]]: Column names of integer columns
-        float_cols [list[str]]: Column names of float columns
-        date_cols [list[str]]: Column names of datetime columns
-        cat_cols [list[str]]: Column names of categorical columns
-        missing_values [str]: [DataProcessing] - 'remove', 'interpolate', 'mean' or 'zero'
-        outlier_removal [str]: [DataProcessing] - 'clip', 'boxplot', 'z-score' or 'none'
-        z_score_threshold [int]: [DataProcessing] If outlier_removal = 'z-score', the threshold is adaptable
-        include_output [bool]: Whether to include output in the training data (sensible only with sequencing)
+        int_cols : list of str
+            Column names of integer columns
+        float_cols : list of str
+            Column names of float columns
+        date_cols : list of str
+            Column names of datetime columns
+        cat_cols : list of str
+            Column names of categorical columns
+        missing_values : str
+            [DataProcessing] - 'remove', 'interpolate', 'mean' or 'zero'
+        outlier_removal : str
+            [DataProcessing] - 'clip', 'boxplot', 'z-score' or 'none'
+        z_score_threshold : int
+            [DataProcessing] If outlier_removal = 'z-score', the threshold is adaptable
+        include_output : bool
+            Whether to include output in the training data (sensible only with sequencing)
 
         Feature Processor:
-        extract_features [bool]: Whether to use FeatureProcessing module
-        information_threshold : [FeatureProcessing] Threshold for removing co-linear features
-        feature_timeout [int]: [FeatureProcessing] Time budget for feature processing
-        max_lags [int]: [FeatureProcessing] Maximum lags for lagged features to analyse
-        max_diff [int]: [FeatureProcessing] Maximum differencing order for differencing features
+        extract_features : bool
+            Whether to use FeatureProcessing module
+        information_threshold : float
+            [FeatureProcessing] Threshold for removing co-linear features
+        feature_timeout : int
+            [FeatureProcessing] Time budget for feature processing
+        max_lags : int
+            [FeatureProcessing] Maximum lags for lagged features to analyse
+        max_diff : int
+            [FeatureProcessing] Maximum differencing order for differencing features
 
         Interval Analyser:
-        interval_analyse [bool]: Whether to use IntervalAnalyser module
+        interval_analyse : bool
+            Whether to use IntervalAnalyser module
             Note that this has no effect when data from ``self._read_data`` is not multi-indexed
 
         Sequencing:
-        sequence [bool]: [Sequencing] Whether to use Sequence module
-        seq_back [int or list[int]]: Input time indices
+        sequence : bool
+            [Sequencing] Whether to use Sequence module
+        seq_back : int | list[int]
+            Input time indices
             If list -> includes all integers within the list
             If int -> includes that many samples back
-        seq_forward [int or list[int]: Output time indices
+        seq_forward : int | list[int]
+            Output time indices
             If list -> includes all integers within the list.
             If int -> includes that many samples forward.
-        seq_shift [int]: Shift input / output samples in time
-        seq_diff [int]:  Difference the input & output, 'none', 'diff' or 'log_diff'
-        seq_flat [bool]: Whether to return a matrix (True) or Tensor (Flat)
+        seq_shift : int
+            Shift input / output samples in time
+        seq_diff : int
+            Difference the input & output, 'none', 'diff' or 'log_diff'
+        seq_flat : bool
+            Whether to return a matrix (True) or Tensor (Flat)
 
         Modelling:
-        standardize [bool]: Whether to standardize input/output data
-        shuffle [bool]: Whether to shuffle the samples during cross-validation
-        cv_splits [int]: How many cross-validation splits to make
-        store_models [bool]: Whether to store all trained model files
+        standardize : bool
+            Whether to standardize input/output data
+        shuffle : bool
+            Whether to shuffle the samples during cross-validation
+        cv_splits : int
+            How many cross-validation splits to make
+        store_models : bool
+            Whether to store all trained model files
 
         Grid Search:
-        grid_search_type [Optional[str]]: Which method to use 'optuna', 'halving', 'base' or None
-        grid_search_time_budget : Time budget for grid search
-        grid_search_candidates : Parameter evaluation budget for grid search
-        grid_search_iterations : Model evaluation budget for grid search
+        grid_search_type : str
+            Which method to use 'optuna', 'halving', 'base' or None
+        grid_search_time_budget : int
+            Time budget for grid search
+        grid_search_candidates : int
+            Parameter evaluation budget for grid search
+        grid_search_iterations : int
+            Model evaluation budget for grid search
 
         Stacking:
-        stacking [bool]: Whether to create a stacking model at the end
+        stacking : bool
+            Whether to create a stacking model at the end
 
         Production:
-        preprocess_function [str]: Add custom code for the prediction function, useful for production. Will be executed
+        preprocess_function : str
+            Add custom code for the prediction function, useful for production. Will be executed
             with exec, can be multiline. Uses data as input.
 
         Flags:
-        logging_level [Optional[Union[int, str]]]: Logging level for warnings, info, etc.
-        plot_eda [bool]: Whether to run Exploratory Data Analysis
-        process_data [bool]: Whether to force data processing
-        document_results [bool]: Whether to force documenting
-        no_dirs [bool]: Whether to create files or not
-        verbose [int]: Level of verbosity
+        logging_level  : Optional[Union[int, str]]
+            Logging level for warnings, info, etc.
+        plot_eda : bool
+            Whether to run Exploratory Data Analysis
+        process_data : bool
+            Whether to force data processing
+        document_results : bool
+            Whether to force documenting
+        no_dirs : bool
+            Whether to create files or not
+        verbose : int
+            Level of verbosity
         """
 
         # Set logger
@@ -198,7 +240,6 @@ class Pipeline:
         if self.maxDiff > 5:
             raise ValueError('Max diff too big. Max 5.')
         self.grid_search_types = ['base', 'halving', 'optuna']
-        print(self.grid_search_type)
         if self.grid_search_type is not None and self.grid_search_type.lower() not in self.grid_search_types:
             raise ValueError(f'Grid Search Type must be in {self.grid_search_types}')
 
@@ -218,7 +259,7 @@ class Pipeline:
         if self.objective is not None:
             if not isinstance(self.objective, str):
                 raise ValueError('Objective needs to be a string.')
-            if not self.objective in metrics.SCORERS:
+            if self.objective not in metrics.SCORERS:
                 raise NotImplementedError('Metric not supported, look at sklearn.metrics.')
             self.scorer = metrics.SCORERS[self.objective]
         else:
@@ -713,7 +754,8 @@ class Pipeline:
         self.data_processor = DataProcessor(target=self.target, int_cols=self.int_cols, float_cols=self.float_cols,
                                             date_cols=self.date_cols, cat_cols=self.cat_cols,
                                             missing_values=self.missing_values,
-                                            outlier_removal=self.outlier_removal, z_score_threshold=self.z_score_threshold)
+                                            outlier_removal=self.outlier_removal,
+                                            z_score_threshold=self.z_score_threshold)
 
         # Set paths
         data_path = self.main_dir + f'Data/Cleaned_v{self.version}.csv'
@@ -890,7 +932,7 @@ class Pipeline:
 
         # Set paths
         data_path = self.main_dir + f'Data/Interval_Analyzed_v{self.version}.csv'
-        settings_path = self.main_dir + f'Settings/Interval_Analysis_v{self.version}.json'
+        # settings_path = self.main_dir + f'Settings/Interval_Analysis_v{self.version}.json'
 
         if Path(data_path).exists():  # TODO: and Path(settings_path).exists():
             # Load data
@@ -971,7 +1013,7 @@ class Pipeline:
                 for i in range(len(fsr)):
                     row = fsr.iloc[i]
                     self.logger.info(f'[AutoML] {row["model"].ljust(40)} {self.objective}: '
-                          f'{row["mean_objective"]:.4f} \u00B1 {row["std_objective"]:.4f}')
+                                     f'{row["mean_objective"]:.4f} \u00B1 {row["std_objective"]:.4f}')
 
         # Check if this version has been modelled
         if self.results is None or self.version not in self.results['version'].values:
@@ -1121,8 +1163,8 @@ class Pipeline:
             # Create Stacking Model Params
             n_stacking_models = 3
             stacking_models_str = results['model'].unique()[:n_stacking_models]
-            stacking_models_params = [Utils.io.parse_json(results.iloc[np.where(results['model'] == sms)[0][0]]['params'])
-                                      for sms in stacking_models_str]
+            stacking_models_params = [Utils.io.parse_json(
+                results.iloc[np.where(results['model'] == sms)[0][0]]['params']) for sms in stacking_models_str]
             stacking_models = dict([(sms, stacking_models_params[i]) for i, sms in enumerate(stacking_models_str)])
             self.logger.info('[AutoML] Stacked models: {}'.format(list(stacking_models.keys())))
 
@@ -1154,7 +1196,7 @@ class Pipeline:
 
             # Output Results
             self.logger.info('[AutoML] Stacking result:')
-            self.logger.info('[AutoML] {}:        {:.2f} \u00B1 {:.2f}'.format(self.objective, np.mean(score), np.std(score)))
+            self.logger.info(f'[AutoML] {self.objective}:        {np.mean(score):.2f} \u00B1 {np.std(score):.2f}')
             self.results = self.results.append({
                 'date': datetime.today().strftime('%d %b %y'),
                 'model': type(stack).__name__,
@@ -1254,14 +1296,13 @@ class Pipeline:
             # Filter results
             results = self._sort_results(results[results['dataset'].isin(feature_set)])
 
+        # Get best parameters
         if params is None:
-            # Get best parameters
-            params = results.iloc[0]['params']
+            params = Utils.io.parse_json(results.iloc[0]['params'])
 
         # Find the best allowed arguments
         model = results.iloc[0]['model']
         feature_set = results.iloc[0]['dataset']
-        params = Utils.io.parse_json(results.iloc[0]['params'])
 
         return model, feature_set, params
 
@@ -1628,8 +1669,8 @@ class Pipeline:
         """
         INTERNAL | Grid search for defined model, parameter set and feature set.
         """
-        self.logger.info(f'\n[AutoML] Starting Hyper Parameter Optimization for {type(model).__name__} on '
-              f'{feature_set} features ({len(self.x)} samples, {len(self.feature_sets[feature_set])} features)')
+        self.logger.info(f'\n[AutoML] Starting Hyper Parameter Optimization for {type(model).__name__} on {feature_set}'
+                         f' features ({len(self.x)} samples, {len(self.feature_sets[feature_set])} features)')
 
         # Cross-Validator
         cv_args = {'n_splits': self.cv_splits, 'shuffle': self.shuffle,
@@ -1678,7 +1719,7 @@ class Pipeline:
         """
         # Shap is not implemented for all models.
         if type(self.best_model).__name__ in ['SVC', 'BaggingClassifier', 'RidgeClassifier', 'LinearRegression', 'SVR',
-                                             'BaggingRegressor']:
+                                              'BaggingRegressor']:
             features = self.settings['feature_processing']['featureImportance']['shap'][0]
             values = self.settings['feature_processing']['featureImportance']['shap'][1]
             self._main_predictors = {features[i]: values[i] for i in range(len(features))}

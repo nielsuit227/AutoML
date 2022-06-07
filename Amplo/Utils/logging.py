@@ -1,9 +1,9 @@
-from pathlib import Path
 import logging
 import colorlog
+from datetime import datetime
 
 
-__all__ = ['get_logger']
+__all__ = ['logger']
 
 
 _nameToLevel = {
@@ -51,29 +51,54 @@ def _check_logging_level(level):
     return rv
 
 
+class TimeFilter(logging.Filter):
+
+    def filter(self, record):
+        # Check if previous logged
+        if not hasattr(self, 'last'):
+            self.last = record.relativeCreated
+
+        # Calc & add delta
+        delta = datetime.fromtimestamp(
+            record.relativeCreated / 1000.0) - datetime.fromtimestamp(self.last / 1000.0)
+        record.relative = f"{(delta.seconds + delta.microseconds / 1000000.0):.2f}"
+
+        # Update last
+        self.last = record.relativeCreated
+
+        return True
+
+
 # Get custom logger
-logger = logging.getLogger('AutoML')
+logger = logging.getLogger('AmploML')
 logger.setLevel("INFO")
 
 # Set console handler
 console_formatter = colorlog.ColoredFormatter(
-    '%(white)s[%(name)s] %(log_color)s%(levelname)s: %(message)s %(white)s<%(filename)s:%(lineno)d>')
+    '%(blue)s[%(name)s]%(log_color)s[%(levelname)s] %(white)s %(message)s %(black)s<%(filename)s:%(lineno)d> (%('
+    'relative)ss)')
 console_handler = logging.StreamHandler()
 console_handler.setLevel("INFO")
 console_handler.setFormatter(console_formatter)
 logger.addHandler(console_handler)
 
 # Set file handler
-file_formatter = logging.Formatter('[%(name)s] %(levelname)s: %(message)s')
+file_formatter = colorlog.ColoredFormatter(
+    '%(blue)s[%(name)s]%(log_color)s[%(levelname)s] %(white)s %(message)s %(black)s<%(filename)s:%(lineno)d> (%('
+    'relative)ss)')
 file_handler = logging.FileHandler('AutoML.log', mode='a')
 file_handler.setLevel("INFO")
 file_handler.setFormatter(file_formatter)
 logger.addHandler(file_handler)
 
+# Add TimeFilter
+[handler.addFilter(TimeFilter()) for handler in logger.handlers]
+
 # Capture warnings from `warnings.warn(...)`
 logging.captureWarnings(True)
 py_warnings_logger = logging.getLogger('py.warnings')
-warnings_formatter = colorlog.ColoredFormatter('%(white)s[%(name)s] %(log_color)s%(levelname)s: %(message)s')
+warnings_formatter = colorlog.ColoredFormatter(
+    '%(white)s[%(name)s] %(log_color)s%(levelname)s: %(message)s')
 warnings_handler = logging.StreamHandler()
 warnings_handler.setLevel('WARNING')
 warnings_handler.setFormatter(warnings_formatter)

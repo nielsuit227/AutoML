@@ -6,6 +6,7 @@ from sklearn import metrics
 import matplotlib.pyplot as plt
 from sklearn.model_selection import KFold
 from .BinaryDocumenting import BinaryDocumenting
+from Amplo.Utils.logging import logger
 
 
 class RegressionDocumenting(BinaryDocumenting):
@@ -69,12 +70,12 @@ class RegressionDocumenting(BinaryDocumenting):
         fig.savefig(cross_val_path, format='png', dpi=200)
 
         # Print & Finish plot
-        print('[AutoML] Mean Absolute Error:            {:.2f} \u00B1 {:.2f}'.format(np.mean(mae), np.std(mae)))
-        print('[AutoML] Mean Squared Error:             {:.2f} \u00B1 {:.2f}'.format(np.mean(mse), np.std(mse)))
-        print('[AutoML] R2 Score:                       {:.2f} \u00B1 {:.2f}'.format(np.mean(r2), np.std(r2)))
-        print('[AutoML] Max Error:                      {:.2f} \u00B1 {:.2f}'.format(
+        logger.info('[AutoML] Mean Absolute Error:            {:.2f} \u00B1 {:.2f}'.format(np.mean(mae), np.std(mae)))
+        logger.info('[AutoML] Mean Squared Error:             {:.2f} \u00B1 {:.2f}'.format(np.mean(mse), np.std(mse)))
+        logger.info('[AutoML] R2 Score:                       {:.2f} \u00B1 {:.2f}'.format(np.mean(r2), np.std(r2)))
+        logger.info('[AutoML] Max Error:                      {:.2f} \u00B1 {:.2f}'.format(
             np.mean(max_error), np.std(max_error)))
-        print('[AutoML] Mean Absolute Percentage Error: {:.2f} \u00B1 {:.2f}'.format(
+        logger.info('[AutoML] Mean Absolute Percentage Error: {:.2f} \u00B1 {:.2f}'.format(
             np.mean(rel_error), np.std(rel_error)))
 
         # Feature Importance

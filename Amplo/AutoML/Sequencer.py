@@ -2,6 +2,7 @@ import warnings
 import numpy as np
 import pandas as pd
 from typing import Union
+from Amplo.Utils.logging import logger
 
 
 class Sequencer:

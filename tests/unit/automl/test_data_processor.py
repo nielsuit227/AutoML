@@ -47,9 +47,9 @@ class TestDataProcessor:
     def test_type_detector(self):
         dp = DataProcessor()
         data = pd.DataFrame({
-            'a': ['a', 'b', 'c', 'd'],
-            'b': [1, 2, 3, 4],
-            'c': ['2020-01-01', '2020-01-02', '2020-01-03', '2020-01-04']})
+            'a': ['a', 'b', 'c', 'd', 'a'],
+            'b': [1, 2, 3, 4, 5],
+            'c': ['2020-01-01', '2020-01-02', '2020-01-03', '2020-01-04', '2020-01-05']})
         cleaned = dp.fit_transform(data)
         assert pd.api.types.is_integer_dtype(cleaned['b'])
         assert pd.api.types.is_datetime64_any_dtype(cleaned['c'])

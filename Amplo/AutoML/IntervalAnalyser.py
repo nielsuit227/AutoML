@@ -15,12 +15,12 @@ from Amplo.Utils.logging import logger
 
 class IntervalAnalyser:
 
-    # noise = 'Noise'
+    # noise = "Noise"
     noise = -1
 
     def __init__(self,
                  target: str = None,
-                 norm: str = 'euclidean',  # TODO: implement functionality
+                 norm: str = "euclidean",  # TODO: implement functionality
                  min_length: int = 1000,
                  n_neighbors: int = None,
                  n_trees: int = 10,
@@ -31,7 +31,7 @@ class IntervalAnalyser:
         - Remove healthy data in longer, faulty logs
         - Remove redundant data in large datasets
 
-        Uses Facebook's FAISS for K-Nearest Neighbors approximation.
+        Uses Facebook"s FAISS for K-Nearest Neighbors approximation.
 
         ** IMPORTANT **
         To use this interval analyser, make sure that your logs are located in a folder of their label, with one parent
@@ -58,12 +58,12 @@ class IntervalAnalyser:
             Quantity of trees
         """
         # Test
-        self.available_norms = ['euclidean', 'manhattan', 'angular', 'hamming', 'dot']
+        self.available_norms = ["euclidean",
+                                "manhattan", "angular", "hamming", "dot"]
         if norm not in self.available_norms:
-            raise ValueError(f'Unknown norm, pick from {self.available_norms}')
-
+            raise ValueError(f"Unknown norm, pick from {self.available_norms}")
         # Parameters
-        self.target = target or 'labels'
+        self.target = target or "labels"
         self.min_length = min_length
         self.norm = norm
         self.n_trees = n_trees
@@ -108,7 +108,7 @@ class IntervalAnalyser:
 
         Notes
         -----
-        Depending on the dtype of the noise attribute, the dtype of the labels' column will be affected.
+        Depending on the dtype of the noise attribute, the dtype of the labels" column will be affected.
         """
         data = self.orig_data
         data.loc[self._noise_indices, self.target] = self.noise
@@ -187,7 +187,7 @@ class IntervalAnalyser:
         """
         # Verbose
         if self.verbose > 0:
-            logger.info('Parsing data for interval analyser.')
+            logger.info("Parsing data for interval analyser.")
 
         # Parse data
         if isinstance(data_or_path, (str, Path)):
@@ -198,43 +198,48 @@ class IntervalAnalyser:
             self._metadata = metadata
         else:
             if not isinstance(data_or_path, pd.DataFrame):
-                raise ValueError('Invalid data_or_path type.')
+                raise ValueError("Invalid data_or_path type.")
             # Check if target in `data_or_path`
             if self.target in data_or_path.columns:
                 features = data_or_path.drop(self.target, axis=1)
                 labels = data_or_path.loc[:, self.target]
             else:
                 if not isinstance(labels, pd.Series):
-                    raise ValueError('Invalid labels data type.')
+                    raise ValueError("Invalid labels data type.")
                 features = data_or_path
 
         # Tests
-        if list(features.index.names) != ['log', 'index']:
-            raise ValueError('Invalid multi-indexed data detected.')
+        if list(features.index.names) != ["log", "index"]:
+            raise ValueError("Invalid multi-indexed data detected.")
         if not all(features.index == labels.index):
-            raise ValueError('Indices mismatch: Features and labels cannot be concatenated.')
+            raise ValueError(
+                "Indices mismatch: Features and labels cannot be concatenated.")
         if len(features) != len(labels):
-            raise ValueError('Length mismatch: Features and labels cannot be concatenated.')
+            raise ValueError(
+                "Length mismatch: Features and labels cannot be concatenated.")
         if self.target in features.columns:
-            raise ValueError('Target column is present in feature data.')
+            raise ValueError("Target column is present in feature data.")
 
         # Check data quality
         if not check_dataframe_quality(features):
             # Warn & clean
-            warnings.warn('Data quality is insufficient, starting DataProcessor.')
+            warnings.warn(
+                "Data quality is insufficient, starting DataProcessor.")
             features = DataProcesser().fit_transform(features)
 
         # Check collinearity
         if not check_pearson_correlation(features, labels):
             # Warn & select
-            warnings.warn('Data is correlated, starting FeatureProcessor.')
-            features, feature_sets = FeatureProcesser(extract_features=False).fit_transform(features, labels)
-            features = features[feature_sets['RFI']]        # Just pick Random Forest Increment
+            warnings.warn("Data is correlated, starting FeatureProcessor.")
+            features, feature_sets = FeatureProcesser(
+                extract_features=False).fit_transform(features, labels)
+            # Just pick Random Forest Increment
+            features = features[feature_sets["RFI"]]
 
         # Set name of labels
         if self.target != labels.name:
-            warnings.warn('Expected target name does not match the actual name. '
-                          f'Name will be fixed from {labels.name} to {self.target}.')
+            warnings.warn("Expected target name does not match the actual name. "
+                          f"Name will be fixed from {labels.name} to {self.target}.")
             labels.name = self.target
 
         # Remove datetime columns
@@ -245,12 +250,13 @@ class IntervalAnalyser:
 
         # Normalize
         self._mins, self._maxs = features.min(), features.max()
-        features = (features - features.min()) / (features.max() - features.min())
+        features = (features - features.min()) / \
+            (features.max() - features.min())
 
         # Change float64 to float32
         #  See: https://github.com/facebookresearch/faiss/issues/461
-        for col in features.select_dtypes(include=['float64']).columns:
-            features[col] = features[col].astype('float32')
+        for col in features.select_dtypes(include=["float64"]).columns:
+            features[col] = features[col].astype("float32")
 
         # Store data in self
         self._features = features
@@ -276,7 +282,7 @@ class IntervalAnalyser:
         """
         # Create engine
         if self.verbose > 0:
-            logger.info('Building interval analyser engine.')
+            logger.info("Building interval analyser engine.")
         engine = faiss.IndexFlatL2(self.n_columns)
 
         # Add the data to ANNOY
@@ -297,12 +303,13 @@ class IntervalAnalyser:
             Multi-indexed dataset containing target columns
         """
         if self.verbose > 0:
-            logger.info('Calculating interval within-class distributions.')
+            logger.info("Calculating interval within-class distributions.")
 
         # Search nearest neighbors for all samples -- has to be iterative for large files -.-
         distribution = []
         for i, row in features.iterrows():
-            _, neighbors = self._engine.search(np.ascontiguousarray(row.values.reshape((1, -1))), int(self.n_neighbors))
+            _, neighbors = self._engine.search(np.ascontiguousarray(
+                row.values.reshape((1, -1))), int(self.n_neighbors))
             match_mask = labels.iloc[neighbors.reshape(-1)] == labels.loc[i]
             distribution.append(pd.Series(match_mask).sum() / self.n_neighbors)
 
@@ -318,7 +325,7 @@ class IntervalAnalyser:
         """
         # Verbose
         if self.verbose > 0:
-            logger.info('Creating filtered dataset')
+            logger.info("Creating filtered dataset")
 
         # Get in-class means and number of samples for each label
         # label_means = self._get_label_means(labels, self._distributions)
@@ -337,14 +344,17 @@ class IntervalAnalyser:
 
             # Check distribution and find cut-off
             dist = self._distributions[file_id]
-            ind_remove_label = [(file_id, j) for j in np.where(dist < dist.mean())[0]]
+            ind_remove_label = [(file_id, j)
+                                for j in np.where(dist < dist.mean())[0]]
             # Extend list to keep track
             noise_indices.extend(ind_remove_label)
 
             # Verbose
             if len(noise_indices) > 0 and self.verbose > 1:
-                filename = self._metadata[file_id]['file'] if isinstance(self._metadata, dict) else None
-                logger.info(f'Removing {len(ind_remove_label)} samples from `{filename or file_id}`')
+                filename = self._metadata[file_id]["file"] if isinstance(
+                    self._metadata, dict) else None
+                logger.info(
+                    f"Removing {len(ind_remove_label)} samples from `{filename or file_id}`")
 
         # Set noise indices
         self._noise_indices = noise_indices
@@ -370,12 +380,12 @@ class IntervalAnalyser:
 
     @property
     def samples(self):
-        warnings.warn(DeprecationWarning('This pseudo-attribute will be removed in a future version. '
-                                       'Consider using `n_samples` instead.'))
+        warnings.warn(DeprecationWarning("This pseudo-attribute will be removed in a future version. "
+                                         "Consider using `n_samples` instead."))
         return self.n_samples
 
     @property
     def n_keys(self):
-        warnings.warn(DeprecationWarning('This pseudo-attribute will be removed in a future version. '
-                                       'Consider using `n_columns` instead.'))
+        warnings.warn(DeprecationWarning("This pseudo-attribute will be removed in a future version. "
+                                         "Consider using `n_columns` instead."))
         return self.n_columns

@@ -7,6 +7,7 @@ from scipy import stats
 import matplotlib.pyplot as plt
 
 from Amplo.Utils.utils import hist_search
+from Amplo.Utils.logging import logger
 
 
 class DataDriftWarning(Warning):
@@ -111,7 +112,7 @@ class DriftDetector:
                 count_drifts += 1
         if count_drifts > 0:
             severity = count_drifts / len(prediction) * 100
-            warnings.warn(DataDriftWarning(f'[AutoML] Output drift detected! Severity: {severity:.2f}%'))
+            warnings.warn(DataDriftWarning(f'Output drift detected! Severity: {severity:.2f}%'))
 
         # Add new output
         if add:
@@ -186,7 +187,7 @@ class DriftDetector:
                 self.bins[key] = (x, y)
 
         if len(violations) > 0:
-            warnings.warn(DataDriftWarning(f"[AutoML] Drift detected! "
+            warnings.warn(DataDriftWarning(f"Drift detected! "
                                            f"{len(violations)} features outside training bins: {violations}"))
 
         return violations
@@ -245,7 +246,7 @@ class DriftDetector:
                     continue
 
             if len(violations) > 0:
-                warnings.warn(DataDriftWarning(f"[AutoML] Drift detected! "
+                warnings.warn(DataDriftWarning(f"Drift detected! "
                                                f"{len(violations)} features outside training bins: {violations}"))
 
         return violations
