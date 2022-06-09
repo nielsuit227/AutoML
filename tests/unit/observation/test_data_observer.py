@@ -27,3 +27,21 @@ class TestModelObserver:
         msg = str(record[0].message)
         monotonic_cols = json.loads(re.search(r"\[.*]", msg).group(0))
         assert monotonic_cols == [0], "Wrong monotonic columns identified."
+
+    def test_minority_sensitivity(self):
+        # Setup
+        x = np.hstack((
+            np.random.normal(size=(100, 1)),
+            np.concatenate((np.zeros((2, 1)), np.random.normal(100, 5, (98, 1))))
+        ))
+        y = np.concatenate((np.zeros(5), np.ones(95)))
+
+        # Observe
+        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline._read_data(x, y)
+        obs = DataObserver(pipeline=pipeline)
+        with pytest.warns(ProductionWarning) as record:
+            obs.check_minority_sensitivity()
+        msg = str(record[0].message)
+        sensitive_cols = json.loads(re.search(r"\[.*]", msg).group(0))
+        assert sensitive_cols == [1], "Wrong minority sensitive columns identified."

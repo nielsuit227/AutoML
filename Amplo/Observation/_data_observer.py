@@ -16,6 +16,7 @@ import pandas as pd
 
 from Amplo.Observation.base import PipelineObserver
 from Amplo.Observation.base import _report_obs
+from Amplo.Utils.logging import logger
 
 __all__ = ["DataObserver"]
 
@@ -31,14 +32,8 @@ class DataObserver(PipelineObserver):
     set of tests of the data.
 
     The following tests are included:
-        1. TODO: Feature expectations are captured in a schema.
-        2. TODO: All features are beneficial.
-        3. TODO: No feature's cost is too much.
-        4. TODO: Feature adhere to meta-level requirements.
-        5. TODO: The data pipeline has appropriate privacy controls.
-        6. TODO: New features can be added quickly.
-        7. TODO: All input feature code is tested.
-        8. Feature columns should not be monotonically in-/decreasing.
+        1. Feature columns should not be monotonically in-/decreasing.
+        2. Feature columns should not be sensitive in minority classes
     """
 
     TYPE = "data_observation"
@@ -58,6 +53,7 @@ class DataObserver(PipelineObserver):
         message : str
             A brief description of the observation and its results.
         """
+        logger.info("Checking data for monotonic columns (often indices).")
         x_data = pd.DataFrame(self.x)
         numeric_data = x_data.select_dtypes(include=np.number)
 
@@ -70,4 +66,57 @@ class DataObserver(PipelineObserver):
         status_ok = not monotonic_columns
         message = (f"{len(monotonic_columns)} columns are monotonically in- or "
                    f"decreasing. More specifically: {monotonic_columns}")
+        return status_ok, message
+
+    @_report_obs
+    def check_minority_sensitivity(self):
+        """
+        Checks whether the data has sensitivities towards minority classes.
+
+        Minority sensitivity is a concept where a signal is present in a small subsample
+        of a minority class. As this minority class is potentially not well-covered,
+        the small subsample should not be indicative to identify the class or vice versa.
+
+        This is analysed by a simple discrete distribution of 10 bins. Minority sensitivity is defined as:
+        - Bin contains < 2% of total data
+        - Bin contains to one class
+        - Bin contains > 20% of that class
+        (-> class needs to be 10% of data or smaller)
+
+
+        Returns
+        -------
+        status_ok : bool
+            Observation status. Indicates whether a warning should be raised.
+        message : str
+            A brief description of the observation and its results.
+        """
+        logger.info("Checking data for minority sensitive columns.")
+        minority_sensitive = []
+
+        for key in self.x.keys():
+            # Make bins
+            counts, edges = np.histogram(self.x[key], bins=10)
+
+            # Check if a minority group is present
+            minority_size = min([c for c in counts if c != 0])
+            if minority_size > len(self.x) // 50:
+                continue
+
+            # If present, check the labels
+            bin_indices = np.digitize(self.x[key], bins=edges)
+            for bin_ind in np.where(counts == minority_size)[0]:
+                minority_indices = np.where(bin_indices == bin_ind + 1)[0]
+
+                # No minority if spread across labels
+                if self.y.iloc[minority_indices].nunique() != 1:
+                    continue
+
+                # Not sensitive if only a fraction of the label
+                if len(minority_indices) > (self.y == self.y.iloc[minority_indices[0]]).sum() // 5:
+                    minority_sensitive.append(key)
+
+        status_ok = not minority_sensitive
+        message = f"{len(minority_sensitive)} columns have minority sensitivity. Consider to remove them or add data." \
+                  f" More specifically: {minority_sensitive}."
         return status_ok, message

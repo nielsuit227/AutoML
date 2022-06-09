@@ -70,8 +70,7 @@ class Documenter:
         self.model = model
         self.featureSet = feature_set
         self.prepare_data()
-        logger.info("[AutoML] {} {} {}".format(
-            self.mName, feature_set, self.p.version))
+        logger.info(f"{self.mName} feature_set {self.p.version}")
 
         # Introduction
         markdown = "# Amplo AutoML Documentation - {} v{}\n\n".format(
@@ -206,27 +205,19 @@ class Documenter:
         stds = np.std(cm / totals * 100, axis=0)
 
         # Print Results
-        logger.info("[AutoML] Accuracy:        {:.2f} \u00B1 {:.2f} %".format(
-            np.mean(accuracy), np.std(accuracy)))
-        logger.info("[AutoML] Precision:       {:.2f} \u00B1 {:.2f} %".format(
-            np.mean(precision), np.std(precision)))
-        logger.info("[AutoML] Recall:          {:.2f} \u00B1 {:.2f} %".format(
-            np.mean(sensitivity), np.std(sensitivity)))
-        logger.info("[AutoML] Specificity:     {:.2f} \u00B1 {:.2f} %".format(
-            np.mean(specificity), np.std(specificity)))
-        logger.info("[AutoML] F1-score:        {:.2f} \u00B1 {:.2f} %".format(
-            np.mean(f1_score), np.std(f1_score)))
-        logger.info("[AutoML] Confusion Matrix:")
-        logger.info(
-            "[AutoML] Prediction / true |    Faulty    |    Healthy      ")
-        logger.info("[AutoML]       Faulty      | {} |  {}".format(
-            ("{:.1f} \u00B1 {:.1f} %".format(
-                means[0, 0], stds[0, 0])).ljust(12),
-            ("{:.1f} \u00B1 {:.1f} %".format(means[0, 1], stds[0, 1])).ljust(12)))
-        logger.info("[AutoML]       Healthy     | {} |  {}".format(
-            ("{:.1f} \u00B1 {:.1f} %".format(
-                means[1, 0], stds[1, 0])).ljust(12),
-            ("{:.1f} \u00B1 {:.1f} %".format(means[1, 1], stds[1, 1])).ljust(12)))
+        logger.info(f"Accuracy:        {np.mean(accuracy):.2f} \u00B1 {np.std(accuracy):.2f} %")
+        logger.info(f"Precision:       {np.mean(precision):.2f} \u00B1 {np.std(precision):.2f} %")
+        logger.info(f"Recall:          {np.mean(sensitivity):.2f} \u00B1 {np.std(sensitivity):.2f} %")
+        logger.info(f"Specificity:     {np.mean(specificity):.2f} \u00B1 {np.std(specificity):.2f} %")
+        logger.info(f"F1-score:        {np.mean(f1_score):.2f} \u00B1 {np.std(f1_score):.2f} %")
+        logger.info("Confusion Matrix:")
+        logger.info("Prediction / true |    Faulty    |    Healthy      ")
+        s1 = f"{means[0, 0]:.1f} \u00B1 {stds[0, 0]:.1f} %".ljust(12)
+        s2 = f"{means[0, 1]:.1f} \u00B1 {stds[0, 1]:.1f} %".ljust(12)
+        logger.info(f"      Faulty      | {s1} |  {s2}")
+        s1 = f"{means[1, 0]:.1f} \u00B1 {stds[1, 0]:.1f} %".ljust(12)
+        s2 = f"{means[1, 1]:.1f} \u00B1 {stds[1, 1]:.1f} %".ljust(12)
+        logger.info(f"      Healthy     | {s1} |  {s2}")
 
         # Check whether plot is possible
         if type(self.model).__name__ == "Lasso" or "Ridge" in type(self.model).__name__:

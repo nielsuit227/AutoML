@@ -114,7 +114,7 @@ class FeatureProcessor:
                       "version of AutoML.")
         self.fit_transform(x, y)
 
-    def fit_transform(self, x: pd.DataFrame, y: pd.Series) -> [pd.DataFrame, dict]:
+    def fit_transform(self, x: pd.DataFrame, y: pd.Series) -> (pd.DataFrame, dict):
         """
         Extracts features, and selects them
         Parameters

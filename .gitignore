@@ -9,3 +9,4 @@ dist
 /env
 /EDA
 .pypirc
+*.log

@@ -74,10 +74,10 @@ class TestPipelineByMode:
             name='Auto' + str(self.mode).capitalize(),
             mode=self.mode,
             objective='r2' if self.mode == 'regression' else 'neg_log_loss',
-            feature_timeout=5,
             grid_search_iterations=0,
             plot_eda=False,
             process_data=False,
+            extract_features=False,
             document_results=False)
         pipeline.fit(self.data)
 

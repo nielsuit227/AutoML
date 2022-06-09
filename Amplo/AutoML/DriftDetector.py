@@ -246,8 +246,8 @@ class DriftDetector:
                     continue
 
             if len(violations) > 0:
-                warnings.warn(DataDriftWarning(f"Drift detected! "
-                                               f"{len(violations)} features outside training bins: {violations}"))
+                warnings.warn(f"Drift detected! {len(violations)} features outside training bins: {violations}",
+                              DataDriftWarning)
 
         return violations
 

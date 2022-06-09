@@ -145,11 +145,11 @@ class PipelineObserver(BaseObserver, metaclass=abc.ABCMeta):
 
     @property
     def x(self):
-        return deepcopy(self._pipe.x)
+        return self._pipe.x
 
     @property
     def y(self):
-        return deepcopy(self._pipe.y)
+        return self._pipe.y
 
 
 def _report_obs(func):

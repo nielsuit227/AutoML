@@ -51,113 +51,113 @@ class Pipeline:
         Parameters
         ----------
         Main Parameters:
-        main_dir : str
+        main_dir : str, default: AutoML
             Main directory of Pipeline (for documentation)
         target : str
             Column name of the output/dependent/regressand variable.
-        name : str
+        name : str, default: ''
             Name of the project (for documentation)
-        version : str
+        version : str, default: detected
             Pipeline version (set automatically)
-        mode : str
+        mode : str, default: detected
             'classification' or 'regression'
-        objective : str
+        objective : str, default: neg_log_loss or mean_square_error
             from sklearn metrics and scoring
 
         Data Processor:
-        int_cols : list of str
+        int_cols : list of str, default: detected
             Column names of integer columns
-        float_cols : list of str
+        float_cols : list of str, default: detected
             Column names of float columns
-        date_cols : list of str
+        date_cols : list of str, default: detected
             Column names of datetime columns
-        cat_cols : list of str
+        cat_cols : list of str, default: detected
             Column names of categorical columns
-        missing_values : str
+        missing_values : str, default: zero
             [DataProcessing] - 'remove', 'interpolate', 'mean' or 'zero'
-        outlier_removal : str
+        outlier_removal : str, default: clip
             [DataProcessing] - 'clip', 'boxplot', 'z-score' or 'none'
-        z_score_threshold : int
+        z_score_threshold : int, default: 4
             [DataProcessing] If outlier_removal = 'z-score', the threshold is adaptable
-        include_output : bool
+        include_output : bool, default: False
             Whether to include output in the training data (sensible only with sequencing)
 
         Feature Processor:
-        extract_features : bool
+        extract_features : bool, default: True
             Whether to use FeatureProcessing module
-        information_threshold : float
+        information_threshold : float, default: 0.999
             [FeatureProcessing] Threshold for removing co-linear features
-        feature_timeout : int
+        feature_timeout : int, default: 3600
             [FeatureProcessing] Time budget for feature processing
-        max_lags : int
+        max_lags : int, default: 0
             [FeatureProcessing] Maximum lags for lagged features to analyse
-        max_diff : int
+        max_diff : int, default: 0
             [FeatureProcessing] Maximum differencing order for differencing features
 
         Interval Analyser:
-        interval_analyse : bool
+        interval_analyse : bool, default: True
             Whether to use IntervalAnalyser module
             Note that this has no effect when data from ``self._read_data`` is not multi-indexed
 
         Sequencing:
-        sequence : bool
+        sequence : bool, default: False
             [Sequencing] Whether to use Sequence module
-        seq_back : int | list[int]
+        seq_back : int or list of int, default: 1
             Input time indices
             If list -> includes all integers within the list
             If int -> includes that many samples back
-        seq_forward : int | list[int]
+        seq_forward : int or list of int, default: 1
             Output time indices
             If list -> includes all integers within the list.
             If int -> includes that many samples forward.
-        seq_shift : int
+        seq_shift : int, default: 0
             Shift input / output samples in time
-        seq_diff : int
+        seq_diff : str, default: 'none'
             Difference the input & output, 'none', 'diff' or 'log_diff'
-        seq_flat : bool
+        seq_flat : bool, default: True
             Whether to return a matrix (True) or Tensor (Flat)
 
         Modelling:
-        standardize : bool
+        standardize : bool, default: False
             Whether to standardize input/output data
-        shuffle : bool
+        shuffle : bool, default: True
             Whether to shuffle the samples during cross-validation
-        cv_splits : int
+        cv_splits : int, default: 10
             How many cross-validation splits to make
-        store_models : bool
+        store_models : bool, default: false
             Whether to store all trained model files
 
         Grid Search:
-        grid_search_type : str
+        grid_search_type : str, default: optuna
             Which method to use 'optuna', 'halving', 'base' or None
-        grid_search_time_budget : int
+        grid_search_time_budget : int, default: 3600
             Time budget for grid search
-        grid_search_candidates : int
+        grid_search_candidates : int, default: 250
             Parameter evaluation budget for grid search
-        grid_search_iterations : int
+        grid_search_iterations : int, default: 3
             Model evaluation budget for grid search
 
         Stacking:
-        stacking : bool
+        stacking : bool, default: False
             Whether to create a stacking model at the end
 
         Production:
-        preprocess_function : str
+        preprocess_function : str, default: None
             Add custom code for the prediction function, useful for production. Will be executed
             with exec, can be multiline. Uses data as input.
 
         Flags:
-        logging_level  : Optional[Union[int, str]]
+        logging_level  : int or str, optional
             Logging level for warnings, info, etc.
-        plot_eda : bool
+        plot_eda : bool, default: False
             Whether to run Exploratory Data Analysis
-        process_data : bool
+        process_data : bool, default: True
             Whether to force data processing
-        document_results : bool
+        document_results : bool, default: True
             Whether to force documenting
-        no_dirs : bool
+        no_dirs : bool, default: False
             Whether to create files or not
-        verbose : int
+        verbose : int, default: 1
             Level of verbosity
         """
 
@@ -496,7 +496,7 @@ class Pipeline:
         self.logger.info('[AutoML] All done :)')
         Utils.logging.remove_file_handler()
 
-    def convert_data(self, x: pd.DataFrame, preprocess: bool = True) -> [pd.DataFrame, pd.Series]:
+    def convert_data(self, x: pd.DataFrame, preprocess: bool = True) -> (pd.DataFrame, pd.Series):
         """
         Function that uses the same process as the pipeline to clean data.
         Useful if pipeline is pickled for production
@@ -1597,7 +1597,7 @@ class Pipeline:
 
         self.settings['standardize'] = settings
 
-    def _transform_standardize(self, x: pd.DataFrame, y: pd.Series) -> [pd.DataFrame, pd.Series]:
+    def _transform_standardize(self, x: pd.DataFrame, y: pd.Series) -> (pd.DataFrame, pd.Series):
         """
         Standardizes the input and output with values from settings.
 
