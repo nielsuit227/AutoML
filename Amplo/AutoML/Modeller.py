@@ -11,8 +11,7 @@ from sklearn import ensemble
 from sklearn import linear_model
 from sklearn import metrics
 from sklearn import svm
-from sklearn.model_selection import KFold
-from sklearn.model_selection import StratifiedKFold
+from sklearn import model_selection
 
 from Amplo.Utils.logging import logger
 from Amplo.Classifiers import CatBoostClassifier
@@ -27,17 +26,40 @@ __all__ = ["ClassificationType", "Modeller", "ModelType", "RegressionType"]
 
 
 ClassificationType = TypeVar(
-    "ClassificationType", CatBoostClassifier, ensemble.BaggingClassifier,
-    linear_model.RidgeClassifier, LGBMClassifier, svm.SVC, XGBClassifier)
+    "ClassificationType",
+    CatBoostClassifier,
+    ensemble.BaggingClassifier,
+    linear_model.RidgeClassifier,
+    linear_model.LogisticRegression,
+    LGBMClassifier,
+    svm.SVC,
+    XGBClassifier,
+)
 RegressionType = TypeVar(
-    "RegressionType", CatBoostRegressor, ensemble.BaggingRegressor,
-    linear_model.LinearRegression, LGBMRegressor, svm.SVR, XGBRegressor)
+    "RegressionType",
+    CatBoostRegressor,
+    ensemble.BaggingRegressor,
+    linear_model.LinearRegression,
+    LGBMRegressor,
+    svm.SVR,
+    XGBRegressor,
+)
 ModelType = TypeVar(
-    "ModelType", CatBoostClassifier, CatBoostRegressor,
-    ensemble.BaggingClassifier, ensemble.BaggingRegressor,
-    linear_model.LinearRegression, linear_model.RidgeClassifier,
-    LGBMClassifier, LGBMRegressor, svm.SVC, svm.SVR, XGBClassifier,
-    XGBRegressor)
+    "ModelType",
+    CatBoostClassifier,
+    CatBoostRegressor,
+    ensemble.BaggingClassifier,
+    ensemble.BaggingRegressor,
+    linear_model.LinearRegression,
+    linear_model.LogisticRegression,
+    linear_model.RidgeClassifier,
+    LGBMClassifier,
+    LGBMRegressor,
+    svm.SVC,
+    svm.SVR,
+    XGBClassifier,
+    XGBRegressor,
+)
 
 
 class Modeller:
@@ -85,25 +107,26 @@ class Modeller:
     [Sklearn scorers](https://scikit-learn.org/stable/modules/model_evaluation.html
     """
 
-    def __init__(self,
-                 mode="regression",
-                 shuffle=False,
-                 n_splits=3,
-                 objective="accuracy",
-                 samples=None,
-                 needs_proba=True,
-                 folder="",
-                 dataset="set_0",
-                 store_models=False,
-                 store_results=True):
+    def __init__(
+        self,
+        mode="regression",
+        cv=None,
+        objective="accuracy",
+        samples=None,
+        needs_proba=True,
+        folder="",
+        dataset="set_0",
+        store_models=False,
+        store_results=True,
+    ):
         # Test
         assert mode in ["classification", "regression"], "Unsupported mode"
-        assert isinstance(shuffle, bool)
-        assert isinstance(n_splits, int)
-        assert 2 < n_splits < 10, "Reconsider your number of splits"
         assert isinstance(objective, str)
-        assert objective in metrics.SCORERS.keys(), \
-            "Pick scorer from sklearn.metrics.SCORERS: \n{}".format(list(metrics.SCORERS.keys()))
+        assert (
+            objective in metrics.SCORERS.keys()
+        ), "Pick scorer from sklearn.metrics.SCORERS: \n{}".format(
+            list(metrics.SCORERS.keys())
+        )
         assert isinstance(samples, int) or samples is None
         assert isinstance(folder, str)
         assert isinstance(dataset, str)
@@ -111,17 +134,33 @@ class Modeller:
         assert isinstance(store_results, bool)
 
         # Parameters
+        self.cv = cv
         self.objective = objective
         self.scoring = metrics.SCORERS[objective]
         self.mode = mode
-        self.shuffle = shuffle
-        self.cvSplits = n_splits
         self.samples = samples
         self.dataset = str(dataset)
-        self.storeResults = store_results
-        self.storeModels = store_models
-        self.results = pd.DataFrame(columns=["date", "model", "dataset", "params", "mean_objective", "std_objective",
-                                             "mean_time", "std_time"])
+        self.store_results = store_results
+        self.store_models = store_models
+        self.results = pd.DataFrame(
+            columns=[
+                "date",
+                "model",
+                "dataset",
+                "params",
+                "mean_objective",
+                "std_objective",
+                "mean_time",
+                "std_time",
+            ]
+        )
+
+        # Update CV if not provided
+        if self.cv is None:
+            if self.mode == "classification":
+                self.cv = model_selection.StratifiedKFold(n_splits=3)
+            elif self.mode == "regression":
+                self.cv = model_selection.KFold(n_splits=3)
 
         # Folder
         self.folder = folder if len(folder) == 0 or folder[-1] == "/" else folder + "/"
@@ -129,21 +168,13 @@ class Modeller:
             if not os.path.exists(self.folder):
                 os.makedirs(self.folder)
 
-        self.needsProba = needs_proba
+        self.needs_proba = needs_proba
 
     def fit(self, x, y):
         # Copy number of samples
         self.samples = len(y)
 
-        # Regression
-        if self.mode == "regression":
-            cv = KFold(n_splits=self.cvSplits, shuffle=self.shuffle)
-            return self._fit(x, y, cv)
-
-        # Classification
-        if self.mode == "classification":
-            cv = StratifiedKFold(n_splits=self.cvSplits, shuffle=self.shuffle)
-            return self._fit(x, y, cv)
+        return self._fit(x, y)
 
     def return_models(self):
         """
@@ -160,7 +191,7 @@ class Modeller:
         if self.mode == "classification":
             # The thorough ones
             if self.samples < 25000:
-                models.append(svm.SVC(kernel="rbf", probability=self.needsProba))
+                models.append(svm.SVC(kernel="rbf", probability=self.needs_proba))
                 models.append(ensemble.BaggingClassifier())
                 # models.append(ensemble.GradientBoostingClassifier()) == XG Boost
                 models.append(XGBClassifier())
@@ -171,8 +202,10 @@ class Modeller:
                 models.append(LGBMClassifier())
 
             # And the multifaceted ones
-            if not self.needsProba:
+            if not self.needs_proba:
                 models.append(linear_model.RidgeClassifier())
+            else:
+                models.append(linear_model.LogisticRegression())
             models.append(CatBoostClassifier())
             models.append(ensemble.RandomForestClassifier())
 
@@ -196,16 +229,12 @@ class Modeller:
 
         return models
 
-    def _fit(self, x, y, cross_val):
+    def _fit(self, x, y):
         # Convert to NumPy
         x = np.array(x)
         y = np.array(y).ravel()
 
-        # Data
-        logger.info("Splitting data (shuffle=%s, splits=%i, features=%i)" %
-              (str(self.shuffle), self.cvSplits, len(x[0])))
-
-        if self.storeResults and "Initial_Models.csv" in os.listdir(self.folder):
+        if self.store_results and "Initial_Models.csv" in os.listdir(self.folder):
             self.results = pd.read_csv(self.folder + "Initial_Models.csv")
             for i in range(len(self.results)):
                 self.print_results(self.results.iloc[i])
@@ -222,7 +251,7 @@ class Modeller:
                 val_score = []
                 train_score = []
                 train_time = []
-                for t, v in cross_val.split(x, y):
+                for t, v in self.cv.split(x, y):
                     t_start = time.time()
                     xt, xv, yt, yv = x[t], x[v], y[t], y[v]
                     model = copy.copy(master_model)
@@ -241,23 +270,36 @@ class Modeller:
                     "std_objective": np.std(val_score),
                     "worst_case": np.mean(val_score) - np.std(val_score),
                     "mean_time": np.mean(train_time),
-                    "std_time": np.std(train_time)
+                    "std_time": np.std(train_time),
                 }
-                self.results = pd.concat([self.results, pd.Series(result).to_frame().T], ignore_index=True)
+                self.results = pd.concat(
+                    [self.results, pd.Series(result).to_frame().T], ignore_index=True
+                )
                 self.print_results(result)
 
                 # Store model
-                if self.storeModels:
-                    joblib.dump(model, self.folder + type(model).__name__ + "_{:.4f}.joblib".format(np.mean(val_score)))
+                if self.store_models:
+                    joblib.dump(
+                        model,
+                        self.folder
+                        + type(model).__name__
+                        + "_{:.4f}.joblib".format(np.mean(val_score)),
+                    )
 
             # Store CSV
-            if self.storeResults:
+            if self.store_results:
                 self.results.to_csv(self.folder + "Initial_Models.csv")
 
         # Return results
         return self.results
 
     def print_results(self, result):
-        logger.info("{} {}: {} \u00B1 {}, training time: {:.1f} s".format(
-            result["model"].ljust(30), self.objective, f"{result['mean_objective']:.4f}".ljust(15),
-            f"{result['std_objective']:.4f}".ljust(15), result['mean_time']))
+        logger.info(
+            "{} {}: {} \u00B1 {}, training time: {:.1f} s".format(
+                result["model"].ljust(30),
+                self.objective,
+                f"{result['mean_objective']:.4f}".ljust(15),
+                f"{result['std_objective']:.4f}".ljust(15),
+                result["mean_time"],
+            )
+        )

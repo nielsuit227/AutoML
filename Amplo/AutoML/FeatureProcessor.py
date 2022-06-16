@@ -1,38 +1,37 @@
+import copy
+import itertools
+import random
 import re
 import time
-import copy
-import random
 import warnings
-import itertools
+from typing import Tuple
+
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
-from shap import TreeExplainer
-
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.tree import DecisionTreeRegressor
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.cluster import MiniBatchKMeans
-
 from Amplo.Classifiers import CatBoostClassifier
 from Amplo.Regressors import CatBoostRegressor
 from Amplo.Utils.logging import logger
+from shap import TreeExplainer
+from sklearn.cluster import MiniBatchKMeans
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+from tqdm import tqdm
 
 
 class FeatureProcessor:
-
-    def __init__(self,
-                 max_lags: int = 10,
-                 max_diff: int = 2,
-                 date_cols: list = None,
-                 information_threshold: float = 0.99,
-                 selection_cutoff: float = 0.85,
-                 selection_increment: float = 0.005,
-                 extract_features: bool = True,
-                 mode: str = "classification",
-                 timeout: int = 900,
-                 verbosity: int = 1):
+    def __init__(
+        self,
+        max_lags: int = 10,
+        max_diff: int = 2,
+        date_cols: list = None,
+        information_threshold: float = 0.99,
+        selection_cutoff: float = 0.85,
+        selection_increment: float = 0.005,
+        extract_features: bool = True,
+        mode: str = "classification",
+        timeout: int = 900,
+        verbosity: int = 1,
+    ):
         """
         Automatically extracts and selects features. Removes Co-Linear Features.
         Included Feature Extraction algorithms:
@@ -52,22 +51,37 @@ class FeatureProcessor:
 
         Parameters
         ----------
-        max_lags [int]: Maximum lags for lagged features to analyse
-        max_diff [int]: Maximum differencing order for differencing features
-        date_cols [list[str]]: List of datetime columns, for datetime features
-        information_threshold [float]: Information threshold for co-linear features
-        extract_features [bool]: Whether or not to extract features
-        folder [str]: Parent folder for results
-        mode [str]: classification / regression
-        timeout [int]: Feature Extraction can be exhausting for many features, this limits the scope
-        version [int]: To version all stored files
+        max_lags : int
+            Maximum lags for lagged features to analyse
+        max_diff : int
+            Maximum differencing order for differencing features
+        date_cols : list of str
+            List of datetime columns, for datetime features
+        information_threshold : float
+            Information threshold for co-linear features
+        extract_features : bool
+            Whether or not to extract features
+        folder : str
+            Parent folder for results
+        mode : str
+            classification / regression
+        timeout : int
+            Feature Extraction can be exhausting for many features, this
+            limits the scope
+        version : int
+            To version all stored files
         """
         # Tests
-        assert 0 <= max_lags < 120, "Max lags needs to be within [0, 50]"
-        assert 0 <= max_diff < 3, "Max diff needs to be within [0, 3]"
-        assert 0 < information_threshold < 1, "Information threshold needs to be within [0, 1]"
-        assert mode.lower() in ["classification", "regression"], \
-            "Mode needs to be specified (regression or classification)"
+        if 0 > max_lags >= 50:
+            raise ValueError("Max lags needs to be within [0, 50].")
+        if 0 > max_diff >= 3:
+            raise ValueError("Max diff needs to be within [0, 3].")
+        if 0 > information_threshold > 1:
+            raise ValueError("Information threshold needs to be within [0, 1]")
+        if mode.lower() not in ["classification", "regression"]:
+            raise ValueError(
+                "Mode needs to be specified (regression / classification)."
+            )
 
         # Parameters
         self.x = None
@@ -109,12 +123,14 @@ class FeatureProcessor:
     def fit(self, x=None, y=None):
         # TODO: This is a quick and dirty version.
         #  For more info see https://amplo.atlassian.net/browse/AML-116
-        warnings.warn("Calling `fit` is not yet completely clean code and runs "
-                      "redundant calculations. This will be fixed in a future "
-                      "version of AutoML.")
+        warnings.warn(
+            "Calling `fit` is not yet completely clean code and runs "
+            "redundant calculations. This will be fixed in a future "
+            "version of AutoML."
+        )
         self.fit_transform(x, y)
 
-    def fit_transform(self, x: pd.DataFrame, y: pd.Series) -> (pd.DataFrame, dict):
+    def fit_transform(self, x: pd.DataFrame, y: pd.Series) -> Tuple[pd.DataFrame, dict]:
         """
         Extracts features, and selects them
         Parameters
@@ -168,7 +184,10 @@ class FeatureProcessor:
         # Select
         # self.featureSets["PPS"] = self._sel_predictive_power_score()
         self.featureSets["RFT"], self.featureSets["RFI"] = self._sel_gini_impurity()
-        self.featureSets["ShapThreshold"], self.featureSets["ShapIncrement"] = self._sel_shap()
+        (
+            self.featureSets["ShapThreshold"],
+            self.featureSets["ShapIncrement"],
+        ) = self._sel_shap()
 
         # Set fitted
         self.is_fitted = True
@@ -181,8 +200,10 @@ class FeatureProcessor:
 
         Parameters
         ----------
-        data [pd.DataFrame]: Input data
-        feature_set [str]: Which feature set to use for selection
+        data : pd.DataFrame
+            Input data
+        feature_set : str
+            Which feature set to use for selection
         """
         assert self.is_fitted, "Can only use transform after object is fitted."
 
@@ -196,7 +217,9 @@ class FeatureProcessor:
         # Impute missing keys
         missing_keys = [k for k in required if k not in data.keys()]
         if len(missing_keys) > 0:
-            warnings.warn("Imputing {} keys: {}".format(len(missing_keys), missing_keys))
+            warnings.warn(
+                "Imputing {} keys: {}".format(len(missing_keys), missing_keys)
+            )
         for k in missing_keys:
             data.loc[:, k] = np.zeros(len(data))
 
@@ -230,7 +253,8 @@ class FeatureProcessor:
         # Enforce the right order of features
         self.x = self.x[features]
 
-        # And clip everything (we do this with all features in ._analyse_feature(), no exception)
+        # And clip everything (we do this with all features in ._analyse_feature(), no
+        # exception)
         self.x = self.x.astype("float32").clip(lower=-1e12, upper=1e12).fillna(0)
 
         return self.x
@@ -252,25 +276,49 @@ class FeatureProcessor:
             "_means": "[]" if self._means is None else self._means.to_json(),
             "_stds": "[]" if self._stds is None else self._stds.to_json(),
             "_centers": "[]" if self._centers is None else self._centers.to_json(),
-            "featureImportance": self.featureImportance
+            "featureImportance": self.featureImportance,
         }
 
     def load_settings(self, settings: dict) -> None:
         """
         Loads settings from dictionary and recreates a fitted object
         """
-        self.linearFeatures = settings["linearFeatures"] if "linearFeatures" in settings else []
-        self.crossFeatures = settings["crossFeatures"] if "crossFeatures" in settings else []
-        self.trigonometricFeatures = settings["trigonometricFeatures"] if "trigonometricFeatures" in settings else []
-        self.inverseFeatures = settings["inverseFeatures"] if "inverseFeatures" in settings else []
-        self.kMeansFeatures = settings["kMeansFeatures"] if "kMeansFeatures" in settings else []
-        self.laggedFeatures = settings["laggedFeatures"] if "laggedFeatures" in settings else []
-        self.diffFeatures = settings["diffFeatures"] if "diffFeatures" in settings else {}
+        self.linearFeatures = (
+            settings["linearFeatures"] if "linearFeatures" in settings else []
+        )
+        self.crossFeatures = (
+            settings["crossFeatures"] if "crossFeatures" in settings else []
+        )
+        self.trigonometricFeatures = (
+            settings["trigonometricFeatures"]
+            if "trigonometricFeatures" in settings
+            else []
+        )
+        self.inverseFeatures = (
+            settings["inverseFeatures"] if "inverseFeatures" in settings else []
+        )
+        self.kMeansFeatures = (
+            settings["kMeansFeatures"] if "kMeansFeatures" in settings else []
+        )
+        self.laggedFeatures = (
+            settings["laggedFeatures"] if "laggedFeatures" in settings else []
+        )
+        self.diffFeatures = (
+            settings["diffFeatures"] if "diffFeatures" in settings else {}
+        )
         self.featureSets = settings["featureSets"] if "featureSets" in settings else []
-        self._means = pd.read_json(settings["_means"], typ="series") if "v" in settings else []
-        self._stds = pd.read_json(settings["_stds"], typ="series") if "_stds" in settings else []
-        self._centers = pd.read_json(settings["_centers"]) if "_centers" in settings else []
-        self.featureImportance = settings["featureImportance"] if "featureImportance" in settings else {}
+        self._means = (
+            pd.read_json(settings["_means"], typ="series") if "v" in settings else []
+        )
+        self._stds = (
+            pd.read_json(settings["_stds"], typ="series") if "_stds" in settings else []
+        )
+        self._centers = (
+            pd.read_json(settings["_centers"]) if "_centers" in settings else []
+        )
+        self.featureImportance = (
+            settings["featureImportance"] if "featureImportance" in settings else {}
+        )
         self.is_fitted = True
         self.verbosity = 0
 
@@ -309,7 +357,9 @@ class FeatureProcessor:
         In case of multiclass, we score per class :)
         """
         # Clean feature
-        feature = feature.clip(lower=-1e12, upper=1e12).fillna(0).values.reshape((-1, 1))
+        feature = (
+            feature.clip(lower=-1e12, upper=1e12).fillna(0).values.reshape((-1, 1))
+        )
 
         # Copy & fit model
         m = copy.copy(self.model)
@@ -333,7 +383,7 @@ class FeatureProcessor:
         else:
             return False
 
-    @ staticmethod
+    @staticmethod
     def _select_features(scores: dict) -> list:
         """
         Run at the end of all feature extraction calls.
@@ -342,11 +392,13 @@ class FeatureProcessor:
 
         Parameters
         ----------
-        scores [dict]: Features as keys, scores as values
+        scores : dict`
+            Features as keys, scores as values
 
         Returns
         -------
-        selected_features [list[str]]: Returns all selected features
+        selected_features : list of str
+            Returns all selected features
         """
         # If scores is empty, return empty list
         if len(scores) == 0:
@@ -358,9 +410,15 @@ class FeatureProcessor:
         # Select indices
         features_per_class = 50
         indices = []
-        for score in range(len(scores)):    # Loop through classes
-            indices += [i for i, k in enumerate(scores.keys())
-                        if k in scores.loc[score].sort_values(ascending=False).keys()[:features_per_class]]
+        for score in range(len(scores)):  # Loop through classes
+            indices += [
+                i
+                for i, k in enumerate(scores.keys())
+                if k
+                in scores.loc[score]
+                .sort_values(ascending=False)
+                .keys()[:features_per_class]
+            ]
 
         # Return Keys
         return list(scores.keys()[np.unique(indices)])
@@ -368,7 +426,8 @@ class FeatureProcessor:
     def _remove_co_linearity(self):
         """
         Calculates the Pearson Correlation Coefficient for all input features.
-        Those higher than the information threshold are linearly codependent (i.e., describable by y = a x + b)
+        Those higher than the information threshold are linearly codependent
+        (i.e., describable by y = a x + b)
         These features add little to no information and are therefore removed.
         """
         if self.verbosity > 0:
@@ -376,15 +435,20 @@ class FeatureProcessor:
 
         # Get co-linear features
         nk = len(self.non_date_cols)
-        norm = (self.x[self.non_date_cols] - self.x[self.non_date_cols].mean(skipna=True, numeric_only=True)).to_numpy()
-        ss = np.sqrt(np.sum(norm ** 2, axis=0))
+        norm = (
+            self.x[self.non_date_cols]
+            - self.x[self.non_date_cols].mean(skipna=True, numeric_only=True)
+        ).to_numpy()
+        ss = np.sqrt(np.sum(norm**2, axis=0))
         corr_mat = np.zeros((nk, nk))
         for i in range(nk):
             for j in range(nk):
                 if i >= j:
                     continue
                 corr_mat[i, j] = abs(np.sum(norm[:, i] * norm[:, j]) / (ss[i] * ss[j]))
-        for i, coLinear in enumerate(np.sum(corr_mat > self.informationThreshold, axis=0) > 0):
+        for i, coLinear in enumerate(
+            np.sum(corr_mat > self.informationThreshold, axis=0) > 0
+        ):
             if coLinear:
                 self.coLinearFeatures.append(self.non_date_cols[i])
 
@@ -392,8 +456,11 @@ class FeatureProcessor:
         self.originalInput = self.originalInput.drop(self.coLinearFeatures, axis=1)
         self.non_date_cols = list(set(self.non_date_cols) - set(self.coLinearFeatures))
         if self.verbosity > 0:
-            logger.info("Removed {} Co-Linear features ({:.3f} %% threshold)"
-                  .format(len(self.coLinearFeatures), self.informationThreshold))
+            logger.info(
+                "Removed {} Co-Linear features ({:.3f} %% threshold)".format(
+                    len(self.coLinearFeatures), self.informationThreshold
+                )
+            )
 
     # Start Feature functions
     def _fit_datetime_features(self):
@@ -425,7 +492,9 @@ class FeatureProcessor:
         # Add features
         for k in self.datetimeFeatures:
             key, _, period = k.split("__")
-            self.x[k] = getattr(self.x[key].dt, period).clip(lower=-1e12, upper=1e12).fillna(0)
+            self.x[k] = (
+                getattr(self.x[key].dt, period).clip(lower=-1e12, upper=1e12).fillna(0)
+            )
 
         # Remove original datetime features
         self.x = self.x.drop(self.date_cols, axis=1)
@@ -437,7 +506,7 @@ class FeatureProcessor:
     def _fit_cross_features(self):
         """
         Analyses cross-features --> division and multiplication
-        Should be limited to say ~500.000 features (runs about 100-150 features / second)
+        Should be limited to say ~500.000 features, runs ~100-150 features / second
         """
         if self.verbosity > 0:
             logger.info("Analysing cross features")
@@ -448,7 +517,9 @@ class FeatureProcessor:
         # Analyse Cross Features
         for i, key_a in enumerate(tqdm(self.non_date_cols)):
             accepted_for_key_a = 0
-            for j, key_b in enumerate(random.sample(self.non_date_cols, len(self.non_date_cols))):
+            for j, key_b in enumerate(
+                random.sample(self.non_date_cols, len(self.non_date_cols))
+            ):
                 # Skip if they"re the same
                 if key_a == key_b:
                     continue
@@ -536,7 +607,11 @@ class FeatureProcessor:
 
         # Store
         if self.verbosity > 0:
-            logger.info("Added {} trigonometric features".format(len(self.trigonometricFeatures)))
+            logger.info(
+                "Added {} trigonometric features".format(
+                    len(self.trigonometricFeatures)
+                )
+            )
 
     def _fit_linear_features(self):
         """
@@ -544,18 +619,22 @@ class FeatureProcessor:
         """
         # Load if available
         if self.verbosity > 0:
-            logger.info("Analysing Linear Features".format(len(self.linearFeatures)))
+            logger.info("Analysing Linear Features")
 
         scores = {}
         start_time = time.time()
         for i, key_a in enumerate(self.non_date_cols):
             accepted_for_key_a = 0
-            for j, key_b in enumerate(random.sample(self.non_date_cols, len(self.non_date_cols))):
+            for j, key_b in enumerate(
+                random.sample(self.non_date_cols, len(self.non_date_cols))
+            ):
                 # Skip if they"re the same
                 if key_a == key_b:
                     continue
                 # Skip rest if key_a is not useful in first max(50, 30%) (uniform)
-                if accepted_for_key_a == 0 and j > max(50, int(len(self.non_date_cols) / 3)):
+                if accepted_for_key_a == 0 and j > max(
+                    50, int(len(self.non_date_cols) / 3)
+                ):
                     continue
                 # Skip if we"re out of time
                 if time.time() - start_time > self.timeout:
@@ -649,12 +728,16 @@ class FeatureProcessor:
         data /= self._stds
 
         # Determine clusters
-        clusters = min(max(int(np.log10(len(self.non_date_cols)) * 8), 8), len(self.non_date_cols))
+        clusters = min(
+            max(int(np.log10(len(self.non_date_cols)) * 8), 8), len(self.non_date_cols)
+        )
         k_means = MiniBatchKMeans(n_clusters=clusters)
         column_names = ["dist__{}_{}".format(i, clusters) for i in range(clusters)]
         distances = pd.DataFrame(columns=column_names, data=k_means.fit_transform(data))
         distances = distances.clip(lower=-1e12, upper=1e12).fillna(0)
-        self._centers = pd.DataFrame(columns=self.non_date_cols, data=k_means.cluster_centers_)
+        self._centers = pd.DataFrame(
+            columns=self.non_date_cols, data=k_means.cluster_centers_
+        )
 
         # Analyse correlation
         scores = {}
@@ -679,11 +762,15 @@ class FeatureProcessor:
 
             # Calculate centers
             for key in self.kMeansFeatures:
-                ind = int(key[key.find("dist__") + 6: key.rfind("_")])
-                self.x.loc[:, key] = np.sqrt(np.square(tmp - self._centers.iloc[ind]).sum(axis=1))
+                ind = int(key[key.find("dist__") + 6 : key.rfind("_")])
+                self.x.loc[:, key] = np.sqrt(
+                    np.square(tmp - self._centers.iloc[ind]).sum(axis=1)
+                )
 
             if self.verbosity > 0:
-                logger.info("Added {} K-Means features".format(len(self.kMeansFeatures)))
+                logger.info(
+                    "Added {} K-Means features".format(len(self.kMeansFeatures))
+                )
 
     def _fit_diff_features(self):
         """
@@ -731,7 +818,8 @@ class FeatureProcessor:
 
     def _fit_lagged_features(self):
         """
-        Analyses the correlation of lagged features (value of sensor_x at t-1 to predict target at t)
+        Analyses the correlation of lagged features (value of sensor_x at t-1 to
+        predict target at t)
         """
         # Check if allowed
         if self.maxLags == 0:
@@ -755,7 +843,8 @@ class FeatureProcessor:
 
     def _add_lagged_features(self):
         """
-        Adds the correlation of lagged features (value of sensor_x at t-1 to predict target at t)
+        Adds the correlation of lagged features (value of sensor_x at t-1 to predict
+        target at t)
         """
         # Add selected
         for k in self.laggedFeatures:
@@ -765,31 +854,37 @@ class FeatureProcessor:
         if self.verbosity > 0:
             logger.info("Added {} lagged features".format(len(self.laggedFeatures)))
 
-    # def _sel_predictive_power_score(self):
-    #     """
-    #     Calculates the Predictive Power Score (https://github.com/8080labs/ppscore)
-    #     Asymmetric correlation based on single decision trees trained on 5.000 samples with 4-Fold validation.
-    #     """
-    #     if self.verbosity > 0:
-    #         logger.info("Determining features with PPS")
-    #
-    #     # Copy data
-    #     data = self.x.copy()
-    #     data["target"] = self.y.copy()
-    #
-    #     # Get Predictive Power Score
-    #     pp_score = ppscore.predictors(data, "target")
-    #
-    #     # Select columns
-    #     pp_cols = pp_score["x"][pp_score["ppscore"] != 0].to_list()
-    #
-    #     if self.verbosity > 0:
-    #         logger.info("Selected {} features with Predictive Power Score".format(len(pp_cols)))
+            # def _sel_predictive_power_score(self):
+            #     """
+            #     Calculates the Predictive Power Score
+            # (https://github.com/8080labs/ppscore)
+            #     Asymmetric correlation based on single decision trees trained on 5.000
+            #     samples with 4-Fold validation.
+            #     """
+            #     if self.verbosity > 0:
+            #         logger.info("Determining features with PPS")
+            #
+            #     # Copy data
+            #     data = self.x.copy()
+            #     data["target"] = self.y.copy()
+            #
+            #     # Get Predictive Power Score
+            #     pp_score = ppscore.predictors(data, "target")
+            #
+            #     # Select columns
+            #     pp_cols = pp_score["x"][pp_score["ppscore"] != 0].to_list()
+            #
+            #     if self.verbosity > 0:
+            # logger.info(f"Selected {len(pp_cols)} features with Predictive Power
+            # Score")
+
     #     return pp_cols
 
     def _sel_gini_impurity(self):
         """
-        Calculates Feature Importance with Random Forest, aka Mean Decrease in Gini Impurity
+        Calculates Feature Importance with Random Forest, aka Mean Decrease in Gini
+        Impurity
+
         Symmetric correlation based on multiple features and multiple trees ensemble
         """
         if self.verbosity > 0:
@@ -813,16 +908,30 @@ class FeatureProcessor:
         self.featureImportance["rf"] = (self.x.keys()[ind].to_list(), fi[ind].tolist())
 
         # Info Threshold
-        ind_keep = [ind[i] for i in range(len(ind)) if fi[ind[:i]].sum() <= self.selectionCutoff * sfi]
+        ind_keep = [
+            ind[i]
+            for i in range(len(ind))
+            if fi[ind[:i]].sum() <= self.selectionCutoff * sfi
+        ]
         threshold = self.x.keys()[ind_keep].to_list()
 
         # Info increment
-        ind_keep = [ind[i] for i in range(len(ind)) if fi[ind[i]] > sfi * self.selectionIncrement]
+        ind_keep = [
+            ind[i]
+            for i in range(len(ind))
+            if fi[ind[i]] > sfi * self.selectionIncrement
+        ]
         increment = self.x.keys()[ind_keep].to_list()
 
         if self.verbosity > 0:
-            logger.info(f"Selected {len(threshold)} features with {self.selectionCutoff * 100}% RF threshold")
-            logger.info(f"Selected {len(increment)} features with {self.selectionIncrement * 100}% RF increment")
+            logger.info(
+                f"Selected {len(threshold)} features with {self.selectionCutoff * 100}"
+                "% RF threshold"
+            )
+            logger.info(
+                f"Selected {len(increment)} features with "
+                f"{self.selectionIncrement * 100}% RF increment"
+            )
         return threshold, increment
 
     def _sel_shap(self):
@@ -855,19 +964,36 @@ class FeatureProcessor:
         ind = np.flip(np.argsort(shap_values))
 
         # Add to class attribute
-        self.featureImportance["shap"] = (self.x.keys()[ind].tolist(), shap_values[ind].tolist())
+        self.featureImportance["shap"] = (
+            self.x.keys()[ind].tolist(),
+            shap_values[ind].tolist(),
+        )
 
         # Threshold
-        ind_keep = [ind[i] for i in range(len(ind)) if shap_values[ind[:i]].sum() <= self.selectionCutoff * values_sum]
+        ind_keep = [
+            ind[i]
+            for i in range(len(ind))
+            if shap_values[ind[:i]].sum() <= self.selectionCutoff * values_sum
+        ]
         threshold = self.x.keys()[ind_keep].to_list()
 
         # Increment
-        ind_keep = [ind[i] for i in range(len(ind)) if shap_values[ind[i]] > values_sum * self.selectionIncrement * 10]
+        ind_keep = [
+            ind[i]
+            for i in range(len(ind))
+            if shap_values[ind[i]] > values_sum * self.selectionIncrement * 10
+        ]
         increment = self.x.keys()[ind_keep].to_list()
 
         if self.verbosity > 0:
-            logger.info(f"Selected {len(threshold)} features with {self.selectionCutoff * 100}% Shap threshold")
-            logger.info(f"Selected {len(increment)} features with {self.selectionIncrement * 1000}% Shap increment")
+            logger.info(
+                f"Selected {len(threshold)} features with {self.selectionCutoff * 100}%"
+                " Shap threshold"
+            )
+            logger.info(
+                f"Selected {len(increment)} features with "
+                f"{self.selectionIncrement * 1000}% Shap increment"
+            )
 
         return threshold, increment
 
@@ -894,7 +1020,9 @@ class FeatureProcessor:
         # Identify type of features and set class variables
         self.linearFeatures = [k for k in features if "__sub__" in k or "__add__" in k]
         self.crossFeatures = [k for k in features if "__x__" in k or "__d__" in k]
-        self.trigonometricFeatures = [k for k in features if "sin__" in k or "cos__" in k]
+        self.trigonometricFeatures = [
+            k for k in features if "sin__" in k or "cos__" in k
+        ]
         self.inverseFeatures = [k for k in features if "inv__" in k]
         self.kMeansFeatures = [k for k in features if "dist__" in k]
         self.diffFeatures = [k for k in features if "__diff__" in k]
@@ -904,8 +1032,16 @@ class FeatureProcessor:
 
         # Fill missing features for normalization
         required = copy.copy(original_features)
-        required += list(itertools.chain.from_iterable([s.split("__")[::2] for s in self.linearFeatures]))
-        required += list(itertools.chain.from_iterable([s.split("__")[::2] for s in self.crossFeatures]))
+        required += list(
+            itertools.chain.from_iterable(
+                [s.split("__")[::2] for s in self.linearFeatures]
+            )
+        )
+        required += list(
+            itertools.chain.from_iterable(
+                [s.split("__")[::2] for s in self.crossFeatures]
+            )
+        )
         required += [s.split("__")[1] for s in self.trigonometricFeatures]
         required += [s[5:] for s in self.inverseFeatures]
         required += [s.split("__diff__")[0] for s in self.diffFeatures]
@@ -919,10 +1055,10 @@ class FeatureProcessor:
 
 
 class FeatureProcesser(FeatureProcessor):
-
     def __init__(self, *args, **kwargs):
         warnings.warn(
-            "FeatureProcesser was renamed to FeatureProcessor and will be removed in the future",
-            DeprecationWarning
+            "FeatureProcesser was renamed to FeatureProcessor and will be removed in "
+            "the future",
+            DeprecationWarning,
         )
         super().__init__(*args, **kwargs)

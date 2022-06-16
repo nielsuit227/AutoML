@@ -1,0 +1,44 @@
+{
+    // Formatters
+    "editor.formatOnSave": true,
+    "editor.formatOnPaste": true,
+    "python.formatting.provider": "black",
+    "python.formatting.blackArgs": [
+        "--line-length=88"
+    ],
+    "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": true,
+    "python.linting.enabled": true,
+    "python.linting.flake8Args": [
+        "--max-line-length=88",
+        "--ignore=E203,W503"
+    ],
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.python"
+    },
+    "[javascript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    // Linters
+    "linter.linters": {
+        "eslint": {
+            "enabled": true
+        }
+    },
+    "editor.unfoldOnClickAfterEndOfLine": true,
+    "files.autoGuessEncoding": true,
+    "javascript.updateImportsOnFileMove.enabled": "always",
+    "terminal.integrated.useWslProfiles": false,
+    "diffEditor.ignoreTrimWhitespace": false,
+    "explorer.confirmDelete": false,
+    "prettier.requireConfig": true,
+    "python.pythonPath": "env\\Scripts\\python.exe",
+    "editor.rulers": [
+        88
+    ],
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+}

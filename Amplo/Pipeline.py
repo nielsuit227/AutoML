@@ -1,51 +1,45 @@
-import itertools
-import os
-import time
 import copy
+import itertools
 import json
-import Amplo
-import joblib
+import os
 import shutil
+import time
 import warnings
+from datetime import datetime
+from pathlib import Path
+from typing import Tuple, Union
+
+import joblib
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
-from typing import Union
-from pathlib import Path
-from datetime import datetime
 from shap import TreeExplainer
-
 from sklearn import metrics
-from sklearn.model_selection import KFold
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import KFold, StratifiedKFold
+from tqdm import tqdm
 
+import Amplo
 from Amplo import Utils
-from Amplo.AutoML.Sequencer import Sequencer
-from Amplo.AutoML.Modeller import Modeller
-from Amplo.AutoML.DataSampler import DataSampler
 from Amplo.AutoML.DataExplorer import DataExplorer
 from Amplo.AutoML.DataProcessor import DataProcessor
+from Amplo.AutoML.DataSampler import DataSampler
 from Amplo.AutoML.DriftDetector import DriftDetector
 from Amplo.AutoML.FeatureProcessor import FeatureProcessor
 from Amplo.AutoML.IntervalAnalyser import IntervalAnalyser
+from Amplo.AutoML.Modeller import Modeller
+from Amplo.AutoML.Sequencer import Sequencer
 from Amplo.Classifiers.StackingClassifier import StackingClassifier
-from Amplo.Documenting import BinaryDocumenting
-from Amplo.Documenting import MultiDocumenting
-from Amplo.Documenting import RegressionDocumenting
-from Amplo.GridSearch import BaseGridSearch
-from Amplo.GridSearch import HalvingGridSearch
-from Amplo.GridSearch import OptunaGridSearch
-from Amplo.Observation import DataObserver
-from Amplo.Observation import ProductionObserver
+from Amplo.Documenting import BinaryDocumenting, MultiDocumenting, RegressionDocumenting
+from Amplo.GridSearch import BaseGridSearch, HalvingGridSearch, OptunaGridSearch
+from Amplo.Observation import DataObserver, ProductionObserver
 from Amplo.Regressors.StackingRegressor import StackingRegressor
 
 
 class Pipeline:
-
     def __init__(self, **kwargs):
         """
         Automated Machine Learning Pipeline for tabular data.
-        Designed for predictive maintenance applications, failure identification, failure prediction, condition
+        Designed for predictive maintenance applications, failure identification,
+        failure prediction, condition
         monitoring, etc.
 
         Parameters
@@ -80,7 +74,8 @@ class Pipeline:
         z_score_threshold : int, default: 4
             [DataProcessing] If outlier_removal = 'z-score', the threshold is adaptable
         include_output : bool, default: False
-            Whether to include output in the training data (sensible only with sequencing)
+            Whether to include output in the training data (sensible only with
+            sequencing)
 
         Feature Processor:
         extract_features : bool, default: True
@@ -97,7 +92,8 @@ class Pipeline:
         Interval Analyser:
         interval_analyse : bool, default: True
             Whether to use IntervalAnalyser module
-            Note that this has no effect when data from ``self._read_data`` is not multi-indexed
+            Note that this has no effect when data from ``self._read_data`` is not
+            multi-indexed
 
         Sequencing:
         sequence : bool, default: False
@@ -143,8 +139,8 @@ class Pipeline:
 
         Production:
         preprocess_function : str, default: None
-            Add custom code for the prediction function, useful for production. Will be executed
-            with exec, can be multiline. Uses data as input.
+            Add custom code for the prediction function, useful for production. Will
+            be executed with exec, can be multiline. Uses data as input.
 
         Flags:
         logging_level  : int or str, optional
@@ -167,85 +163,88 @@ class Pipeline:
         # Copy arguments
         ##################
         # Main Settings
-        self.main_dir = kwargs.get('main_dir', 'AutoML/')
-        self.target = kwargs.get('target', '')
-        self.name = kwargs.get('name', 'AutoML')
-        self.version = kwargs.get('version', None)
-        self.mode = kwargs.get('mode', None)
-        self.objective = kwargs.get('objective', None)
+        self.main_dir = kwargs.get("main_dir", "AutoML/")
+        self.target = kwargs.get("target", "")
+        self.name = kwargs.get("name", "AutoML")
+        self.version = kwargs.get("version", None)
+        self.mode = kwargs.get("mode", None)
+        self.objective = kwargs.get("objective", None)
 
         # Data Processor
-        self.int_cols = kwargs.get('int_cols', None)
-        self.float_cols = kwargs.get('float_cols', None)
-        self.date_cols = kwargs.get('date_cols', None)
-        self.cat_cols = kwargs.get('cat_cols', None)
-        self.missing_values = kwargs.get('missing_values', 'zero')
-        self.outlier_removal = kwargs.get('outlier_removal', 'clip')
-        self.z_score_threshold = kwargs.get('z_score_threshold', 4)
-        self.include_output = kwargs.get('include_output', False)
+        self.int_cols = kwargs.get("int_cols", None)
+        self.float_cols = kwargs.get("float_cols", None)
+        self.date_cols = kwargs.get("date_cols", None)
+        self.cat_cols = kwargs.get("cat_cols", None)
+        self.missing_values = kwargs.get("missing_values", "zero")
+        self.outlier_removal = kwargs.get("outlier_removal", "clip")
+        self.z_score_threshold = kwargs.get("z_score_threshold", 4)
+        self.include_output = kwargs.get("include_output", False)
 
         # Balancer
-        self.balance = kwargs.get('balance', True)
+        self.balance = kwargs.get("balance", True)
 
         # Feature Processor
-        self.extract_features = kwargs.get('extract_features', True)
-        self.information_threshold = kwargs.get('information_threshold', 0.999)
-        self.feature_timeout = kwargs.get('feature_timeout', 3600)
-        self.maxLags = kwargs.get('max_lags', 0)
-        self.maxDiff = kwargs.get('max_diff', 0)
+        self.extract_features = kwargs.get("extract_features", True)
+        self.information_threshold = kwargs.get("information_threshold", 0.999)
+        self.feature_timeout = kwargs.get("feature_timeout", 3600)
+        self.maxLags = kwargs.get("max_lags", 0)
+        self.maxDiff = kwargs.get("max_diff", 0)
 
         # Interval Analyser
-        self.use_interval_analyser = kwargs.get('interval_analyse', True)
+        self.use_interval_analyser = kwargs.get("interval_analyse", True)
 
         # Sequencer
-        self.sequence = kwargs.get('sequence', False)
-        self.sequence_back = kwargs.get('seq_back', 1)
-        self.sequence_forward = kwargs.get('seq_forward', 1)
-        self.sequence_shift = kwargs.get('seq_shift', 0)
-        self.sequence_diff = kwargs.get('seq_diff', 'none')
-        self.sequence_flat = kwargs.get('seq_flat', True)
+        self.sequence = kwargs.get("sequence", False)
+        self.sequence_back = kwargs.get("seq_back", 1)
+        self.sequence_forward = kwargs.get("seq_forward", 1)
+        self.sequence_shift = kwargs.get("seq_shift", 0)
+        self.sequence_diff = kwargs.get("seq_diff", "none")
+        self.sequence_flat = kwargs.get("seq_flat", True)
 
         # Modelling
-        self.standardize = kwargs.get('standardize', False)
-        self.shuffle = kwargs.get('shuffle', True)
-        self.cv_splits = kwargs.get('cv_shuffle', 10)
-        self.store_models = kwargs.get('store_models', False)
+        self.standardize = kwargs.get("standardize", False)
+        self.shuffle = kwargs.get("shuffle", True)
+        self.cv_splits = kwargs.get("cv_shuffle", 10)
+        self.store_models = kwargs.get("store_models", False)
 
         # Grid Search Parameters
-        self.grid_search_type = kwargs.get('grid_search_type', 'optuna')
-        self.grid_search_timeout = kwargs.get('grid_search_time_budget', 3600)
-        self.grid_search_candidates = kwargs.get('grid_search_candidates', 250)
-        self.grid_search_iterations = kwargs.get('grid_search_iterations', 3)
+        self.grid_search_type = kwargs.get("grid_search_type", "optuna")
+        self.grid_search_timeout = kwargs.get("grid_search_time_budget", 3600)
+        self.grid_search_candidates = kwargs.get("grid_search_candidates", 250)
+        self.grid_search_iterations = kwargs.get("grid_search_iterations", 3)
 
         # Stacking
-        self.stacking = kwargs.get('stacking', False)
+        self.stacking = kwargs.get("stacking", False)
 
         # Production
-        self.preprocess_function = kwargs.get('preprocess_function', None)
+        self.preprocess_function = kwargs.get("preprocess_function", None)
 
         # Flags
-        self.plot_eda = kwargs.get('plot_eda', False)
-        self.process_data = kwargs.get('process_data', True)
-        self.document_results = kwargs.get('document_results', True)
-        self.verbose = kwargs.get('verbose', 1)
-        self.no_dirs = kwargs.get('no_dirs', False)
+        self.plot_eda = kwargs.get("plot_eda", False)
+        self.process_data = kwargs.get("process_data", True)
+        self.document_results = kwargs.get("document_results", True)
+        self.verbose = kwargs.get("verbose", 1)
+        self.no_dirs = kwargs.get("no_dirs", False)
 
         # Checks
-        if self.mode not in [None, 'regression', 'classification']:
-            raise ValueError('Supported modes: regression, classification.')
+        if self.mode not in [None, "regression", "classification"]:
+            raise ValueError("Supported modes: regression, classification.")
         if not (0 < self.information_threshold < 1):
-            raise ValueError('Information threshold needs to be within [0, 1].')
+            raise ValueError("Information threshold needs to be within [0, 1].")
         if self.maxLags > 50:
-            raise ValueError('Max_lags too big. Max 50.')
+            raise ValueError("Max_lags too big. Max 50.")
         if self.maxDiff > 5:
-            raise ValueError('Max diff too big. Max 5.')
-        self.grid_search_types = ['base', 'halving', 'optuna']
-        if self.grid_search_type is not None and self.grid_search_type.lower() not in self.grid_search_types:
-            raise ValueError(f'Grid Search Type must be in {self.grid_search_types}')
+            raise ValueError("Max diff too big. Max 5.")
+        self.grid_search_types = ["base", "halving", "optuna"]
+        if (
+            self.grid_search_type is not None
+            and self.grid_search_type.lower() not in self.grid_search_types
+        ):
+            raise ValueError(f"Grid Search Type must be in {self.grid_search_types}")
 
         # Advices
         if self.include_output and not self.sequence:
-            warnings.warn('[AutoML] IMPORTANT: strongly advices to not include output without sequencing.')
+            warnings.warn("Strongly advices to not include output without sequencing.")
 
         # Create dirs
         if not self.no_dirs:
@@ -253,14 +252,16 @@ class Pipeline:
             self._load_version()
 
         # Store Pipeline Settings
-        self.settings = {'pipeline': kwargs, 'validation': {}, 'feature_set': ''}
+        self.settings = {"pipeline": kwargs, "validation": {}, "feature_set": ""}
 
         # Objective & Scorer
         if self.objective is not None:
             if not isinstance(self.objective, str):
-                raise ValueError('Objective needs to be a string.')
+                raise ValueError("Objective needs to be a string.")
             if self.objective not in metrics.SCORERS:
-                raise NotImplementedError('Metric not supported, look at sklearn.metrics.')
+                raise NotImplementedError(
+                    "Metric not supported, look at sklearn.metrics."
+                )
             self.scorer = metrics.SCORERS[self.objective]
         else:
             self.scorer = None
@@ -275,6 +276,9 @@ class Pipeline:
 
         # Instance initiating
         self.best_model = None
+        self.best_model_str = None
+        self.best_feature_set = None
+        self.best_score = None
         self._data = None
         self.feature_sets = None
         self.results = None
@@ -299,9 +303,11 @@ class Pipeline:
             assert self.is_fitted, "Pipeline not yet fitted."
             return self.settings
         else:
-            settings_path = self.main_dir + f'Production/v{self.version}/Settings.json'
-            assert Path(settings_path).exists(), 'Cannot load settings from nonexistent version'
-            return json.load(open(settings_path, 'r'))
+            settings_path = self.main_dir + f"Production/v{self.version}/Settings.json"
+            assert Path(
+                settings_path
+            ).exists(), "Cannot load settings from nonexistent version"
+            return json.load(open(settings_path, "r"))
 
     def load_settings(self, settings: dict):
         """
@@ -312,24 +318,24 @@ class Pipeline:
         settings [dict]: Pipeline settings
         """
         # Set parameters
-        settings['pipeline']['no_dirs'] = True
-        self.__init__(**settings['pipeline'])
+        settings["pipeline"]["no_dirs"] = True
+        self.__init__(**settings["pipeline"])
         self.settings = settings
-        self.data_processor.load_settings(settings['data_processing'])
-        self.feature_processor.load_settings(settings['feature_processing'])
+        self.data_processor.load_settings(settings["data_processing"])
+        self.feature_processor.load_settings(settings["feature_processing"])
         # TODO: load_settings for IntervalAnalyser (not yet implemented)
-        if 'drift_detector' in settings:
+        if "drift_detector" in settings:
             self.drift_detector = DriftDetector(
                 num_cols=self.data_processor.float_cols + self.data_processor.int_cols,
                 cat_cols=self.data_processor.cat_cols,
-                date_cols=self.data_processor.date_cols
-            ).load_weights(settings['drift_detector'])
+                date_cols=self.data_processor.date_cols,
+            ).load_weights(settings["drift_detector"])
 
     def load_model(self, model: object):
         """
         Restores a trained model
         """
-        assert type(model).__name__ == self.settings['model']
+        assert type(model).__name__ == self.settings["model"]
         self.best_model = model
         self.is_fitted = True
 
@@ -350,7 +356,7 @@ class Pipeline:
             for production filing (propagated to `self.conclude_fitting`)
         """
         # Starting
-        self.logger.info('\n\n*** Starting Amplo AutoML - {} ***\n\n'.format(self.name))
+        self.logger.info("\n\n*** Starting Amplo AutoML - {} ***\n\n".format(self.name))
 
         # Prepare data for training
         self.data_preparation(*args, **kwargs)
@@ -408,15 +414,17 @@ class Pipeline:
 
         # Standardize
         # Standardizing assures equal scales, equal gradients and no clipping.
-        # Therefore, it needs to be after sequencing & feature processing, as this alters scales
+        # Therefore, it needs to be after sequencing & feature processing, as this
+        # alters scales
         self._standardizing()
 
     def model_training(self, **kwargs):
         """Train models
 
         1. Initial Modelling
-            Runs various off the shelf models with default parameters for all feature sets
-            If Sequencing is enabled, this is where it happens, as here, the feature set is generated.
+            Runs various models with default parameters for all feature sets
+            If Sequencing is enabled, this is where it happens, as here, the feature
+            set is generated.
         2. Grid Search
             Optimizes the hyperparameters of the best performing models
         3. (optional) Create Stacking model
@@ -449,33 +457,36 @@ class Pipeline:
         Parameters
         ----------
         model : str or list of str, optional
-            Model file for which to prepare production files. If multiple, selects the best.
+            Model file for which to prepare production files.
         feature_set : str or list of str, optional
-            Feature set for which to prepare production files. If multiple, selects the best.
+            Feature set for which to prepare production files.
         params : dict, optional
             Model parameters for which to prepare production files.
             Default: takes the best parameters
         kwargs
-            Collecting container for keyword arguments that are passed through `self.fit()`.
+            Collecting container for keyword arguments that are passed through `.fit()`.
         """
         if not self.no_dirs:
 
             # Set up production path
-            prod_dir = self.main_dir + f'Production/v{self.version}/'
+            prod_dir = self.main_dir + f"Production/v{self.version}/"
             Path(prod_dir).mkdir(exist_ok=True)
 
             # Parse arguments
-            model, feature_set, params = self._parse_production_args(model, feature_set, params)
+            self._parse_production_args(model, feature_set, params)
 
             # Verbose printing
             if self.verbose > 0:
-                self.logger.info(f'[AutoML] Preparing Production files for {model}, {feature_set}, {params}')
+                self.logger.info(
+                    f"Preparing Production files for {self.best_model}, "
+                    "{self.best_feature_set}"
+                )
 
             # Set best model (`self.bestModel`)
-            self._prepare_production_model(prod_dir + 'Model.joblib', model, feature_set, params)
+            self._prepare_production_model(prod_dir + "Model.joblib")
 
             # Set and store production settings
-            self._prepare_production_settings(prod_dir + 'Settings.json', model, feature_set, params)
+            self._prepare_production_settings(prod_dir + "Settings.json")
 
             # Observe production
             # TODO[TS, 25.05.2022]: Currently, we are observing the data also here.
@@ -483,20 +494,25 @@ class Pipeline:
             #  directly after :func:`_read_data()`. For now we wait...
             obs = ProductionObserver(pipeline=self)
             obs.observe()
-            self.settings['production_observation'] = obs.observations
+            self.settings["production_observation"] = obs.observations
 
             # Report
-            report_path = self.main_dir + f'Documentation/v{self.version}/{model}_{feature_set}.pdf'
+            report_path = (
+                self.main_dir + f"Documentation/v{self.version}/{self.best_model_str}_"
+                f"{self.best_feature_set}.pdf"
+            )
             if not Path(report_path).exists():
-                self.document(self.best_model, feature_set)
-            shutil.copy(report_path, prod_dir + 'Report.pdf')
+                self.document(self.best_model_str, self.best_feature_set)
+            shutil.copy(report_path, prod_dir + "Report.pdf")
 
         # Finish
         self.is_fitted = True
-        self.logger.info('[AutoML] All done :)')
+        self.logger.info("All done :)")
         Utils.logging.remove_file_handler()
 
-    def convert_data(self, x: pd.DataFrame, preprocess: bool = True) -> (pd.DataFrame, pd.Series):
+    def convert_data(
+        self, x: pd.DataFrame, preprocess: bool = True
+    ) -> Tuple[pd.DataFrame, pd.Series]:
         """
         Function that uses the same process as the pipeline to clean data.
         Useful if pipeline is pickled for production
@@ -511,9 +527,9 @@ class Pipeline:
 
         # Custom code
         if self.preprocess_function is not None and preprocess:
-            ex_globals = {'data': x}
+            ex_globals = {"data": x}
             exec(self.preprocess_function, ex_globals)
-            x = ex_globals['data']
+            x = ex_globals["data"]
 
         # Process data
         x = self.data_processor.transform(x)
@@ -533,22 +549,28 @@ class Pipeline:
             x, y = self.data_sequencer.convert(x, y)
 
         # Convert Features
-        x = self.feature_processor.transform(x, self.settings['feature_set'])
+        x = self.feature_processor.transform(x, self.settings["feature_set"])
 
         # Standardize
         if self.standardize:
             x, y = self._transform_standardize(x, y)
 
         # NaN test -- datetime should be taken care of by now
-        if x.astype('float32').replace([np.inf, -np.inf], np.nan).isna().sum().sum() != 0:
-            raise ValueError(f"Column(s) with NaN: {list(x.keys()[x.isna().sum() > 0])}")
+        if (
+            x.astype("float32").replace([np.inf, -np.inf], np.nan).isna().sum().sum()
+            != 0
+        ):
+            raise ValueError(
+                f"Column(s) with NaN: {list(x.keys()[x.isna().sum() > 0])}"
+            )
 
         # Return
         return x, y
 
     def predict(self, data: pd.DataFrame) -> np.ndarray:
         """
-        Full script to make predictions. Uses 'Production' folder with defined or latest version.
+        Full script to make predictions. Uses 'Production' folder with defined or
+        latest version.
 
         Parameters
         ----------
@@ -559,13 +581,17 @@ class Pipeline:
 
         # Print
         if self.verbose > 0:
-            self.logger.info('[AutoML] Predicting with {}, v{}'.format(type(self.best_model).__name__, self.version))
+            self.logger.info(
+                "Predicting with {}, v{}".format(
+                    type(self.best_model).__name__, self.version
+                )
+            )
 
         # Convert
         x, y = self.convert_data(data)
 
         # Predict
-        if self.mode == 'regression' and self.standardize:
+        if self.mode == "regression" and self.standardize:
             predictions = self._inverse_standardize(self.best_model.predict(x))
         else:
             predictions = self.best_model.predict(x)
@@ -588,13 +614,20 @@ class Pipeline:
         """
         start_time = time.time()
         assert self.is_fitted, "Pipeline not yet fitted."
-        assert self.mode == 'classification', 'Predict_proba only available for classification'
-        assert hasattr(self.best_model, 'predict_proba'), '{} has no attribute predict_proba'.format(
-            type(self.best_model).__name__)
+        assert (
+            self.mode == "classification"
+        ), "Predict_proba only available for classification"
+        assert hasattr(
+            self.best_model, "predict_proba"
+        ), "{} has no attribute predict_proba".format(type(self.best_model).__name__)
 
         # Print
         if self.verbose > 0:
-            self.logger.info('[AutoML] Predicting with {}, v{}'.format(type(self.best_model).__name__, self.version))
+            self.logger.info(
+                "Predicting with {}, v{}".format(
+                    type(self.best_model).__name__, self.version
+                )
+            )
 
         # Convert data
         x, y = self.convert_data(data)
@@ -628,26 +661,32 @@ class Pipeline:
         data : pd.DataFrame or str or Path, optional
             Contains both, x and y, OR provides a path to folder structure
         kwargs
-            Collecting container for keyword arguments that are passed through `self.fit()`.
+            Collecting container for keyword arguments that are passed through `.fit()`.
 
         Returns
         -------
         Pipeline
         """
-        assert x is not None or data is not None, 'No data provided'
-        assert (x is not None) ^ (data is not None), 'Setting both, `x` and `data`, is ambiguous'
+        assert x is not None or data is not None, "No data provided"
+        assert (x is not None) ^ (
+            data is not None
+        ), "Setting both, `x` and `data`, is ambiguous"
 
         # Labels are provided separately
         if y is not None:
             # Check data
             x = x if x is not None else data
-            assert x is not None, 'Parameter ``x`` is not set'
-            assert isinstance(x, (np.ndarray, pd.Series, pd.DataFrame)), 'Unsupported data type for parameter ``x``'
-            assert isinstance(y, (np.ndarray, pd.Series)), 'Unsupported data type for parameter ``y``'
+            assert x is not None, "Parameter ``x`` is not set"
+            assert isinstance(
+                x, (np.ndarray, pd.Series, pd.DataFrame)
+            ), "Unsupported data type for parameter ``x``"
+            assert isinstance(
+                y, (np.ndarray, pd.Series)
+            ), "Unsupported data type for parameter ``y``"
 
             # Set target manually if not defined
-            if self.target == '':
-                self.target = 'target'
+            if self.target == "":
+                self.target = "target"
 
             # Parse x-data
             if isinstance(x, np.ndarray):
@@ -660,11 +699,13 @@ class Pipeline:
             y.name = self.target
 
             # Check data
-            assert all(x.index == y.index), '``x`` and ``y`` indices do not match'
+            assert all(x.index == y.index), "``x`` and ``y`` indices do not match"
             if self.target in x.columns:
-                assert all(x[self.target] == y), 'Target column co-exists in both, ``x`` and ``y`` data, ' \
-                                                 f'but has not equal content. Rename the column ``{self.target}`` ' \
-                                                 'in ``x`` or set a (different) target in initialization.'
+                assert all(x[self.target] == y), (
+                    "Target column co-exists in both, ``x`` and ``y`` data, "
+                    f"but has not equal content. Rename the column ``{self.target}`` "
+                    "in ``x`` or set a (different) target in initialization."
+                )
 
             # Concatenate x and y
             data = pd.concat([x, y], axis=1)
@@ -676,21 +717,23 @@ class Pipeline:
         # A path was provided to read out (multi-indexed) data
         if isinstance(data, (str, Path)):
             # Set target manually if not defined
-            if self.target == '':
-                self.target = 'target'
+            if self.target == "":
+                self.target = "target"
             # Parse data
             data, metadata = Utils.io.merge_logs(data, self.target)
 
         # Test data
-        assert self.target != '', 'No target string provided'
-        assert self.target in data.columns, 'Target column missing'
-        assert len(data.columns) == data.columns.nunique(), 'Columns have no unique names'
+        assert self.target != "", "No target string provided"
+        assert self.target in data.columns, "Target column missing"
+        assert (
+            len(data.columns) == data.columns.nunique()
+        ), "Columns have no unique names"
 
         # Save data
         self._set_data(data)
 
         # Store metadata in settings
-        self.settings['file_metadata'] = metadata or dict()
+        self.settings["file_metadata"] = metadata or dict()
 
         return self
 
@@ -700,8 +743,8 @@ class Pipeline:
             return True
 
         # Get previous and current file metadata
-        curr_metadata = self.settings['file_metadata']
-        last_metadata = self.get_settings(self.version - 1)['file_metadata']
+        curr_metadata = self.settings["file_metadata"]
+        last_metadata = self.get_settings(self.version - 1)["file_metadata"]
 
         # Check each settings file
         for file_id in curr_metadata:
@@ -709,9 +752,9 @@ class Pipeline:
             curr = curr_metadata[file_id]
             last = last_metadata.get(file_id, dict())
             # Compare metadata
-            same_folder = curr['folder'] == last.get('folder')
-            same_file = curr['file'] == last.get('file')
-            same_mtime = curr['last_modified'] == last.get('last_modified')
+            same_folder = curr["folder"] == last.get("folder")
+            same_file = curr["file"] == last.get("file")
+            same_mtime = curr["last_modified"] == last.get("last_modified")
             if not all([same_folder, same_file, same_mtime]):
                 return False
 
@@ -726,40 +769,47 @@ class Pipeline:
 
             # Classification if string
             if self.y.dtype == str or self.y.nunique() < 0.1 * len(self.data):
-                self.mode = 'classification'
-                self.objective = self.objective or 'neg_log_loss'
+                self.mode = "classification"
+                self.objective = self.objective or "neg_log_loss"
 
             # Else regression
             else:
-                self.mode = 'regression'
-                self.objective = self.objective or 'neg_mean_absolute_error'
+                self.mode = "regression"
+                self.objective = self.objective or "neg_mean_absolute_error"
 
             # Set scorer
             self.scorer = metrics.SCORERS[self.objective]
 
             # Copy to settings
-            self.settings['pipeline']['mode'] = self.mode
-            self.settings['pipeline']['objective'] = self.objective
+            self.settings["pipeline"]["mode"] = self.mode
+            self.settings["pipeline"]["objective"] = self.objective
 
             # Print
             if self.verbose > 0:
-                self.logger.info(f"[AutoML] Setting mode to {self.mode} & objective to {self.objective}.")
+                self.logger.info(
+                    f"Setting mode to {self.mode} & objective to " "{self.objective}."
+                )
         return
 
     def _data_processing(self):
         """
-        Organises the data cleaning. Heavy lifting is done in self.dataProcessor, but settings etc. needs
-        to be organised.
+        Organises the data cleaning. Heavy lifting is done in self.dataProcessor,
+        but settings etc. needs to be organised.
         """
-        self.data_processor = DataProcessor(target=self.target, int_cols=self.int_cols, float_cols=self.float_cols,
-                                            date_cols=self.date_cols, cat_cols=self.cat_cols,
-                                            missing_values=self.missing_values,
-                                            outlier_removal=self.outlier_removal,
-                                            z_score_threshold=self.z_score_threshold)
+        self.data_processor = DataProcessor(
+            target=self.target,
+            int_cols=self.int_cols,
+            float_cols=self.float_cols,
+            date_cols=self.date_cols,
+            cat_cols=self.cat_cols,
+            missing_values=self.missing_values,
+            outlier_removal=self.outlier_removal,
+            z_score_threshold=self.z_score_threshold,
+        )
 
         # Set paths
-        data_path = self.main_dir + f'Data/Cleaned_v{self.version}.csv'
-        settings_path = self.main_dir + f'Settings/Cleaning_v{self.version}.json'
+        data_path = self.main_dir + f"Data/Cleaned_v{self.version}.csv"
+        settings_path = self.main_dir + f"Settings/Cleaning_v{self.version}.json"
 
         if Path(data_path).exists() and Path(settings_path).exists():
             # Load data
@@ -767,11 +817,11 @@ class Pipeline:
             self._set_data(data)
 
             # Load settings
-            self.settings['data_processing'] = json.load(open(settings_path, 'r'))
-            self.data_processor.load_settings(self.settings['data_processing'])
+            self.settings["data_processing"] = json.load(open(settings_path, "r"))
+            self.data_processor.load_settings(self.settings["data_processing"])
 
             if self.verbose > 0:
-                self.logger.info('[AutoML] Loaded Cleaned Data')
+                self.logger.info("Loaded Cleaned Data")
 
         else:
             # Cleaning
@@ -785,35 +835,41 @@ class Pipeline:
             self._write_csv(self.data, data_path)
 
             # Save settings
-            self.settings['data_processing'] = self.data_processor.get_settings()
+            self.settings["data_processing"] = self.data_processor.get_settings()
             if not self.no_dirs:
-                json.dump(self.settings['data_processing'], open(settings_path, 'w'))
+                json.dump(self.settings["data_processing"], open(settings_path, "w"))
 
         # If no columns were provided, load them from data processor
         if self.date_cols is None:
-            self.date_cols = self.settings['data_processing']['date_cols']
+            self.date_cols = self.settings["data_processing"]["date_cols"]
         if self.int_cols is None:
-            self.date_cols = self.settings['data_processing']['int_cols']
+            self.date_cols = self.settings["data_processing"]["int_cols"]
         if self.float_cols is None:
-            self.float_cols = self.settings['data_processing']['float_cols']
+            self.float_cols = self.settings["data_processing"]["float_cols"]
         if self.cat_cols is None:
-            self.cat_cols = self.settings['data_processing']['cat_cols']
+            self.cat_cols = self.settings["data_processing"]["cat_cols"]
 
         # Assert classes in case of classification
         self.n_classes = self.y.nunique()
-        if self.mode == 'classification':
+        if self.mode == "classification":
             if self.n_classes >= 50:
-                warnings.warn('More than 20 classes, you may want to reconsider classification mode')
+                warnings.warn(
+                    "More than 20 classes, "
+                    "you may want to reconsider classification mode"
+                )
             if set(self.y) != set([i for i in range(len(set(self.y)))]):
-                raise ValueError('Classes should be [0, 1, ...]')
+                raise ValueError("Classes should be [0, 1, ...]")
 
     def _eda(self):
         if self.plot_eda:
-            self.logger.info('[AutoML] Starting Exploratory Data Analysis')
-            eda = DataExplorer(self.x, y=self.y,
-                               mode=self.mode,
-                               folder=self.main_dir,
-                               version=self.version)
+            self.logger.info("Starting Exploratory Data Analysis")
+            eda = DataExplorer(
+                self.x,
+                y=self.y,
+                mode=self.mode,
+                folder=self.main_dir,
+                version=self.version,
+            )
             eda.run()
 
     def _data_sampling(self):
@@ -821,14 +877,20 @@ class Pipeline:
         Only run for classification problems. Balances the data using imblearn.
         Does not guarantee to return balanced classes. (Methods are data dependent)
         """
-        self.data_sampler = DataSampler(method='both', margin=0.1, cv_splits=self.cv_splits, shuffle=self.shuffle,
-                                        fast_run=False, objective=self.objective)
+        self.data_sampler = DataSampler(
+            method="both",
+            margin=0.1,
+            cv_splits=self.cv_splits,
+            shuffle=self.shuffle,
+            fast_run=False,
+            objective=self.objective,
+        )
 
         # Set paths
-        data_path = self.main_dir + f'Data/Balanced_v{self.version}.csv'
+        data_path = self.main_dir + f"Data/Balanced_v{self.version}.csv"
 
         # Only necessary for classification
-        if self.mode == 'classification' and self.balance:
+        if self.mode == "classification" and self.balance:
 
             if Path(data_path).exists():
                 # Load data
@@ -836,11 +898,11 @@ class Pipeline:
                 self._set_data(data)
 
                 if self.verbose > 0:
-                    self.logger.info('[AutoML] Loaded Balanced data')
+                    self.logger.info("Loaded Balanced data")
 
             else:
                 # Fit and resample
-                self.logger.info('[AutoML] Resampling data')
+                self.logger.info("Resampling data")
                 x, y = self.data_sampler.fit_resample(self.x, self.y)
 
                 # Store
@@ -849,14 +911,18 @@ class Pipeline:
 
     def _sequencing(self):
         """
-        Sequences the data. Useful mostly for problems where older samples play a role in future values.
-        The settings of this module are NOT AUTOMATIC
+        Sequences the data. Useful mostly for problems where older samples play a role
+        in future values. The settings of this module are NOT AUTOMATIC
         """
-        self.data_sequencer = Sequencer(back=self.sequence_back, forward=self.sequence_forward,
-                                        shift=self.sequence_shift, diff=self.sequence_diff)
+        self.data_sequencer = Sequencer(
+            back=self.sequence_back,
+            forward=self.sequence_forward,
+            shift=self.sequence_shift,
+            diff=self.sequence_diff,
+        )
 
         # Set paths
-        data_path = self.main_dir + f'Data/Sequence_v{self.version}.csv'
+        data_path = self.main_dir + f"Data/Sequence_v{self.version}.csv"
 
         if self.sequence:
 
@@ -866,11 +932,11 @@ class Pipeline:
                 self._set_data(data)
 
                 if self.verbose > 0:
-                    self.logger.info('[AutoML] Loaded Extracted Features')
+                    self.logger.info("Loaded Extracted Features")
 
             else:
                 # Sequencing
-                self.logger.info('[AutoML] Sequencing data')
+                self.logger.info("Sequencing data")
                 x, y = self.data_sequencer.convert(self.x, self.y)
 
                 # Store
@@ -879,16 +945,21 @@ class Pipeline:
 
     def _feature_processing(self):
         """
-        Organises feature processing. Heavy lifting is done in self.featureProcessor, but settings, etc.
-        needs to be organised.
+        Organises feature processing. Heavy lifting is done in self.featureProcessor,
+        but settings, etc. needs to be organised.
         """
-        self.feature_processor = FeatureProcessor(mode=self.mode, max_lags=self.maxLags, max_diff=self.maxDiff,
-                                                  extract_features=self.extract_features, timeout=self.feature_timeout,
-                                                  information_threshold=self.information_threshold)
+        self.feature_processor = FeatureProcessor(
+            mode=self.mode,
+            max_lags=self.maxLags,
+            max_diff=self.maxDiff,
+            extract_features=self.extract_features,
+            timeout=self.feature_timeout,
+            information_threshold=self.information_threshold,
+        )
 
         # Set paths
-        data_path = self.main_dir + f'Data/Extracted_v{self.version}.csv'
-        settings_path = self.main_dir + f'Settings/Extracting_v{self.version}.json'
+        data_path = self.main_dir + f"Data/Extracted_v{self.version}.csv"
+        settings_path = self.main_dir + f"Settings/Extracting_v{self.version}.json"
 
         if Path(data_path).exists() and Path(settings_path).exists():
             # Loading data
@@ -896,15 +967,15 @@ class Pipeline:
             self._set_x(x)
 
             # Loading settings
-            self.settings['feature_processing'] = json.load(open(settings_path, 'r'))
-            self.feature_processor.load_settings(self.settings['feature_processing'])
-            self.feature_sets = self.settings['feature_processing']['featureSets']
+            self.settings["feature_processing"] = json.load(open(settings_path, "r"))
+            self.feature_processor.load_settings(self.settings["feature_processing"])
+            self.feature_sets = self.settings["feature_processing"]["featureSets"]
 
             if self.verbose > 0:
-                self.logger.info('[AutoML] Loaded Extracted Features')
+                self.logger.info("Loaded Extracted Features")
 
         else:
-            self.logger.info('[AutoML] Starting Feature Processor')
+            self.logger.info("Starting Feature Processor")
 
             # Transform data
             x, self.feature_sets = self.feature_processor.fit_transform(self.x, self.y)
@@ -914,9 +985,9 @@ class Pipeline:
             self._write_csv(self.x, data_path)
 
             # Save settings
-            self.settings['feature_processing'] = self.feature_processor.get_settings()
+            self.settings["feature_processing"] = self.feature_processor.get_settings()
             if not self.no_dirs:
-                json.dump(self.settings['feature_processing'], open(settings_path, 'w'))
+                json.dump(self.settings["feature_processing"], open(settings_path, "w"))
 
     def _interval_analysis(self):
         """
@@ -931,24 +1002,26 @@ class Pipeline:
         self.interval_analyser = IntervalAnalyser(target=self.target)
 
         # Set paths
-        data_path = self.main_dir + f'Data/Interval_Analyzed_v{self.version}.csv'
-        # settings_path = self.main_dir + f'Settings/Interval_Analysis_v{self.version}.json'
+        data_path = self.main_dir + f"Data/Interval_Analyzed_v{self.version}.csv"
+        # settings_path = self.main_dir +
+        # f'Settings/Interval_Analysis_v{self.version}.json'
 
         if Path(data_path).exists():  # TODO: and Path(settings_path).exists():
             # Load data
             data = self._read_csv(data_path)
             self._set_data(data)
 
-            # TODO implement `IntervalAnalyser.load_settings` and add to `self.load_settings`
+            # TODO implement `IntervalAnalyser.load_settings` and add to
+            #  `self.load_settings`
             # # Load settings
             # self.settings['interval_analysis'] = json.load(open(settings_path, 'r'))
             # self.intervalAnalyser.load_settings(self.settings['interval_analysis'])
 
             if self.verbose > 0:
-                self.logger.info('[AutoML] Loaded interval-analyzed data')
+                self.logger.info("Loaded interval-analyzed data")
 
         else:
-            self.logger.info(f'[AutoML] Interval-analyzing data')
+            self.logger.info("Interval-analyzing data")
 
             # Transform data
             data = self.interval_analyser.fit_transform(self.x, self.y)
@@ -957,7 +1030,8 @@ class Pipeline:
             self._set_data(data)
             self._write_csv(self.data, data_path)
 
-            # TODO implement `IntervalAnalyser.get_settings` and add to `self.get_settings`
+            # TODO implement `IntervalAnalyser.get_settings` and add to
+            # `self.get_settings`
             # # Save settings
             # self.settings['interval_analysis'] = self.intervalAnalyser.get_settings()
             # json.dump(self.settings['interval_analysis'], open(settings_path, 'w'))
@@ -971,18 +1045,18 @@ class Pipeline:
             return
 
         # Set paths
-        settings_path = self.main_dir + f'Settings/Standardize_v{self.version}.json'
+        settings_path = self.main_dir + f"Settings/Standardize_v{self.version}.json"
 
         if Path(settings_path).exists():
             # Load data
-            self.settings['standardize'] = json.load(open(settings_path, 'r'))
+            self.settings["standardize"] = json.load(open(settings_path, "r"))
 
         else:
             # Fit data
             self._fit_standardize(self.x, self.y)
 
             # Store Settings
-            json.dump(self.settings['standardize'], open(settings_path, 'w'))
+            json.dump(self.settings["standardize"], open(settings_path, "w"))
 
         # Transform data
         x, y = self._transform_standardize(self.x, self.y)
@@ -994,7 +1068,7 @@ class Pipeline:
         """
 
         # Set paths
-        results_path = Path(self.main_dir) / 'Results.csv'
+        results_path = Path(self.main_dir) / "Results.csv"
 
         # Load existing results
         if results_path.exists():
@@ -1003,39 +1077,53 @@ class Pipeline:
             self.results = pd.read_csv(results_path)
 
             # Printing here as we load it
-            results = self.results[np.logical_and(
-                self.results['version'] == self.version,
-                self.results['type'] == 'Initial modelling'
-            )]
-            for fs in set(results['dataset']):
-                self.logger.info(f'[AutoML] Initial Modelling for {fs} ({len(self.feature_sets[fs])})')
-                fsr = results[results['dataset'] == fs]
+            results = self.results[
+                np.logical_and(
+                    self.results["version"] == self.version,
+                    self.results["type"] == "Initial modelling",
+                )
+            ]
+            for fs in set(results["dataset"]):
+                self.logger.info(
+                    f"Initial Modelling for {fs} ({len(self.feature_sets[fs])})"
+                )
+                fsr = results[results["dataset"] == fs]
                 for i in range(len(fsr)):
                     row = fsr.iloc[i]
-                    self.logger.info(f'[AutoML] {row["model"].ljust(40)} {self.objective}: '
-                                     f'{row["mean_objective"]:.4f} \u00B1 {row["std_objective"]:.4f}')
+                    self.logger.info(
+                        f'{row["model"].ljust(40)} {self.objective}: '
+                        f'{row["mean_objective"]:.4f} \u00B1 {row["std_objective"]:.4f}'
+                    )
 
         # Check if this version has been modelled
-        if self.results is None or self.version not in self.results['version'].values:
+        if self.results is None or self.version not in self.results["version"].values:
 
             # Iterate through feature sets
             for feature_set, cols in self.feature_sets.items():
 
                 # Skip empty sets
                 if len(cols) == 0:
-                    self.logger.info(f'[AutoML] Skipping {feature_set} features, empty set')
+                    self.logger.info(f"Skipping {feature_set} features, empty set")
                     continue
-                self.logger.info(f'[AutoML] Initial Modelling for {feature_set} features ({len(cols)})')
+                self.logger.info(
+                    f"Initial Modelling for {feature_set} features ({len(cols)})"
+                )
 
                 # Do the modelling
-                modeller = Modeller(mode=self.mode, shuffle=self.shuffle, store_models=self.store_models,
-                                    objective=self.objective, dataset=feature_set,
-                                    store_results=False, folder=self.main_dir + 'Models/')
+                modeller = Modeller(
+                    mode=self.mode,
+                    store_models=self.store_models,
+                    cv=self.cv,
+                    objective=self.objective,
+                    dataset=feature_set,
+                    store_results=False,
+                    folder=self.main_dir + "Models/",
+                )
                 results = modeller.fit(self.x[cols], self.y)
 
                 # Add results to memory
-                results['type'] = 'Initial modelling'
-                results['version'] = self.version
+                results["type"] = "Initial modelling"
+                results["version"] = self.version
                 if self.results is None:
                     self.results = results
                 else:
@@ -1047,8 +1135,9 @@ class Pipeline:
     def grid_search(self, model=None, feature_set=None, parameter_set=None, **kwargs):
         """Runs a grid search.
 
-        By default, takes ``self.results`` and runs for the top ``n=self.gridSearchIterations`` optimizations.
-        There is the option to provide ``model`` and ``feature_set``, but **both** have to be provided. In this
+        By default, takes ``self.results`` and runs for the top
+        ``n=self.gridSearchIterations`` optimizations. There is the option to provide
+        ``model`` and ``feature_set``, but **both** have to be provided. In this
         case, the model and dataset combination will be optimized.
 
         Implemented types, Base, Halving, Optuna.
@@ -1058,49 +1147,70 @@ class Pipeline:
         model : list of (str or object) or object or str, optional
             Which model to run grid search for.
         feature_set : list of str or str, optional
-            Which feature set to run gid search for. Must be provided when `model` is not None.
-            Options: ``RFT``, ``RFI``, ``ShapThreshold`` or ``ShapIncrement``
+            Which feature set to run gid search for. Must be provided when `model` is
+            not None. Options: ``RFT``, ``RFI``, ``ShapThreshold`` or ``ShapIncrement``
         parameter_set : dict, optional
             Parameter grid to optimize over.
 
         Notes
         -----
-        When both parameters, ``model`` and ``feature_set``, are provided, the grid search behaves as follows:
-            - When both parameters are either of dtype ``str`` or have the same length, then grid search will
-              treat them as pairs.
-            - When one parameter is an iterable and the other parameter is either a string or an iterable
-              of different length, then grid search will happen for each unique combination of these parameters.
+        When both parameters, ``model`` and ``feature_set``, are provided, the grid
+        search behaves as follows:
+            - When both parameters are either of dtype ``str`` or have the same length,
+              then grid search will treat them as pairs.
+            - When one parameter is an iterable and the other parameter is either a
+              string or an iterable of different length, then grid search will happen
+              for each unique combination of these parameters.
         """
 
         # Skip grid search and set best initial model as best grid search parameters
         if self.grid_search_type is None or self.grid_search_iterations == 0:
-            best_initial_model = self._sort_results(self.results[self.results['version'] == self.version]).iloc[:1]
-            best_initial_model['type'] = 'Hyper Parameter'
-            self.results = pd.concat([self.results, best_initial_model], ignore_index=True)
+            best_initial_model = self._sort_results(
+                self.results[self.results["version"] == self.version]
+            ).iloc[:1]
+            best_initial_model["type"] = "Hyper Parameter"
+            self.results = pd.concat(
+                [self.results, best_initial_model], ignore_index=True
+            )
             return self
 
         # Define models
         if model is None:
             # Run through first best initial models (n=`self.gridSearchIterations`)
-            selected_results = self.sort_results(self.results[np.logical_and(
-                self.results['type'] == 'Initial modelling',
-                self.results['version'] == self.version,
-            )]).iloc[:self.grid_search_iterations]
-            models = [Utils.utils.get_model(model_name, mode=self.mode, samples=len(self.x))
-                      for model_name in selected_results['model']]
-            feature_sets = selected_results['dataset']
+            selected_results = self.sort_results(
+                self.results[
+                    np.logical_and(
+                        self.results["type"] == "Initial modelling",
+                        self.results["version"] == self.version,
+                    )
+                ]
+            ).iloc[: self.grid_search_iterations]
+            models = [
+                Utils.utils.get_model(model_name, mode=self.mode, samples=len(self.x))
+                for model_name in selected_results["model"]
+            ]
+            feature_sets = selected_results["dataset"]
 
         elif feature_set is None:
-            raise AttributeError('When `model` is provided, `feature_set` cannot be None. '
-                                 'Provide either both params or neither of them.')
+            raise AttributeError(
+                "When `model` is provided, `feature_set` cannot be None. "
+                "Provide either both params or neither of them."
+            )
 
         else:
-            models = [Utils.utils.get_model(model, mode=self.mode, samples=len(self.x))] \
-                if isinstance(model, str) else [model]
-            feature_sets = [feature_set] if isinstance(feature_set, str) else list(feature_set)
+            models = (
+                [Utils.utils.get_model(model, mode=self.mode, samples=len(self.x))]
+                if isinstance(model, str)
+                else [model]
+            )
+            feature_sets = (
+                [feature_set] if isinstance(feature_set, str) else list(feature_set)
+            )
             if len(models) != len(feature_sets):
                 # Create each combination
-                combinations = list(itertools.product(np.unique(models), np.unique(feature_sets)))
+                combinations = list(
+                    itertools.product(np.unique(models), np.unique(feature_sets))
+                )
                 models = [elem[0] for elem in combinations]
                 feature_sets = [elem[1] for elem in combinations]
 
@@ -1108,85 +1218,107 @@ class Pipeline:
         for model, feature_set in zip(models, feature_sets):
 
             # Organise existing model results
-            m_results = self.results[np.logical_and(
-                self.results['model'] == type(model).__name__,
-                self.results['version'] == self.version,
-            )]
-            m_results = self._sort_results(m_results[m_results['dataset'] == feature_set])
+            m_results = self.results[
+                np.logical_and(
+                    self.results["model"] == type(model).__name__,
+                    self.results["version"] == self.version,
+                )
+            ]
+            m_results = self._sort_results(
+                m_results[m_results["dataset"] == feature_set]
+            )
 
             # Skip grid search if optimized model already exists
-            if ('Hyper Parameter' == m_results['type']).any():
-                self.logger.info('[AutoML] Loading optimization results.')
-                grid_search_results = m_results[m_results['type'] == 'Hyper Parameter']
+            if ("Hyper Parameter" == m_results["type"]).any():
+                self.logger.info("Loading optimization results.")
+                grid_search_results = m_results[m_results["type"] == "Hyper Parameter"]
 
             # Run grid search otherwise
             else:
                 # Run grid search for model
-                grid_search_results = self._grid_search_iteration(model, parameter_set, feature_set)
+                grid_search_results = self._grid_search_iteration(
+                    model, parameter_set, feature_set
+                )
                 grid_search_results = self.sort_results(grid_search_results)
 
                 # Store results
-                grid_search_results['version'] = self.version
-                grid_search_results['dataset'] = feature_set
-                grid_search_results['type'] = 'Hyper Parameter'
-                self.results = pd.concat([self.results, grid_search_results], ignore_index=True)
-                self.results.to_csv(self.main_dir + 'Results.csv', index=False)
+                grid_search_results["version"] = self.version
+                grid_search_results["dataset"] = feature_set
+                grid_search_results["type"] = "Hyper Parameter"
+                self.results = pd.concat(
+                    [self.results, grid_search_results], ignore_index=True
+                )
+                self.results.to_csv(self.main_dir + "Results.csv", index=False)
 
             # Validate
             if self.document_results:
-                params = Utils.io.parse_json(grid_search_results.iloc[0]['params'])
-                # TODO: What about other than our custom models? They don't have `set_params()` method
+                params = Utils.io.parse_json(grid_search_results.iloc[0]["params"])
+                # TODO: What about other than our custom models? They don't have
+                # `set_params()` method
                 self.document(model.set_params(**params), feature_set)
 
         return self
 
     def _create_stacking(self):
         """
-        Based on the best performing models, in addition to cheap models based on very different assumptions,
-        A stacking model is optimized to enhance/combine the performance of the models.
+        Based on the best performing models, in addition to cheap models based on very
+        different assumptions, a stacking model is optimized to enhance/combine the
+        performance of the models.
         --> should contain a large variety of models
         --> classifiers need predict_proba
         --> level 1 needs to be ordinary least squares
         """
         if self.stacking:
-            self.logger.info('[AutoML] Creating Stacking Ensemble')
+            self.logger.info("Creating Stacking Ensemble")
 
-            # Select feature set that has been picked most often for hyper parameter optimization
-            results = self._sort_results(self.results[np.logical_and(
-                self.results['type'] == 'Hyper Parameter',
-                self.results['version'] == self.version,
-            )])
-            feature_set = results['dataset'].value_counts().index[0]
-            results = results[results['dataset'] == feature_set]
-            self.logger.info('[AutoML] Selected Stacking feature set: {}'.format(feature_set))
+            # Select feature set that has been picked most often for hyper parameter
+            # optimization
+            results = self._sort_results(
+                self.results[
+                    np.logical_and(
+                        self.results["type"] == "Hyper Parameter",
+                        self.results["version"] == self.version,
+                    )
+                ]
+            )
+            feature_set = results["dataset"].value_counts().index[0]
+            results = results[results["dataset"] == feature_set]
+            self.logger.info("Selected Stacking feature set: {}".format(feature_set))
 
             # Create Stacking Model Params
             n_stacking_models = 3
-            stacking_models_str = results['model'].unique()[:n_stacking_models]
-            stacking_models_params = [Utils.io.parse_json(
-                results.iloc[np.where(results['model'] == sms)[0][0]]['params']) for sms in stacking_models_str]
-            stacking_models = dict([(sms, stacking_models_params[i]) for i, sms in enumerate(stacking_models_str)])
-            self.logger.info('[AutoML] Stacked models: {}'.format(list(stacking_models.keys())))
+            stacking_models_str = results["model"].unique()[:n_stacking_models]
+            stacking_models_params = [
+                Utils.io.parse_json(
+                    results.iloc[np.where(results["model"] == sms)[0][0]]["params"]
+                )
+                for sms in stacking_models_str
+            ]
+            stacking_models = dict(
+                [
+                    (sms, stacking_models_params[i])
+                    for i, sms in enumerate(stacking_models_str)
+                ]
+            )
+            self.logger.info("Stacked models: {}".format(list(stacking_models.keys())))
 
             # Add samples & Features
-            stacking_models['n_samples'], stacking_models['n_features'] = self.x.shape
+            stacking_models["n_samples"], stacking_models["n_features"] = self.x.shape
 
             # Prepare Stack
-            if self.mode == 'regression':
+            if self.mode == "regression":
                 stack = StackingRegressor(**stacking_models)
-                cv = KFold(n_splits=self.cv_splits, shuffle=self.shuffle)
 
-            elif self.mode == 'classification':
+            elif self.mode == "classification":
                 stack = StackingClassifier(**stacking_models)
-                cv = StratifiedKFold(n_splits=self.cv_splits, shuffle=self.shuffle)
             else:
-                raise NotImplementedError('Unknown mode')
+                raise NotImplementedError("Unknown mode")
 
             # Cross Validate
             x, y = self.x[self.feature_sets[feature_set]].to_numpy(), self.y.to_numpy()
             score = []
             times = []
-            for (t, v) in tqdm(cv.split(x, y)):
+            for (t, v) in tqdm(self.cv.split(x, y)):
                 start_time = time.time()
                 xt, xv, yt, yv = x[t], x[v], y[t].reshape((-1)), y[v].reshape((-1))
                 model = copy.deepcopy(stack)
@@ -1195,21 +1327,26 @@ class Pipeline:
                 times.append(time.time() - start_time)
 
             # Output Results
-            self.logger.info('[AutoML] Stacking result:')
-            self.logger.info(f'[AutoML] {self.objective}:        {np.mean(score):.2f} \u00B1 {np.std(score):.2f}')
-            self.results = self.results.append({
-                'date': datetime.today().strftime('%d %b %y'),
-                'model': type(stack).__name__,
-                'dataset': feature_set,
-                'params': json.dumps(stack.get_params()),
-                'mean_objective': np.mean(score),
-                'std_objective': np.std(score),
-                'mean_time': np.mean(times),
-                'std_time': np.std(times),
-                'version': self.version,
-                'type': 'Stacking',
-            }, ignore_index=True)
-            self.results.to_csv(self.main_dir + 'Results.csv', index=False)
+            self.logger.info("Stacking result:")
+            self.logger.info(
+                f"{self.objective}:     {np.mean(score):.2f} \u00B1 {np.std(score):.2f}"
+            )
+            self.results = self.results.append(
+                {
+                    "date": datetime.today().strftime("%d %b %y"),
+                    "model": type(stack).__name__,
+                    "dataset": feature_set,
+                    "params": json.dumps(stack.get_params()),
+                    "mean_objective": np.mean(score),
+                    "std_objective": np.std(score),
+                    "mean_time": np.mean(times),
+                    "std_time": np.std(times),
+                    "version": self.version,
+                    "type": "Stacking",
+                },
+                ignore_index=True,
+            )
+            self.results.to_csv(self.main_dir + "Results.csv", index=False)
 
             # Document
             if self.document_results:
@@ -1221,48 +1358,66 @@ class Pipeline:
 
         Parameters
         ----------
-        model [Object or str]- (optional) Which model to run grid search for.
-        feature_set [str]- (optional) Which feature set to run grid search for 'rft', 'rfi' or 'pps'
+        model : str or estimator, optional
+            Model to run grid search for
+        feature_set : str, optional
+            Which feature set to run grid search for 'rft', 'rfi' or 'pps'
         """
         # Get model
         if isinstance(model, str):
             model = Utils.utils.get_model(model, mode=self.mode, samples=len(self.x))
 
         # Checks
-        assert feature_set in self.feature_sets.keys(), 'Feature Set not available.'
-        if os.path.exists(self.main_dir + 'Documentation/v{}/{}_{}.pdf'.format(
-                self.version, type(model).__name__, feature_set)):
-            self.logger.info('[AutoML] Documentation existing for {} v{} - {} '.format(
-                type(model).__name__, self.version, feature_set))
+        assert feature_set in self.feature_sets.keys(), "Feature Set not available."
+        if os.path.exists(
+            self.main_dir
+            + "Documentation/v{}/{}_{}.pdf".format(
+                self.version, type(model).__name__, feature_set
+            )
+        ):
+            self.logger.info(
+                "Documentation existing for {} v{} - {} ".format(
+                    type(model).__name__, self.version, feature_set
+                )
+            )
             return
         if len(model.get_params()) == 0:
-            warnings.warn('[Documenting] Supplied model has no parameters!')
+            warnings.warn("[Documenting] Supplied model has no parameters!")
 
         # Run validation
-        self.logger.info('[AutoML] Creating Documentation for {} - {}'.format(type(model).__name__, feature_set))
-        if self.mode == 'classification' and self.n_classes == 2:
+        self.logger.info(
+            "Creating Documentation for {} - {}".format(
+                type(model).__name__, feature_set
+            )
+        )
+        if self.mode == "classification" and self.n_classes == 2:
             documenting = BinaryDocumenting(self)
-        elif self.mode == 'classification':
+        elif self.mode == "classification":
             documenting = MultiDocumenting(self)
-        elif self.mode == 'regression':
+        elif self.mode == "regression":
             documenting = RegressionDocumenting(self)
         else:
-            raise ValueError('Unknown mode.')
+            raise ValueError("Unknown mode.")
         documenting.create(model, feature_set)
 
         # Append to settings
-        self.settings['validation']['{}_{}'.format(type(model).__name__, feature_set)] = documenting.outputMetrics
+        self.settings["validation"][
+            "{}_{}".format(type(model).__name__, feature_set)
+        ] = documenting.outputMetrics
 
     def _parse_production_args(self, model=None, feature_set=None, params=None):
         """
-        Parse production arguments. Selects the best model, feature set and parameter combination.
+        Parse production arguments. Selects the best model, feature set and parameter
+        combination.
 
         Parameters
         ----------
         model : str or list of str, optional
-            Model constraint(s)
+            Model constraint(s). In case list is provided, the pipeline needs to be
+            fitted.
         feature_set : str or list of str, optional
-            Feature set constraint(s)
+            Feature set constraint(s). In case list is provided, the pipeline needs to
+            be fitted.
         params : dict, optional
             Parameter constraint(s)
         Returns
@@ -1274,6 +1429,13 @@ class Pipeline:
         params : dict
             Best model parameters given the `params` restraint(s).
         """
+        if self.results is None and (
+            model is None or params is None or feature_set is None
+        ):
+            raise ValueError(
+                "Pipeline not fitted and no model, params or feature set provided."
+            )
+
         if model is not None and not isinstance(model, str):
             # TODO: This issue is linked with AML-103 (in Jira)
             #  1. Add to method docstring that it accepts a model instance, too
@@ -1282,31 +1444,45 @@ class Pipeline:
             model = type(model).__name__
 
         # Get results of current version
-        results = self._sort_results(self.results[self.results['version'] == self.version])
+        results = (
+            self._sort_results(self.results[self.results["version"] == self.version])
+            if self.results is not None
+            else None
+        )
 
-        if model is not None:
+        # Filter results for model
+        if model is not None and results is not None:
+            # Enforce list
             if isinstance(model, str):
                 model = [model]
-            # Filter results
-            results = self._sort_results(results[results['model'].isin(model)])
 
-        if feature_set is not None:
+            # Filter results
+            results = self._sort_results(results[results["model"].isin(model)])
+
+        # filter results for feature set
+        if feature_set is not None and results is not None:
             if isinstance(feature_set, str):
                 feature_set = [feature_set]
             # Filter results
-            results = self._sort_results(results[results['dataset'].isin(feature_set)])
+            results = self._sort_results(results[results["dataset"].isin(feature_set)])
 
         # Get best parameters
-        if params is None:
-            params = Utils.io.parse_json(results.iloc[0]['params'])
+        if params is None and results is not None:
+            params = results.iloc[0]["params"]
+        elif params is None:
+            params = {}
 
         # Find the best allowed arguments
-        model = results.iloc[0]['model']
-        feature_set = results.iloc[0]['dataset']
+        self.best_model_str = model if results is None else results.iloc[0]["model"]
+        self.best_feature_set = (
+            feature_set if results is None else results.iloc[0]["dataset"]
+        )
+        self.best_params = Utils.io.parse_json(params)
+        self.best_score = 0 if results is None else results.iloc[0]["worst_case"]
 
-        return model, feature_set, params
+        return self
 
-    def _prepare_production_model(self, model_path, model, feature_set, params):
+    def _prepare_production_model(self, model_path):
         """
         Prepare and store `self.bestModel` for production
 
@@ -1314,67 +1490,52 @@ class Pipeline:
         ----------
         model_path : str or Path
             Where to store model for production
-        model : str, optional
-            Model file for which to prepare production files
-        feature_set : str, optional
-            Feature set for which to prepare production files
-        params : dict, optional
-            Model parameters for which to prepare production files.
-            Default: takes best parameters
 
         Returns
         -------
-        model : str
-            Updated name of model
-        feature_set : str
-            Updated name of feature set
         """
-
         model_path = Path(model_path)
 
-        # Try to load model from file
-        if model_path.exists():
-            # Load model
-            self.best_model = joblib.load(Path(model_path))
-            # Reset if it's not the desired model
-            if type(self.best_model).__name__ != model or self.best_model.get_params() != params:
-                self.best_model = None
-        else:
-            self.best_model = None
-
-        # Set best model
-        if self.best_model is not None:
-            if self.verbose > 0:
-                self.logger.info('[AutoML] Loading existing model file')
-
-        else:
-            # Make model
-            if 'Stacking' in model:
-                # Create stacking
-                if self.mode == 'regression':
-                    self.best_model = StackingRegressor(n_samples=len(self.x), n_features=len(self.x.keys()))
-                elif self.mode == 'classification':
-                    self.best_model = StackingClassifier(n_samples=len(self.x), n_features=len(self.x.keys()))
-                else:
-                    raise NotImplementedError("Mode not set")
+        # Make model
+        if "Stacking" in self.best_model_str:
+            # Create stacking
+            if self.mode == "regression":
+                self.best_model = StackingRegressor(
+                    n_samples=len(self.x), n_features=len(self.x.keys())
+                )
+            elif self.mode == "classification":
+                self.best_model = StackingClassifier(
+                    n_samples=len(self.x), n_features=len(self.x.keys())
+                )
             else:
-                # Take model as is
-                self.best_model = Utils.utils.get_model(model, mode=self.mode, samples=len(self.x))
+                raise NotImplementedError("Mode not set")
+        else:
+            # Take model as is
+            self.best_model = Utils.utils.get_model(
+                self.best_model_str, mode=self.mode, samples=len(self.x)
+            )
 
-            # Set params, train
-            self.best_model.set_params(**params)
-            self.best_model.fit(self.x[self.feature_sets[feature_set]], self.y)
+        # Set params, train
+        self.best_model.set_params(**self.best_params)
+        self.best_model.fit(self.x[self.feature_sets[self.best_feature_set]], self.y)
 
-            # Save model
-            joblib.dump(self.best_model, model_path)
+        # Save model
+        joblib.dump(self.best_model, model_path)
 
-            if self.verbose > 0:
-                score = self.scorer(self.best_model, self.x[self.feature_sets[feature_set]], self.y)
-                self.logger.info(f'[AutoML] Model fully fitted, in-sample {self.objective}: {score:4f}')
+        self.best_score = self.scorer(
+            self.best_model,
+            self.x[self.feature_sets[self.best_feature_set]],
+            self.y,
+        )
+        if self.verbose > 0:
+            self.logger.info(
+                f"Model fully fitted, in-sample {self.objective}: "
+                "{self.best_score:4f}"
+            )
 
-        return model, feature_set
+        return
 
-    def _prepare_production_settings(self, settings_path, model=None, feature_set=None, params=None):
+    def _prepare_production_settings(self, settings_path):
         """
         Prepare `self.settings` for production and dump to file
 
@@ -1382,45 +1543,71 @@ class Pipeline:
         ----------
         settings_path : str or Path
             Where to save settings for production
-        model : str, optional
-            Model file for which to prepare production files
-        feature_set : str, optional
-            Feature set for which to prepare production files
-        params : dict, optional
-            Model parameters for which to prepare production files.
-            Default: takes best parameters
         """
-        assert self.best_model is not None, '`self.bestModel` is not yet prepared'
+        assert self.best_model is not None, "`self.bestModel` is not yet prepared"
         settings_path = Path(settings_path)
 
         # Update pipeline settings
-        self.settings['version'] = self.version
-        self.settings['pipeline']['verbose'] = self.verbose
-        self.settings['model'] = model
-        self.settings['params'] = params
-        self.settings['feature_set'] = feature_set
-        self.settings['features'] = self.feature_sets[feature_set]
-        self.settings['amplo_version'] = Amplo.__version__ if hasattr(Amplo, '__version__') else 'dev'
+        self.settings["version"] = self.version
+        self.settings["pipeline"]["verbose"] = self.verbose
+        self.settings["model"] = self.best_model_str
+        self.settings["params"] = self.best_params
+        self.settings["feature_set"] = self.best_feature_set
+        self.settings["features"] = self.feature_sets[self.best_feature_set]
+        self.settings["best_score"] = self.best_score
+        self.settings["amplo_version"] = (
+            Amplo.__version__ if hasattr(Amplo, "__version__") else "dev"
+        )
 
         # Prune Data Processor
-        required_features = self.feature_processor.get_required_features(self.feature_sets[feature_set])
+        required_features = self.feature_processor.get_required_features(
+            self.feature_sets[self.best_feature_set]
+        )
         self.data_processor.prune_features(required_features)
-        self.settings['data_processing'] = self.data_processor.get_settings()
+        self.settings["data_processing"] = self.data_processor.get_settings()
 
         # Fit Drift Detector
         self.drift_detector = DriftDetector(
             num_cols=self.data_processor.float_cols + self.data_processor.int_cols,
             cat_cols=self.data_processor.cat_cols,
-            date_cols=self.data_processor.date_cols
+            date_cols=self.data_processor.date_cols,
         )
         self.drift_detector.fit(self.x)
-        self.drift_detector.fit_output(self.best_model, self.x[self.feature_sets[feature_set]])
-        self.settings['drift_detector'] = self.drift_detector.get_weights()
+        self.drift_detector.fit_output(
+            self.best_model, self.x[self.feature_sets[self.best_feature_set]]
+        )
+        self.settings["drift_detector"] = self.drift_detector.get_weights()
 
         # Save settings
-        json.dump(self.settings, open(settings_path, 'w'), indent=4)
+        json.dump(self.settings, open(settings_path, "w"), indent=4)
 
     # Getter Functions / Properties
+    @property
+    def cv(self):
+        """
+        Gives the Cross Validation scheme
+
+        Returns
+        -------
+        cv : sklearn.model_selection._search.BaseSearchCV
+            The cross validator
+        """
+        # Regression
+        if self.mode == "regression":
+            return KFold(
+                n_splits=self.cv_splits,
+                shuffle=self.shuffle,
+                random_state=83847939 if self.shuffle else None,
+            )
+
+        # Classification
+        if self.mode == "classification":
+            return StratifiedKFold(
+                n_splits=self.cv_splits,
+                shuffle=self.shuffle,
+                random_state=83847939 if self.shuffle else None,
+            )
+
     @property
     def data(self) -> Union[None, pd.DataFrame]:
         return self._data
@@ -1428,7 +1615,7 @@ class Pipeline:
     @property
     def x(self) -> pd.DataFrame:
         if self.data is None:
-            raise AttributeError('Data is None')
+            raise AttributeError("Data is None")
         if self.include_output:
             return self.data
         return self.data.drop(self.target, axis=1)
@@ -1436,23 +1623,29 @@ class Pipeline:
     @property
     def y(self):
         if self.data is None:
-            raise AssertionError('`self.data` is empty. Set a value with `set_data`')
+            raise AssertionError("`self.data` is empty. Set a value with `set_data`")
         return self.data[self.target]
 
     @property
     def y_orig(self):
         enc_labels = self.y
-        dec_labels = self.data_processor.decode_labels(enc_labels, except_not_fitted=False)
+        dec_labels = self.data_processor.decode_labels(
+            enc_labels, except_not_fitted=False
+        )
         return pd.Series(dec_labels, name=self.target, index=enc_labels.index)
 
     # Setter Functions
     def _set_data(self, new_data: pd.DataFrame):
-        assert isinstance(new_data, pd.DataFrame), 'Invalid data type'
-        assert self.target in new_data, 'No target column present'
-        assert len(new_data.columns) > 1, 'No feature column present'
+        assert isinstance(new_data, pd.DataFrame), "Invalid data type"
+        assert self.target in new_data, "No target column present"
+        assert len(new_data.columns) > 1, "No feature column present"
         self._data = new_data
 
-    def _set_xy(self, new_x: Union[np.ndarray, pd.DataFrame], new_y: Union[np.ndarray, pd.Series]):
+    def _set_xy(
+        self,
+        new_x: Union[np.ndarray, pd.DataFrame],
+        new_y: Union[np.ndarray, pd.Series],
+    ):
         if not isinstance(new_y, pd.Series):
             new_y = pd.Series(new_y, name=self.target)
         new_data = pd.concat([new_x, new_y], axis=1)
@@ -1464,11 +1657,18 @@ class Pipeline:
         if isinstance(new_x, np.ndarray) and new_x.shape == old_x.shape:
             new_x = pd.DataFrame(new_x, index=old_x.index, columns=old_x.columns)
         elif isinstance(new_x, np.ndarray):
-            warnings.warn('Old x-data has more/less columns than new x-data. Setting dummy feature names...')
-            new_x = pd.DataFrame(new_x, index=old_x.index, columns=[f'Feature_{i}' for i in range(new_x.shape[1])])
+            warnings.warn(
+                "Old x-data has more/less columns than new x-data. Setting dummy "
+                "feature names..."
+            )
+            new_x = pd.DataFrame(
+                new_x,
+                index=old_x.index,
+                columns=[f"Feature_{i}" for i in range(new_x.shape[1])],
+            )
         # Assert that target is not in x-data
         if self.target in new_x:
-            raise AttributeError('Target column name should not be in x-data')
+            raise AttributeError("Target column name should not be in x-data")
         self._data = pd.concat([new_x, self.y], axis=1)
 
     def set_y(self, new_y: Union[np.ndarray, pd.Series]):
@@ -1484,18 +1684,20 @@ class Pipeline:
         ----------
         data_path : str or Path
         """
-        assert Path(data_path).suffix == '.csv', 'Expected a *.csv path'
+        assert Path(data_path).suffix == ".csv", "Expected a *.csv path"
 
         data = pd.read_csv(data_path)
 
-        if {'index', 'log'}.issubset(data.columns):
+        if {"index", "log"}.issubset(data.columns):
             # Multi-index: case when IntervalAnalyser was used
-            index = ['log', 'index']
-        elif 'index' in data.columns:
-            index = ['index']
+            index = ["log", "index"]
+        elif "index" in data.columns:
+            index = ["index"]
         else:
-            raise IndexError('No known index was found. '
-                             'Expected to find at least a column named `index`.')
+            raise IndexError(
+                "No known index was found. "
+                "Expected to find at least a column named `index`."
+            )
         return data.set_index(index)
 
     def _write_csv(self, data, data_path):
@@ -1507,14 +1709,16 @@ class Pipeline:
         data : pd.DataFrame or pd.Series
         data_path : str or Path
         """
-        assert Path(data_path).suffix == '.csv', 'Expected a *.csv path'
+        assert Path(data_path).suffix == ".csv", "Expected a *.csv path"
 
         # Set single-index if not already present
         if len(data.index.names) == 1 and data.index.name is None:
-            data.index.name = 'index'
+            data.index.name = "index"
         # Raise error if unnamed index is present
         if None in data.index.names:
-            raise IndexError(f'Found an unnamed index column ({list(data.index.names)}).')
+            raise IndexError(
+                f"Found an unnamed index column ({list(data.index.names)})."
+            )
 
         # Write data
         if not self.no_dirs:
@@ -1529,38 +1733,46 @@ class Pipeline:
             return
 
         # Read changelog (if existent)
-        if os.path.exists(self.main_dir + 'changelog.txt'):
-            with open(self.main_dir + 'changelog.txt', 'r') as f:
+        if os.path.exists(self.main_dir + "changelog.txt"):
+            with open(self.main_dir + "changelog.txt", "r") as f:
                 changelog = f.read()
         else:
-            changelog = ''
+            changelog = ""
 
         # Find production folders
-        completed_versions = len(os.listdir(self.main_dir + 'Production'))
-        started_versions = len(changelog.split('\n')) - 1
+        completed_versions = len(os.listdir(self.main_dir + "Production"))
+        started_versions = len(changelog.split("\n")) - 1
 
         # For new runs
         if started_versions == 0:
-            with open(self.main_dir + 'changelog.txt', 'w') as f:
-                f.write('v1: Initial Run\n')
+            with open(self.main_dir + "changelog.txt", "w") as f:
+                f.write("v1: Initial Run\n")
             self.version = 1
 
         # If last run was completed and we start a new
         elif started_versions == completed_versions and self.process_data:
             self.version = started_versions + 1
-            with open(self.main_dir + 'changelog.txt', 'a') as f:
-                notice = input(f'Changelog v{self.version}:\n')
-                f.write(f'v{self.version}: {notice}\n')
+            with open(self.main_dir + "changelog.txt", "a") as f:
+                notice = input(f"Changelog v{self.version}:\n")
+                f.write(f"v{self.version}: {notice}\n")
 
         # If no new run is started (either continue or rerun)
         else:
             self.version = started_versions
 
         if self.verbose > 0:
-            self.logger.info(f'[AutoML] Setting Version {self.version}')
+            self.logger.info(f"Setting Version {self.version}")
 
     def _create_dirs(self):
-        folders = ['', 'EDA', 'Data', 'Features', 'Documentation', 'Production', 'Settings']
+        folders = [
+            "",
+            "EDA",
+            "Data",
+            "Features",
+            "Documentation",
+            "Production",
+            "Settings",
+        ]
         for folder in folders:
             if not os.path.exists(self.main_dir + folder):
                 os.makedirs(self.main_dir + folder)
@@ -1574,30 +1786,38 @@ class Pipeline:
         """
 
         # Fit Input
-        cat_cols = [k for lst in self.settings['data_processing']['dummies'].values() for k in lst]
-        features = [k for k in x.keys() if k not in self.date_cols and k not in cat_cols]
+        cat_cols = [
+            k
+            for lst in self.settings["data_processing"]["dummies"].values()
+            for k in lst
+        ]
+        features = [
+            k for k in x.keys() if k not in self.date_cols and k not in cat_cols
+        ]
         means_ = x[features].mean(axis=0)
         stds_ = x[features].std(axis=0)
         stds_[stds_ == 0] = 1
         settings = {
-            'input': {
-                'features': features,
-                'means': means_.to_list(),
-                'stds': stds_.to_list(),
+            "input": {
+                "features": features,
+                "means": means_.to_list(),
+                "stds": stds_.to_list(),
             }
         }
 
         # Fit Output
-        if self.mode == 'regression':
+        if self.mode == "regression":
             std = y.std()
-            settings['output'] = {
-                'mean': y.mean(),
-                'std': std if std != 0 else 1,
+            settings["output"] = {
+                "mean": y.mean(),
+                "std": std if std != 0 else 1,
             }
 
-        self.settings['standardize'] = settings
+        self.settings["standardize"] = settings
 
-    def _transform_standardize(self, x: pd.DataFrame, y: pd.Series) -> (pd.DataFrame, pd.Series):
+    def _transform_standardize(
+        self, x: pd.DataFrame, y: pd.Series
+    ) -> Tuple[pd.DataFrame, pd.Series]:
         """
         Standardizes the input and output with values from settings.
 
@@ -1607,16 +1827,18 @@ class Pipeline:
         y [pd.Series]: Output data
         """
         # Input
-        assert self.settings['standardize'], "Standardize settings not found."
+        assert self.settings["standardize"], "Standardize settings not found."
 
         # Pull from settings
-        features = self.settings['standardize']['input']['features']
-        means = self.settings['standardize']['input']['means']
-        stds = self.settings['standardize']['input']['stds']
+        features = self.settings["standardize"]["input"]["features"]
+        means = self.settings["standardize"]["input"]["means"]
+        stds = self.settings["standardize"]["input"]["stds"]
 
         # Filter if not all features are present
         if len(x.keys()) < len(features):
-            indices = [[i for i, j in enumerate(features) if j == k][0] for k in x.keys()]
+            indices = [
+                [i for i, j in enumerate(features) if j == k][0] for k in x.keys()
+            ]
             features = [features[i] for i in indices]
             means = [means[i] for i in indices]
             stds = [stds[i] for i in indices]
@@ -1625,8 +1847,10 @@ class Pipeline:
         x[features] = (x[features] - means) / stds
 
         # Transform output (only with regression)
-        if self.mode == 'regression':
-            y = (y - self.settings['standardize']['output']['mean']) / self.settings['standardize']['output']['std']
+        if self.mode == "regression":
+            y = (y - self.settings["standardize"]["output"]["mean"]) / self.settings[
+                "standardize"
+            ]["output"]["std"]
 
         return x, y
 
@@ -1641,72 +1865,97 @@ class Pipeline:
         -------
         y [pd.Series]: Actual output
         """
-        assert self.settings['standardize'], "Standardize settings not found"
-        return y * self.settings['standardize']['output']['std'] + self.settings['standardize']['output']['mean']
+        assert self.settings["standardize"], "Standardize settings not found"
+        return (
+            y * self.settings["standardize"]["output"]["std"]
+            + self.settings["standardize"]["output"]["mean"]
+        )
 
     @staticmethod
     def _sort_results(results: pd.DataFrame) -> pd.DataFrame:
-        return results.sort_values('worst_case', ascending=False)
+        return results.sort_values("worst_case", ascending=False)
 
     def _get_best_params(self, model, feature_set: str) -> dict:
         # Filter results for model and version
-        results = self.results[np.logical_and(
-            self.results['model'] == type(model).__name__,
-            self.results['version'] == self.version,
-        )]
+        results = self.results[
+            np.logical_and(
+                self.results["model"] == type(model).__name__,
+                self.results["version"] == self.version,
+            )
+        ]
 
         # Filter results for feature set & sort them
-        results = self._sort_results(results[results['dataset'] == feature_set])
+        results = self._sort_results(results[results["dataset"] == feature_set])
 
         # Warning for unoptimized results
-        if 'Hyper Parameter' not in results['type'].values:
-            warnings.warn('Hyper parameters not optimized for this combination')
+        if "Hyper Parameter" not in results["type"].values:
+            warnings.warn("Hyper parameters not optimized for this combination")
 
         # Parse & return best parameters (regardless of if it's optimized)
-        return Utils.io.parse_json(results.iloc[0]['params'])
+        return Utils.io.parse_json(results.iloc[0]["params"])
 
-    def _grid_search_iteration(self, model, parameter_set: Union[str, None], feature_set: str):
+    def _grid_search_iteration(
+        self, model, parameter_set: Union[str, None], feature_set: str
+    ):
         """
         INTERNAL | Grid search for defined model, parameter set and feature set.
         """
-        self.logger.info(f'\n[AutoML] Starting Hyper Parameter Optimization for {type(model).__name__} on {feature_set}'
-                         f' features ({len(self.x)} samples, {len(self.feature_sets[feature_set])} features)')
-
-        # Cross-Validator
-        cv_args = {'n_splits': self.cv_splits, 'shuffle': self.shuffle,
-                   'random_state': 83847939 if self.shuffle else None}
-        cv = KFold(**cv_args) if self.mode == 'regression' else StratifiedKFold(**cv_args)
+        self.logger.info(
+            f"\nStarting Hyper Parameter Optimization for {type(model).__name__} on "
+            f"{feature_set} features ({len(self.x)} samples, "
+            f"{len(self.feature_sets[feature_set])} features)"
+        )
 
         # Select right hyper parameter optimizer
-        if self.grid_search_type == 'base':
-            grid_search = BaseGridSearch(model, params=parameter_set, cv=cv, scoring=self.objective,
-                                         candidates=self.grid_search_candidates, timeout=self.grid_search_timeout,
-                                         verbose=self.verbose)
-        elif self.grid_search_type == 'halving':
-            grid_search = HalvingGridSearch(model, params=parameter_set, cv=cv, scoring=self.objective,
-                                            candidates=self.grid_search_candidates, verbose=self.verbose)
-        elif self.grid_search_type == 'optuna':
-            grid_search = OptunaGridSearch(model, timeout=self.grid_search_timeout, cv=cv,
-                                           candidates=self.grid_search_candidates, scoring=self.objective,
-                                           verbose=self.verbose)
+        if self.grid_search_type == "base":
+            grid_search = BaseGridSearch(
+                model,
+                params=parameter_set,
+                cv=self.cv,
+                scoring=self.objective,
+                candidates=self.grid_search_candidates,
+                timeout=self.grid_search_timeout,
+                verbose=self.verbose,
+            )
+        elif self.grid_search_type == "halving":
+            grid_search = HalvingGridSearch(
+                model,
+                params=parameter_set,
+                cv=self.cv,
+                scoring=self.objective,
+                candidates=self.grid_search_candidates,
+                verbose=self.verbose,
+            )
+        elif self.grid_search_type == "optuna":
+            grid_search = OptunaGridSearch(
+                model,
+                timeout=self.grid_search_timeout,
+                cv=self.cv,
+                candidates=self.grid_search_candidates,
+                scoring=self.objective,
+                verbose=self.verbose,
+            )
         else:
-            raise NotImplementedError('Only Base, Halving and Optuna are implemented.')
+            raise NotImplementedError("Only Base, Halving and Optuna are implemented.")
         # Get results
         results = grid_search.fit(self.x[self.feature_sets[feature_set]], self.y)
-        results = results.sort_values('worst_case', ascending=False)
+        results = results.sort_values("worst_case", ascending=False)
 
         # Warn when best hyperparameters are close to predefined grid
         edge_params = grid_search.get_parameter_min_max()
-        best_params = pd.Series(results['params'].iloc[0], name='best')
-        params = edge_params.join(best_params, how='inner')
+        best_params = pd.Series(results["params"].iloc[0], name="best")
+        params = edge_params.join(best_params, how="inner")
 
         def warn_when_too_close_to_edge(param: pd.Series, tol=0.01):
             # Min-max scaling
-            scaled = np.array(param['best']) / (param['max'] - param['min'])
+            scaled = np.array(param["best"]) / (param["max"] - param["min"])
             # Check if too close and warn if so
             if not (tol < scaled < 1 - tol):
-                warnings.warn(f'Optimal value for parameter is very close to edge case: '
-                              f'{param.name}={param["best"]} (range: {param["min"]}...{param["max"]})')
+                warnings.warn(
+                    f"Optimal value for parameter is very close to edge case: "
+                    f"{param.name}={param['best']} "
+                    f"(range: {param['min']}...{param['max']})"
+                )
 
         params.apply(lambda p: warn_when_too_close_to_edge(p), axis=1)
 
@@ -1714,23 +1963,36 @@ class Pipeline:
 
     def _get_main_predictors(self, data):
         """
-        Using Shapely Additive Explanations, this function calculates the main predictors for a given
-        prediction and sets them into the class' memory.
+        Using Shapely Additive Explanations, this function calculates the main
+        predictors for a given prediction and sets them into the class' memory.
         """
         # Shap is not implemented for all models.
-        if type(self.best_model).__name__ in ['SVC', 'BaggingClassifier', 'RidgeClassifier', 'LinearRegression', 'SVR',
-                                              'BaggingRegressor']:
-            features = self.settings['feature_processing']['featureImportance']['shap'][0]
-            values = self.settings['feature_processing']['featureImportance']['shap'][1]
-            self._main_predictors = {features[i]: values[i] for i in range(len(features))}
+        if type(self.best_model).__name__ in [
+            "SVC",
+            "BaggingClassifier",
+            "RidgeClassifier",
+            "LinearRegression",
+            "LogisticRegression",
+            "SVR",
+            "BaggingRegressor",
+        ]:
+            features = self.settings["feature_processing"]["featureImportance"]["shap"][
+                0
+            ]
+            values = self.settings["feature_processing"]["featureImportance"]["shap"][1]
+            self._main_predictors = {
+                features[i]: values[i] for i in range(len(features))
+            }
 
         else:
-            if type(self.best_model).__module__[:5] == 'Amplo':
-                shap_values = np.array(TreeExplainer(self.best_model.model).shap_values(data))
+            if type(self.best_model).__module__[:5] == "Amplo":
+                shap_values = np.array(
+                    TreeExplainer(self.best_model.model).shap_values(data)
+                )
             else:
                 shap_values = np.array(TreeExplainer(self.best_model).shap_values(data))
 
-            # Shape them (for multiclass it outputs ndim=3, for binary/regression ndim=2)
+            # Shape them (multiclass outputs ndim=3, for binary/regression ndim=2)
             if shap_values.ndim == 3:
                 shap_values = shap_values[1]
 
@@ -1741,6 +2003,8 @@ class Pipeline:
             inds = sorted(range(len(shap_values)), key=lambda x: -abs(shap_values[x]))
 
             # Set class attribute
-            self._main_predictors = dict([(data.keys()[i], float(abs(shap_values[i]))) for i in inds])
+            self._main_predictors = dict(
+                [(data.keys()[i], float(abs(shap_values[i]))) for i in inds]
+            )
 
         return self._main_predictors
