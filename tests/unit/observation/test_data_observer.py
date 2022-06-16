@@ -1,8 +1,8 @@
 import json
-import pytest
 import re
 
 import numpy as np
+import pytest
 
 from Amplo import Pipeline
 from Amplo.Observation._data_observer import DataObserver
@@ -46,6 +46,28 @@ class TestDataObserver:
         msg = str(record[0].message)
         sensitive_cols = json.loads(re.search(r"\[.*]", msg).group(0))
         assert sensitive_cols == [1], "Wrong minority sensitive columns identified."
+
+    def test_categorical_mismatch(self):
+        # Setup
+        x = np.hstack(
+            (
+                np.array(["New York"] * 50 + ["new-york"] * 50).reshape((-1, 1)),
+                np.random.normal(100, 5, (100, 1)),
+            )
+        )
+        y = np.concatenate((np.zeros(5), np.ones(95)))
+
+        # Observe
+        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline._read_data(x, y)
+        obs = DataObserver(pipeline=pipeline)
+        with pytest.warns(ProductionWarning) as record:
+            obs.check_categorical_mismatch()
+        msg = str(record[0].message)
+        sensitive_cols = json.loads(re.search(r"\[.*]", msg).group(0))
+        assert sensitive_cols == [
+            {"0": ["new-york", "New York"]}
+        ], "Wrong categorical mismatch columns identified."
 
     def test_extreme_values(self):
         # Setup

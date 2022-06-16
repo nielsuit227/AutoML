@@ -17,6 +17,8 @@ import pandas as pd
 from Amplo.Observation.base import PipelineObserver
 from Amplo.Observation.base import _report_obs
 from Amplo.Utils.logging import logger
+import re
+import json
 
 __all__ = ["DataObserver"]
 
@@ -154,5 +156,52 @@ class DataObserver(PipelineObserver):
             f"{len(extreme_values)} columns have values > 1000. "
             f" More specifically: {extreme_values}."
         )
+        return status_ok, message
 
+    @_report_obs
+    def check_categorical_mismatch(self):
+        """
+        Checks whether categorical variables are mismatched
+
+        For example "New York" and "new york". We do this with a simple regex, removing
+        all special characters and lowercasing the category.
+
+        Returns
+        -------
+        status_ok : bool
+            Observation status. Indicates whether a warning should be raised.
+        message : str
+            A brief description of the observation and its results.
+        """
+        categorical_mismatches = []
+
+        # Loop through all keys
+        for key in self.x.keys():
+            # Skip if not object
+            if not pd.api.types.is_object_dtype(self.x[key]):
+                continue
+
+            # Get variants
+            variants = self.x[key].unique()
+
+            # Check if one is similar
+            for i, variant_x in enumerate(variants):
+                for j, variant_y in enumerate(variants):
+                    # We only need to compare all once
+                    if j >= i:
+                        continue
+
+                    # Clean
+                    clean_x = re.sub("[^a-z0-9]", "", variant_x.lower())
+                    clean_y = re.sub("[^a-z0-9]", "", variant_y.lower())
+
+                    # Compare
+                    if clean_x == clean_y:
+                        categorical_mismatches.append({key: [variant_x, variant_y]})
+
+        status_ok = not categorical_mismatches
+        message = (
+            f"{len(categorical_mismatches)} categorical columns have mismatching."
+            f"categories. More specifically: {json.dumps(categorical_mismatches)}."
+        )
         return status_ok, message
