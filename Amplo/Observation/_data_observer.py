@@ -64,8 +64,10 @@ class DataObserver(PipelineObserver):
                 monotonic_columns.append(col)
 
         status_ok = not monotonic_columns
-        message = (f"{len(monotonic_columns)} columns are monotonically in- or "
-                   f"decreasing. More specifically: {monotonic_columns}")
+        message = (
+            f"{len(monotonic_columns)} columns are monotonically in- or "
+            f"decreasing. More specifically: {monotonic_columns}"
+        )
         return status_ok, message
 
     @_report_obs
@@ -75,9 +77,10 @@ class DataObserver(PipelineObserver):
 
         Minority sensitivity is a concept where a signal is present in a small subsample
         of a minority class. As this minority class is potentially not well-covered,
-        the small subsample should not be indicative to identify the class or vice versa.
+        the small subsample should not be indicative to identify the class or vice versa
 
-        This is analysed by a simple discrete distribution of 10 bins. Minority sensitivity is defined as:
+        This is analysed by a simple discrete distribution of 10 bins. Minority
+        sensitivity is defined as:
         - Bin contains < 2% of total data
         - Bin contains to one class
         - Bin contains > 20% of that class
@@ -113,10 +116,43 @@ class DataObserver(PipelineObserver):
                     continue
 
                 # Not sensitive if only a fraction of the label
-                if len(minority_indices) > (self.y == self.y.iloc[minority_indices[0]]).sum() // 5:
+                if (
+                    len(minority_indices)
+                    > (self.y == self.y.iloc[minority_indices[0]]).sum() // 5
+                ):
                     minority_sensitive.append(key)
 
         status_ok = not minority_sensitive
-        message = f"{len(minority_sensitive)} columns have minority sensitivity. Consider to remove them or add data." \
-                  f" More specifically: {minority_sensitive}."
+        message = (
+            f"{len(minority_sensitive)} columns have minority sensitivity. "
+            "Consider to remove them or add data."
+            f" More specifically: {minority_sensitive}."
+        )
+        return status_ok, message
+
+    @_report_obs
+    def check_extreme_values(self):
+        """
+        Checks whether extreme values are present.
+
+        Returns
+        -------
+        status_ok : bool
+            Observation status. Indicates whether a warning should be raised.
+        message : str
+            A brief description of the observation and its results.
+        """
+        logger.info("Checking data for extreme values.")
+        extreme_values = []
+
+        for key in self.x.keys():
+            if self.x[key].abs().max() > 1000:
+                extreme_values.append(key)
+
+        status_ok = not extreme_values
+        message = (
+            f"{len(extreme_values)} columns have values > 1000. "
+            f" More specifically: {extreme_values}."
+        )
+
         return status_ok, message

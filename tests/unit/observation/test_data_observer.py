@@ -9,8 +9,7 @@ from Amplo.Observation._data_observer import DataObserver
 from Amplo.Observation.base import ProductionWarning
 
 
-class TestModelObserver:
-
+class TestDataObserver:
     def test_monotonic_columns(self):
         size = 100
         monotonic = np.array(range(-10, size - 10)) * 4.2  # start=-10, step=4.2
@@ -30,10 +29,12 @@ class TestModelObserver:
 
     def test_minority_sensitivity(self):
         # Setup
-        x = np.hstack((
-            np.random.normal(size=(100, 1)),
-            np.concatenate((np.zeros((2, 1)), np.random.normal(100, 5, (98, 1))))
-        ))
+        x = np.hstack(
+            (
+                np.random.normal(size=(100, 1)),
+                np.concatenate((np.zeros((2, 1)), np.random.normal(100, 5, (98, 1)))),
+            )
+        )
         y = np.concatenate((np.zeros(5), np.ones(95)))
 
         # Observe
@@ -45,3 +46,18 @@ class TestModelObserver:
         msg = str(record[0].message)
         sensitive_cols = json.loads(re.search(r"\[.*]", msg).group(0))
         assert sensitive_cols == [1], "Wrong minority sensitive columns identified."
+
+    def test_extreme_values(self):
+        # Setup
+        x = np.vstack((np.random.normal(size=100), np.linspace(1000, 10000, 100))).T
+        y = np.concatenate((np.zeros(5), np.ones(95)))
+
+        # Observe
+        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline._read_data(x, y)
+        obs = DataObserver(pipeline=pipeline)
+        with pytest.warns(ProductionWarning) as record:
+            obs.check_extreme_values()
+        msg = str(record[0].message)
+        extreme_cols = json.loads(re.search(r"\[.*]", msg).group(0))
+        assert extreme_cols == [1], "Wrong minority sensitive columns identified."
