@@ -843,7 +843,7 @@ class Pipeline:
         if self.date_cols is None:
             self.date_cols = self.settings["data_processing"]["date_cols"]
         if self.int_cols is None:
-            self.date_cols = self.settings["data_processing"]["int_cols"]
+            self.int_cols = self.settings["data_processing"]["int_cols"]
         if self.float_cols is None:
             self.float_cols = self.settings["data_processing"]["float_cols"]
         if self.cat_cols is None:
@@ -950,6 +950,7 @@ class Pipeline:
         """
         self.feature_processor = FeatureProcessor(
             mode=self.mode,
+            date_cols=self.date_cols,
             max_lags=self.maxLags,
             max_diff=self.maxDiff,
             extract_features=self.extract_features,
