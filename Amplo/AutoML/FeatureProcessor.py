@@ -256,7 +256,7 @@ class FeatureProcessor:
         self.laggedFeatures = settings['laggedFeatures'] if 'laggedFeatures' in settings else []
         self.diffFeatures = settings['diffFeatures'] if 'diffFeatures' in settings else {}
         self.featureSets = settings['featureSets'] if 'featureSets' in settings else []
-        self._means = pd.read_json(settings['_means'], typ='series') if 'v' in settings else []
+        self._means = pd.read_json(settings['_means'], typ='series') if '_means' in settings else []
         self._stds = pd.read_json(settings['_stds'], typ='series') if '_stds' in settings else []
         self._centers = pd.read_json(settings['_centers']) if '_centers' in settings else []
         self.featureImportance = settings['featureImportance'] if 'featureImportance' in settings else {}
