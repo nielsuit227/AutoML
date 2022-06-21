@@ -2,32 +2,36 @@ import warnings
 import numpy as np
 import pandas as pd
 from typing import Union
+from Amplo.Utils.logging import logger
 
 
 class Sequencer:
     # todo implement fractional differencing
 
-    def __init__(self,
-                 back: Union[list, int] = 1,
-                 forward: Union[list, int] = 1,
-                 shift: int = 0,
-                 diff: str = 'none'):
-        """
-        Sequencer. Sequences and differentiate data.
-        The indices of back and forward start from 0. Therefore, if the output is included in the input,
-        Having forward = 4 will result in predicting the output for [t, t+1, t+2, t+3].
-        Having forward = [4] will result in making a t+4 prediction.
-        Having back = 30 will result in the all samples [t, t-1, ..., t-29] to be included.
-        Having back = [30] will result in the sample [t-30] to be included.
+    def __init__(self, back=1, forward=1, shift=0, diff='none'):
+        """Sequences and differentiates data.
 
-        :param back: Int or List[int]: Input indices.
-        If list -> includes all integers within the list
-        If int -> includes that many samples back
-        :param forward: Int or List[int]: Output indices.
-        If list -> includes all integers within the list.
-        If int -> includes that many samples forward.
-        :param shift: Int: If there is a shift between input and output
-        :param diff: differencing algo, pick between 'none', 'diff', 'log_diff'
+        Parameters
+        ----------
+        back : list of int or int
+            Input indices (see also Notes).
+        forward : list of int or int
+            Output indices (see also Notes).
+        shift : int
+            Indicates the shift between input and output.
+        diff : str
+            Depicts the differencing algorithm. Options: `none`, `diff` and `log_diff`.
+
+        Notes
+        -----
+        For the ``back`` and ``forward`` parameter, behavior changes depending on its type:
+            - If it's an **integer** dtype, indices include that many samples backward or forward, respectively.
+            - If it's an **iterable** dtype, indices include all integers within the iterable.
+
+        The indices of ``back`` and ``forward`` start from ``0``. Therefore, if the output is included in the
+        input, having ``forward=4`` will result in predicting the output for ``[t, t+1, t+2, t+3]`` and having
+        ``forward=[4]`` will result in making a ``t+4`` prediction. The same rules apply to the ``forward``
+        parameter.
         """
         # Tests
         assert diff in ['none', 'diff', 'log_diff'], 'Diff needs to be none, diff or log_diff.'
@@ -106,9 +110,8 @@ class Sequencer:
         :param flat: Boolean. If true, a flat matrix is returned. If false, a 3D tensor is returned (numpy).
         :return: seq_x, seq_y
         """
-        if isinstance(x, pd.DataFrame) or isinstance(x, pd.core.series.Series):
-            assert isinstance(y, pd.DataFrame) or isinstance(y, pd.core.series.Series), \
-                'Input and Output need to be the same data type.'
+        if isinstance(x, (pd.Series, pd.DataFrame)):
+            assert isinstance(y, (pd.Series, pd.DataFrame)), 'Input and Output need to be the same data type.'
             return self._convert_pandas(x, y, flat=flat)
         elif isinstance(x, np.ndarray):
             assert isinstance(y, np.ndarray), 'Input and Output need to be the same data type.'
@@ -163,9 +166,9 @@ class Sequencer:
 
     def _convert_pandas(self, x, y, flat=True):
         # Check inputs
-        if isinstance(x, pd.core.series.Series):
+        if isinstance(x, pd.Series):
             x = x.to_frame()
-        if isinstance(y, pd.core.series.Series):
+        if isinstance(y, pd.Series):
             y = y.to_frame()
         assert len(x) == len(y)
         assert isinstance(x, pd.DataFrame)

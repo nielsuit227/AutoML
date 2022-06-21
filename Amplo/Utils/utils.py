@@ -1,19 +1,24 @@
+import re
 import logging
 import warnings
 
 
-__all__ = ['get_model', 'hist_search']
+__all__ = ["get_model", "hist_search"]
 
 
-def get_model(model_str, **args):
+def get_model(model_str, **kwargs):
     # Import here to prevent ImportError (due to circular import)
     from Amplo.AutoML.Modeller import Modeller
+
     try:
-        model = [mod for mod in Modeller(**args).return_models()
-                 if type(mod).__name__ == model_str]
+        model = [
+            mod
+            for mod in Modeller(**kwargs).return_models()
+            if type(mod).__name__ == model_str
+        ]
         return model[0]
     except IndexError:
-        raise IndexError('Model not found.')
+        raise IndexError("Model not found.")
 
 
 def hist_search(array, value):
@@ -34,7 +39,10 @@ def hist_search(array, value):
 
     # Return -1 when no bin exists
     if value < array[0] or value >= array[-1]:
-        logging.debug(f'No bin (index) found for value {value}. Array(Min: {array[0]}, Max: {array[-1]})')
+        logging.debug(
+            f"No bin (index) found for value {value}. Array(Min: {array[0]}, "
+            "Max: {array[-1]})"
+        )
         return -1
 
     # Initialize min and max bin index
@@ -58,5 +66,20 @@ def hist_search(array, value):
         elif value >= array[middle]:  # array[middle] <= value < array[high]
             low = middle
 
-    warnings.warn(RuntimeWarning('Operation took too long. Returning -1 (no match).'))
+    warnings.warn(RuntimeWarning("Operation took too long. Returning -1 (no match)."))
     return -1
+
+
+def clean_feature_name(feature_name):
+    """With the purpose to have a central feature cleaning, this function cleans
+    feature names.
+
+    Parameters
+    ----------
+    feature_name : string
+
+    Returns
+    -------
+    cleaned_feature_name : string
+    """
+    return re.sub("[^a-z0-9]", "_", feature_name.lower())

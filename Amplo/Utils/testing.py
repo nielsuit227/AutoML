@@ -1,9 +1,15 @@
+import json
+import joblib
+from pathlib import Path
+
 import scipy.stats
 import numpy as np
 import pandas as pd
 
 
-__all__ = ['DummyDataSampler', 'make_data', 'make_cat_data', 'make_num_data']
+__all__ = ['DummyDataSampler',
+           'make_data', 'make_cat_data', 'make_num_data',
+           'make_interval_data', 'make_production_data']
 
 
 class DummyDataSampler:
@@ -37,9 +43,10 @@ def make_data(num_samples, *, cat_choices=None, num_dists=None):
         (categorical) Specifies the choices to sample from
     num_dists : str or list of str or bool, optional
         (numerical) Specifies the distributions to sample from
+
     Returns
     -------
-    pd.DataFrame, dict of {str : list}
+    tuple (pd.DataFrame, dict of {str : list})
     """
 
     # Handle input
@@ -77,8 +84,9 @@ def make_data(num_samples, *, cat_choices=None, num_dists=None):
 
     # Concatenate all data (which is not empty)
     df = pd.concat([df_ for df_ in (cat_df, num_df) if not df_.empty], axis=1)
+    info = dict(cat_cols=cat_df.columns, num_cols=num_df.columns)
 
-    return df, dict(cat_cols=cat_df.columns, num_cols=num_df.columns)
+    return df, info
 
 
 def make_cat_data(num_samples: int, cat_choices=None):
@@ -87,3 +95,91 @@ def make_cat_data(num_samples: int, cat_choices=None):
 
 def make_num_data(num_samples: int, num_dists=None):
     return make_data(num_samples, cat_choices=False, num_dists=num_dists)
+
+
+def make_interval_data(n_logs=2, n_labels=2, directory=None, target='labels', **kwargs):
+    """
+    Create dummy data for Amplo`s IntervalAnalyser
+
+    Parameters
+    ----------
+    n_logs : int
+        Number of dummy logs / log files to create
+    n_labels : int
+        Number of dummy labels per log file
+    directory : str or Path, optional
+        Parent directory where interval data will be stored.
+        If no directory is provided it will return a pandas.DataFrame instead.
+    target : str
+        Name of target column
+    **kwargs
+        Keyword arguments will be passed to ``make_data`` function
+
+    Returns
+    -------
+    pd.DataFrame, optional
+        Multi-indexed DataFrame such as the IntervalAnalyser would return it
+    """
+
+    # Define log names
+    log_names = [f'DummyLog_{i}' for i in range(n_logs)]
+    label_names = [f'DummyLabel_{i}' for i in range(n_labels)]
+    # List of dataframes
+    dfs = []
+
+    for log in log_names:
+        for label in label_names:
+
+            num_samples = 20
+            x, _ = make_data(num_samples, **kwargs)
+
+            if directory:
+                # Save in folder / label / log.csv
+                save_dir = Path(directory) / label
+                save_dir.mkdir(parents=True, exist_ok=True)
+                x.to_csv(save_dir / f'{log}.csv', index=False)
+            else:
+                # Set multi-index
+                index = pd.MultiIndex.from_arrays([num_samples * [log], range(num_samples)], names=['log', 'index'])
+                x.set_index(index, inplace=True)
+                # Add label column
+                x[target] = label
+                # Append to list
+                dfs += [x]
+
+    if not directory:
+        return pd.concat(dfs)
+
+
+def make_production_data(main_dir, team='DummyTeam', machine='DummyMachine',
+                         service='DummyService', issue='DummyIssue', version=1):
+    """
+    Create dummy production data, simulating output of the Amplo`s Pipeline
+
+    Parameters
+    ----------
+    main_dir : str or Path
+    team : str
+    machine : str
+    service : str
+    issue : str
+    version : int
+
+    Returns
+    -------
+    tuple of Path, dict
+        Model issue path AND dictionary containing info about dummy model
+    """
+    # Setup
+    issue_dir = Path(main_dir) / team / machine / service / 'models' / issue
+    production_v_dir = issue_dir / 'Production' / f'v{version}'
+    production_v_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save dummy settings
+    json.dump(dict(), open(production_v_dir / 'Settings.json', 'w'))
+    # Save dummy model
+    joblib.dump('', production_v_dir / 'Model.joblib')
+    # Save dummy report
+    (production_v_dir / 'Report.pdf').touch()
+
+    return issue_dir, dict(team=team, machine=machine, service=service, issue=issue, version=version)

@@ -9,7 +9,7 @@ from tqdm import tqdm
 from datetime import datetime
 from typing import Dict, Union
 
-from ._GridSearch import _GridSearch
+from Amplo.GridSearch._GridSearch import _GridSearch
 
 
 # noinspection PyUnresolvedReferences

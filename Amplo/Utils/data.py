@@ -1,8 +1,13 @@
-import re
+import warnings
 import pandas as pd
 
+from Amplo.Utils.utils import clean_feature_name
 
-__all__ = ['influx_query_to_df', 'clean_keys', 'check_dataframe_quality']
+from sklearn.feature_selection import r_regression  # pearson coefficient
+from sklearn.preprocessing import LabelEncoder
+
+
+__all__ = ['influx_query_to_df', 'clean_keys', 'check_dataframe_quality', 'check_pearson_correlation']
 
 
 def influx_query_to_df(result):
@@ -22,15 +27,32 @@ def clean_keys(data: pd.DataFrame) -> pd.DataFrame:
         if isinstance(key, int):
             new_keys[key] = 'feature_{}'.format(key)
         else:
-            new_keys[key] = re.sub('[^a-z0-9\n]', '_', str(key).lower()).replace('__', '_')
+            new_keys[key] = clean_feature_name(key)
     data = data.rename(columns=new_keys)
     return data
 
 
 def check_dataframe_quality(data: pd.DataFrame) -> bool:
-    assert not data.isna().any().any()
-    assert not data.isnull().any().any()
-    assert not (data.dtypes == object).any().any()
-    assert not (data.dtypes == str).any().any()
-    assert data.max().max() < 1e38 and data.min().min() > -1e38
-    return True
+    if data.isna().any().any():
+        warnings.warn('Data contains NaN.')
+    elif data.isnull().any().any():
+        warnings.warn('Data contains null.')
+    elif (data.dtypes == object).any().any():
+        warnings.warn("Data contains dtype 'object', which is ambiguous.")
+    elif (data.dtypes == str).any().any():
+        warnings.warn("Data contains dtype 'str', which is ambiguous.")
+    elif data.max().max() > 1e38 or data.min().min() < -1e38:
+        warnings.warn("Data contains values larger than float32 (1e38).")
+    else:
+        return True
+    return False
+
+
+def check_pearson_correlation(features: pd.DataFrame, labels: pd.Series) -> bool:
+    if labels.dtype == 'object':
+        labels = LabelEncoder().fit_transform(labels)
+    pearson_corr = r_regression(features, labels)
+    if abs(pearson_corr).mean() > 0.5:
+        return False
+    else:
+        return True

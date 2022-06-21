@@ -1,49 +1,62 @@
 import copy
-import time
-import optuna
-import warnings
-import numpy as np
-import pandas as pd
 from datetime import datetime
+import re
+import time
 from typing import Dict, Union
+import warnings
 
-from ._GridSearch import _GridSearch
+import numpy as np
+import optuna
+import pandas as pd
+
+from Amplo.GridSearch._GridSearch import _GridSearch
+
+__all__ = ['OptunaGridSearch']
 
 
 class OptunaGridSearch(_GridSearch):
 
     def __init__(self, model, *args, **kwargs):
         """
-        Wrapper for Optuna Grid Search. Takes any model supported by Amplo.AutoML.Modelling.
-        The parameter search space is predefined for each model.
+        Wrapper for ``optuna`` grid search.
+
+        Takes any model supported by `Amplo.AutoML.Modelling` whose parameter
+        search space is predefined for each model.
 
         Parameters
         ----------
-        model obj: Model object to optimize
-        cv obj: Scikit CV object
-        scoring str: From Scikits Scorers*
-        verbose int: How much to print
-        timeout int: Time limit of optimization
-        candidates int: Candidate limits to evaluate
+        model : Amplo.AutoML.Modeller.ModelType
+            Model object to optimize.
+        args
+            Arguments passed to `_GridSearch`.
+        kwargs
+            Keyword arguments passed to `_GridSearch`.
         """
         super().__init__(model, *args, **kwargs)
         if 'params' in kwargs:
             warnings.warn('Parameter `params` has no effect')
 
+        # Counter to keep track of number of trials
+        self.trial_count = -1
+
     @staticmethod
-    def _get_suggestion(trial: optuna.Trial, p_name: str, p_value: Union[tuple, list]) \
-            -> Union[None, bool, int, float, str]:
-        """Get suggestion for specific parameter
+    def _get_suggestion(trial, p_name, p_value):
+        """
+        Get suggestion for next hyperparameter.
 
         Parameters
         ----------
-        trial: optuna.Trial to sample from
-        p_name: hyper parameter name
-        p_value: contains necessary info (dtype, range, ...)
+        trial : optuna.Trial
+            The trial to sample a suggestion from it.
+        p_name : str
+            Name of the hyperparameter.
+        p_value : (str, list) or (str, list, int)
+            Sampling information for hyperparameter (dtype, range).
 
         Returns
         -------
-        A specific parameter for given hyper parameter
+        None or bool or int or float or str
+            A specific parameter for given hyperparameter.
         """
 
         # Read out
@@ -74,16 +87,18 @@ class OptunaGridSearch(_GridSearch):
         # Suggest parameter given the arguments
         return suggest(p_name, *p_args)
 
-    def _get_hyper_params(self, trial: optuna.Trial) -> Dict[str, Union[None, bool, int, float, str]]:
+    def _get_hyper_params(self, trial) -> Dict[str, Union[None, bool, int, float, str]]:
         """Use trial to sample from available grid search parameters
 
         Parameters
         ----------
-        trial: Trial from Optuna study
+        trial : optuna.Trial
+            The trial from optuna study.
 
         Returns
         -------
-        Sampled grid search parameters
+        params : dict of {str : None or bool or int or float or str}
+            Sampled grid search parameters.
         """
 
         param_values = self._hyper_parameter_values
@@ -121,8 +136,12 @@ class OptunaGridSearch(_GridSearch):
         self.x, self.y = x, y
 
         # Set up study
-        study = optuna.create_study(sampler=optuna.samplers.TPESampler(seed=236868), direction='maximize')
-        study.optimize(self.objective, timeout=self.timeout, n_trials=self.nTrials)
+        study = optuna.create_study(
+            sampler=optuna.samplers.TPESampler(seed=236868),
+            direction='maximize', pruner=_BadTrialPruner(2.0, 15))
+        study.optimize(
+            self.objective, timeout=self.timeout, n_trials=self.nTrials,
+            callbacks=[_StopStudyWhenConsecutivePruning(10), _StopStudyAfterNPruning(50)])
 
         # Parse results
         optuna_results = study.trials_dataframe()
@@ -136,19 +155,21 @@ class OptunaGridSearch(_GridSearch):
             'mean_time': optuna_results['user_attrs_mean_time'],
             'std_time': optuna_results['user_attrs_std_time']
         })
+        self.trial_count = len(study.trials)
 
         return results
 
-    def objective(self, trial):
+    def objective(self, trial: optuna.Trial):
         # Metrics
         scores = []
         times = []
         master = copy.deepcopy(self.model)
 
-        # Cross Validation
-        for t, v in self.cv.split(self.x, self.y):
+        # Cross validation
+        for step, (t, v) in enumerate(self.cv.split(self.x, self.y)):
             # Split data
-            xt, xv, yt, yv = self.x.iloc[t], self.x.iloc[v], self.y.iloc[t], self.y.iloc[v]
+            xt, yt = self.x.iloc[t], self.y.iloc[t]
+            xv, yv = self.x.iloc[v], self.y.iloc[v]
 
             # Train model
             t_start = time.time()
@@ -157,16 +178,155 @@ class OptunaGridSearch(_GridSearch):
             model.fit(xt, yt)
 
             # Results
-            scores.append(self.scoring(model, xv, yv))
+            score = self.scoring(model, xv, yv)
+            scores.append(score)
             times.append(time.time() - t_start)
 
+            # Report intermediate values
+            trial.report(score, step)
+
+            # Stop cross validation when it is not promising
+            if trial.should_prune():
+                break
+
         # Set manual metrics
+        mean_score = np.mean(scores)
         trial.set_user_attr('mean_time', np.mean(times))
         trial.set_user_attr('std_time', np.std(times))
+        trial.set_user_attr('mean_value', np.mean(scores))
         trial.set_user_attr('std_value', np.std(scores))
 
-        # Stop trail (avoid overwriting)
+        # Stop trial (avoid overwriting)
         if trial.number == self.nTrials:
             trial.study.stop()
 
-        return np.mean(scores)
+        # Pruning
+        if trial.should_prune():
+            raise optuna.exceptions.TrialPruned
+
+        return mean_score
+
+
+# ----------------------------------------------------------------------
+# Pruning
+
+class _BadTrialPruner(optuna.pruners.BasePruner):
+    """
+    Pruner to detect outlying metrics of the trials.
+
+    Prune if the mean intermediate value is worse than the best trial value minus (or plus) a
+    multiple of its intermediate value standard deviation.
+
+    Parameters
+    ----------
+    std_threshold_multiplier : float
+        Multiplier for the best trials intermediate value std to define the pruning threshold.
+    n_startup_trials : int
+        Pruning is disabled until the given number of trials finish in the same study.
+    """
+
+    def __init__(self, std_threshold_multiplier, n_startup_trials):
+        if n_startup_trials < 0:
+            raise ValueError(
+                f'Number of startup trials cannot be negative but got {n_startup_trials}.')
+
+        self._std_threshold_multiplier = std_threshold_multiplier
+        self._n_startup_trials = n_startup_trials
+
+    def prune(self, study, trial):
+        # Don't prune while startup trials
+        all_trials = study.get_trials(deepcopy=False)
+        n_trials = len([t for t in all_trials if t.state == optuna.trial.TrialState.COMPLETE])
+        if n_trials < self._n_startup_trials:
+            return False
+
+        # Define pruning thresholds
+        best_trial_value = study.best_trial.value
+        best_trial_value_std = np.std(list(
+            study.best_trial.intermediate_values.values()))
+        threshold = best_trial_value - self._std_threshold_multiplier * best_trial_value_std
+
+        # Pruning
+        curr_trial_mean = np.mean(list(trial.intermediate_values.values()))
+        if study.direction == optuna.study.StudyDirection.MAXIMIZE:
+            return curr_trial_mean < threshold
+        else:
+            raise RuntimeError(
+                'Pruning with a threshold is arbitrary when the study direction is undefined.')
+
+
+class _StopStudyWhenConsecutivePruning:
+    """
+    Optuna study callback that stops the study when trials keep being pruned.
+
+    Parameters
+    ----------
+    threshold : int
+        Critical threshold for consecutively pruned trials. Stops trial when achieved.
+    """
+
+    def __init__(self, threshold):
+        if threshold < 0:
+            raise ValueError(
+                f'Threshold cannot be negative but got {threshold}.')
+
+        self._threshold = threshold
+        self._consecutive_pruned_count = 0
+
+    def __call__(self, study, trial):
+        """
+        Stops study when consecutive prune count exceeds threshold.
+
+        Callback function that gets called after each trial.
+
+        Parameters
+        ----------
+        study : optuna.study.Study
+            Study object of the target study.
+        trial : optuna.trial.FrozenTrial
+            FrozenTrial object of the target trial. Take a copy before modifying this object.
+        """
+        if trial.state == optuna.trial.TrialState.PRUNED:
+            self._consecutive_pruned_count += 1
+        else:
+            self._consecutive_pruned_count = 0
+
+        if self._consecutive_pruned_count > self._threshold:
+            study.stop()
+
+
+class _StopStudyAfterNPruning:
+    """
+    Optuna study callback that stops the study after begin N times pruned.
+
+    Parameters
+    ----------
+    threshold : int
+        Critical threshold for total number of pruned trials. Stops trial when achieved.
+    """
+
+    def __init__(self, threshold):
+        if threshold < 0:
+            raise ValueError(
+                f'Threshold cannot be negative but got {threshold}.')
+
+        self._threshold = threshold
+
+    def __call__(self, study, trial):
+        """
+        Stops study when total prune count exceeds threshold.
+
+        Callback function that gets called after each trial.
+
+        Parameters
+        ----------
+        study : optuna.study.Study
+            Study object of the target study.
+        trial : optuna.trial.FrozenTrial
+            FrozenTrial object of the target trial. Take a copy before modifying this object.
+        """
+        all_trials = study.get_trials(deepcopy=False)
+        n_prunings = len([t for t in all_trials if t.state == optuna.trial.TrialState.PRUNED])
+
+        if n_prunings > self._threshold:
+            study.stop()
