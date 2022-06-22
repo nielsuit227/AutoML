@@ -32,7 +32,7 @@ class TestDataObserver:
         x = np.hstack(
             (
                 np.random.normal(size=(100, 1)),
-                np.concatenate((np.zeros((2, 1)), np.random.normal(100, 5, (98, 1)))),
+                np.concatenate((np.zeros((2, 1)), np.random.normal(100, 1, (98, 1)))),
             )
         )
         y = np.concatenate((np.zeros(5), np.ones(95)))

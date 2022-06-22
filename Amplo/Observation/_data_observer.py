@@ -11,14 +11,14 @@ The ML test score: A rubric for ML production readiness and technical debt
 reduction. 1123-1132. 10.1109/BigData.2017.8258038.
 """
 
+import json
+import re
+
 import numpy as np
 import pandas as pd
 
-from Amplo.Observation.base import PipelineObserver
-from Amplo.Observation.base import _report_obs
+from Amplo.Observation.base import PipelineObserver, _report_obs
 from Amplo.Utils.logging import logger
-import re
-import json
 
 __all__ = ["DataObserver"]
 
@@ -119,8 +119,8 @@ class DataObserver(PipelineObserver):
 
                 # Not sensitive if only a fraction of the label
                 if (
-                    len(minority_indices)
-                    > (self.y == self.y.iloc[minority_indices[0]]).sum() // 5
+                        len(minority_indices)
+                        > (self.y == self.y.iloc[minority_indices[0]]).sum() // 5
                 ):
                     minority_sensitive.append(key)
 
