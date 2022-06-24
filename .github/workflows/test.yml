@@ -17,6 +17,12 @@ jobs:
     - name: Checkout branch
       uses: actions/checkout@v2
 
+    # Set python version
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: 3.9
+
     # Installs dependencies
     - name: Install dependencies
       run : |

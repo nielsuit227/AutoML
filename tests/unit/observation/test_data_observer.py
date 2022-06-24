@@ -12,10 +12,12 @@ from Amplo.Observation.base import ProductionWarning
 class TestDataObserver:
     def test_monotonic_columns(self):
         size = 100
-        monotonic = np.array(range(-10, size - 10)) * 4.2  # start=-10, step=4.2
-        random = np.random.normal(size=size)
-        x = np.concatenate([monotonic[:, None], random[:, None]], axis=1)
-        y = random  # does not matter
+        monotonic_incr = 4.2 * np.arange(-10, size - 10)[:, None]  # start=-10, step=4.2
+        monotonic_decr = 6.3 * np.arange(-3, size - 3)[::-1, None]
+        constants = np.zeros(size)[:, None]
+        random = np.random.normal(size=size)[:, None]
+        x = np.concatenate([monotonic_incr, monotonic_decr, constants, random], axis=1)
+        y = random.reshape(-1)  # does not matter
 
         # Observe
         pipeline = Pipeline(grid_search_iterations=0)
@@ -25,7 +27,7 @@ class TestDataObserver:
             obs.check_monotonic_columns()
         msg = str(record[0].message)
         monotonic_cols = json.loads(re.search(r"\[.*]", msg).group(0))
-        assert monotonic_cols == [0], "Wrong monotonic columns identified."
+        assert set(monotonic_cols) == {0, 1}, "Wrong monotonic columns identified."
 
     def test_minority_sensitivity(self):
         # Setup

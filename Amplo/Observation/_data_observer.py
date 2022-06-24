@@ -62,7 +62,9 @@ class DataObserver(PipelineObserver):
         monotonic_columns = []
         for col in numeric_data.columns:
             series = numeric_data[col].sort_index()  # is shuffled when classification
-            if series.is_monotonic or series.is_monotonic_decreasing:
+            is_monotonic = series.is_monotonic or series.is_monotonic_decreasing
+            is_constant = series.nunique() == 1
+            if is_monotonic and not is_constant:
                 monotonic_columns.append(col)
 
         status_ok = not monotonic_columns
@@ -119,8 +121,8 @@ class DataObserver(PipelineObserver):
 
                 # Not sensitive if only a fraction of the label
                 if (
-                        len(minority_indices)
-                        > (self.y == self.y.iloc[minority_indices[0]]).sum() // 5
+                    len(minority_indices)
+                    > (self.y == self.y.iloc[minority_indices[0]]).sum() // 5
                 ):
                     minority_sensitive.append(key)
 
