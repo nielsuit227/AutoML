@@ -1,14 +1,50 @@
 import shutil
-import os
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
+from sklearn.datasets import make_classification, make_regression
+
+__all__ = [
+    "rmtree",
+    "rmfile",
+    "make_x_y",
+    "make_data",
+    "RandomPredictor",
+    "OverfitPredictor",
+]
 
 
 def rmtree(folder="AutoML", must_exist=False):
-    if must_exist and not os.path.exists(folder):
-        raise FileNotFoundError(f"Directory {folder} does not exist")
-    if os.path.exists(folder):
+    if Path(folder).exists():
         shutil.rmtree(folder)
+    elif must_exist:
+        raise FileNotFoundError(f"Directory {folder} does not exist")
+
+
+def rmfile(file: str, must_exist=False):
+    Path(file).unlink(missing_ok=not must_exist)
+
+
+def make_x_y(mode: str):
+    if mode == "classification":
+        x, y = make_classification(n_features=5)
+    elif mode == "multiclass":
+        x, y = make_classification(n_features=5, n_classes=3, n_informative=3)
+    elif mode == "regression":
+        x, y = make_regression(n_features=5)
+    else:
+        raise ValueError("Invalid mode")
+    x, y = pd.DataFrame(x), pd.Series(y)
+    x.columns = [f"feature_{i}" for i in range(len(x.columns))]
+    y.name = "target"
+    return x, y
+
+
+def make_data(mode: str, target="target"):
+    data, y = make_x_y(mode)
+    data[target] = y
+    return data
 
 
 # ----------------------------------------------------------------------

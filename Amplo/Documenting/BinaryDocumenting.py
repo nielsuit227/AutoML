@@ -2,6 +2,7 @@ import copy
 import math
 import os
 from datetime import datetime
+from typing import TYPE_CHECKING
 from urllib.error import URLError
 
 import matplotlib.pyplot as plt
@@ -9,14 +10,16 @@ import numpy as np
 from fpdf import FPDF
 from sklearn.metrics import RocCurveDisplay, auc
 from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import RocCurveDisplay
-from sklearn.metrics import auc
-from urllib.error import URLError
+
+from Amplo.AutoML.feature_processing import NopFeatureExtractor, StaticFeatureExtractor, TemporalFeatureExtractor
 from Amplo.Utils.logging import logger
+
+if TYPE_CHECKING:
+    from Amplo import Pipeline
 
 
 class BinaryDocumenting(FPDF):
-    def __init__(self, pipeline):
+    def __init__(self, pipeline: "Pipeline"):
         super().__init__()
 
         # Settings
@@ -343,8 +346,8 @@ class BinaryDocumenting(FPDF):
             ax.spines["right"].set_visible(False)
             ax.spines["bottom"].set_visible(False)
             ax.spines["top"].set_visible(False)
-            keys, fi = self.p.feature_processor.featureImportance["rf"]
-            plt.barh(keys[:15], width=fi[:15], color="#2369ec")
+            fi = self.p.feature_processor.feature_importance_["rf"]
+            plt.barh(list(fi)[:15], width=list(fi.values())[:15], color="#2369ec")
             fig.savefig(
                 self.p.main_dir + "EDA/Features/v{}/RF.png".format(self.p.version),
                 format="png",
@@ -441,17 +444,22 @@ class BinaryDocumenting(FPDF):
                 "predict the output. "
             )
         elif "Bagging" in self.mName:
-            return """Bagging algorithms is an ensemble algorithm. Just like a Random Forest, it trains many 
-            Decision Trees. It then makes a prediction based on a voting base, the average of the prediction  
-            of the individual Decision Trees will be predicted by the Bagging algorithm. Contrary to a Random Forest,
-            the Bagging algorithm does not allocate subsets of features or data to the individual Decision Trees.
-            """
+            return (
+                "Bagging algorithms is an ensemble algorithm. Just like a Random "
+                "Forest, it trains many Decision Trees. It then makes a prediction "
+                "based on a voting base, the average of the prediction of the "
+                "individual Decision Trees will be predicted by the Bagging algorithm."
+                "Contrary to a Random Forest, the Bagging algorithm does not allocate "
+                "subsets of features or data to the individual Decision Trees. "
+            )
         elif "Stacking" in self.mName:
-            return """A Stacking algorithm is a linear algorithm that uses the prediction of various models. In our 
-            AutoML pipeline, we first train all included models, optimize the hyper parameters of the well performing 
-            ones and then take the three best combinations. Additionally, we add a Naive Bayes, a Linear Model and a 
-            K-Nearest Neighbors algorithm on top. 
-            """
+            return (
+                "A Stacking algorithm is a linear algorithm that uses the prediction of"
+                " various models. In our AutoML pipeline, we first train all included "
+                "models, optimize the hyper parameters of the well performing ones and "
+                "then take the three best combinations. Additionally, we add a Naive "
+                "Bayes, a Linear Model and a K-Nearest Neighbors algorithm on top."
+            )
         else:
             return """Model description yet to be included in this documenter."""
 
@@ -636,16 +644,36 @@ class BinaryDocumenting(FPDF):
                 self.cell(w=w, h=self.lh, txt=value, align="R")
 
     def features(self):
-        features = {
-            "Co-Linear Features": self.p.feature_processor.coLinearFeatures,
-            "Linear Features": self.p.feature_processor.linearFeatures,
-            "Arithmetic Features": self.p.feature_processor.crossFeatures,
-            "Trigonometric Features": self.p.feature_processor.trigonometricFeatures,
-            "Inverse Features": self.p.feature_processor.inverseFeatures,
-            "K-Means Features": self.p.feature_processor.kMeansFeatures,
-            "Lagged Features": self.p.feature_processor.laggedFeatures,
-            "Differentiated Features": self.p.feature_processor.diffFeatures,
-        }
+        feature_extractor = self.p.feature_processor.feature_extractor
+        if isinstance(feature_extractor, NopFeatureExtractor):
+            features = {
+                "Raw Features": feature_extractor.features_,
+            }
+        elif isinstance(feature_extractor, StaticFeatureExtractor):
+            features = {
+                "Raw Features": feature_extractor.raw_features_,
+                "Arithmetic Features": feature_extractor.cross_features_,
+                "K-Means Features": feature_extractor.k_means_features_,
+                "Trigonometric Features": feature_extractor.trigo_features_,
+                "Inverse Features": feature_extractor.inverse_features_,
+            }
+        elif isinstance(feature_extractor, TemporalFeatureExtractor):
+            features = {
+                "Raw Features": feature_extractor.raw_features_,
+                "Wavelet Features": feature_extractor.wav_features_,
+            }
+        else:
+            msg = (
+                f"Feature extractor of type "
+                f"{type(feature_extractor).__name__} not recognized."
+            )
+            raise TypeError(msg)
+        features.update(
+            {
+                "Collinear Features": self.p.feature_processor.collinear_cols_,
+            }
+        )
+
         if not self.check_new_page():
             self.ln(20)
         self.add_h2("Features")
@@ -653,20 +681,21 @@ class BinaryDocumenting(FPDF):
         # Feature Extraction
         self.add_h3("Feature Extraction")
         self.add_text(
-            "First, features that are co-linear (a * x = y) up to {} % were removed. This resulted in {} "
-            "removed features: {}{}".format(
+            "First, features that are collinear (a * x = y) up to {} % were removed. "
+            "This resulted in {} removed features: {}{}".format(
                 self.p.information_threshold * 100,
-                len(features["Co-Linear Features"]),
-                ", ".join([i for i in features["Co-Linear Features"][:20]]),
-                ", ..." if len(features["Co-Linear Features"]) > 20 else " ",
+                len(features["Collinear Features"]),
+                ", ".join([i for i in features["Collinear Features"][:20]]),
+                ", ..." if len(features["Collinear Features"]) > 20 else " ",
             )
         )
         self.check_new_page(margin=220)
         self.add_text(
-            "Subsequently, the features were manipulated and analysed to extract additional information. All "
-            "promising combinations are analysed with a single shallow decision tree."
+            "Subsequently, the features were manipulated and analysed to extract "
+            "additional information. All promising combinations are analysed with a "
+            "single shallow decision tree."
         )
-        features.pop("Co-Linear Features")
+        features.pop("Collinear Features")
         self.ln()
         self.set_font("Helvetica", "B", 12)
         self.cell(w=50, h=self.lh, txt="Sort Feature", border="BR", align="C")

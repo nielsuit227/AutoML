@@ -1,20 +1,21 @@
+#  Copyright (c) 2022 by Amplo.
 import logging
-import colorlog
 from datetime import datetime
 
+import colorlog
 
-__all__ = ['logger']
+__all__ = ["logger"]
 
 
 _nameToLevel = {
-    'CRITICAL': logging.CRITICAL,
-    'FATAL': logging.FATAL,
-    'ERROR': logging.ERROR,
-    'WARN': logging.WARNING,
-    'WARNING': logging.WARNING,
-    'INFO': logging.INFO,
-    'DEBUG': logging.DEBUG,
-    'NOTSET': logging.NOTSET,
+    "CRITICAL": logging.CRITICAL,
+    "FATAL": logging.FATAL,
+    "ERROR": logging.ERROR,
+    "WARN": logging.WARNING,
+    "WARNING": logging.WARNING,
+    "INFO": logging.INFO,
+    "DEBUG": logging.DEBUG,
+    "NOTSET": logging.NOTSET,
 }
 
 
@@ -52,16 +53,16 @@ def _check_logging_level(level):
 
 
 class TimeFilter(logging.Filter):
-
     def filter(self, record):
         # Check if previous logged
-        if not hasattr(self, 'last'):
+        if not hasattr(self, "last"):
             self.last = record.relativeCreated
 
         # Calc & add delta
         delta = datetime.fromtimestamp(
-            record.relativeCreated / 1000.0) - datetime.fromtimestamp(self.last / 1000.0)
-        record.relative = f"{(delta.seconds + delta.microseconds / 1000000.0):.2f}"
+            record.relativeCreated / 1000.0
+        ) - datetime.fromtimestamp(self.last / 1000.0)
+        record.relative = f"{(delta.seconds + delta.microseconds / 1e6):.2f}"
 
         # Update last
         self.last = record.relativeCreated
@@ -70,23 +71,24 @@ class TimeFilter(logging.Filter):
 
 
 # Get custom logger
-logger = logging.getLogger('AmploML')
+logger = logging.getLogger("AmploML")
 logger.setLevel("INFO")
 
 # Set console handler
 console_formatter = colorlog.ColoredFormatter(
-    '%(blue)s[%(name)s]%(log_color)s[%(levelname)s] %(white)s %(message)s %(black)s<%(filename)s:%(lineno)d> (%('
-    'relative)ss)')
+    "%(blue)s[%(name)s]%(log_color)s[%(levelname)s] %(white)s%(message)s "
+    "%(light_black)s<%(filename)s:%(lineno)d> (%(relative)ss)"
+)
 console_handler = logging.StreamHandler()
 console_handler.setLevel("INFO")
 console_handler.setFormatter(console_formatter)
 logger.addHandler(console_handler)
 
 # Set file handler
-file_formatter = colorlog.ColoredFormatter(
-    '%(blue)s[%(name)s]%(log_color)s[%(levelname)s] %(white)s %(message)s %(black)s<%(filename)s:%(lineno)d> (%('
-    'relative)ss)')
-file_handler = logging.FileHandler('AutoML.log', mode='a')
+file_formatter = logging.Formatter(
+    "[%(name)s][%(levelname)s] %(message)s <%(filename)s:%(lineno)d> (%(relative)ss)"
+)
+file_handler = logging.FileHandler("AutoML.log", mode="a")
 file_handler.setLevel("INFO")
 file_handler.setFormatter(file_formatter)
 logger.addHandler(file_handler)
@@ -96,11 +98,12 @@ logger.addHandler(file_handler)
 
 # Capture warnings from `warnings.warn(...)`
 logging.captureWarnings(True)
-py_warnings_logger = logging.getLogger('py.warnings')
+py_warnings_logger = logging.getLogger("py.warnings")
 warnings_formatter = colorlog.ColoredFormatter(
-    '%(white)s[%(name)s] %(log_color)s%(levelname)s: %(message)s')
+    "%(white)s[%(name)s] %(log_color)s%(levelname)s: %(message)s"
+)
 warnings_handler = logging.StreamHandler()
-warnings_handler.setLevel('WARNING')
+warnings_handler.setLevel("WARNING")
 warnings_handler.setFormatter(warnings_formatter)
 py_warnings_logger.addHandler(warnings_handler)
 

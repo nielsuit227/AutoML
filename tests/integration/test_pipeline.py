@@ -1,39 +1,23 @@
-import pytest
-import os
 import json
-import joblib
+import os
 from pathlib import Path
 
+import joblib
 import numpy as np
-import pandas as pd
-from sklearn.datasets import make_classification, make_regression
-from sklearn.metrics import r2_score, log_loss
+import pytest
+from sklearn.metrics import log_loss, r2_score
 
 from Amplo import Pipeline
 from Amplo.Utils.testing import make_interval_data
-
-from tests import rmtree
-
-
-def make_data(mode, target="target"):
-    if mode == "regression":
-        x, y = make_regression()
-    elif mode == "classification":
-        x, y = make_classification()
-    else:
-        raise ValueError("Not implemented")
-    data = pd.DataFrame(x, columns=["Feature_{}".format(i) for i in range(x.shape[1])])
-    data[target] = y
-    return data
+from tests import make_data, rmtree
 
 
 @pytest.fixture(scope="class", params=["regression", "classification"])
-def make_mode(request):
+def make_mode(request, target="target"):
     mode = request.param
-    target = "target"
     request.cls.mode = mode
     request.cls.target = target
-    request.cls.data = make_data(mode, target)
+    request.cls.data = make_data(mode=mode, target=target)
     yield
 
 
@@ -151,7 +135,6 @@ class TestPipeline:
         # Create dummy data
         data_dir = "./test_data"
         make_interval_data(directory=data_dir)
-        # TODO: does it have to work also with n_labels=1 and n_logs=1?
 
         # Pipeline
         pipeline = Pipeline(grid_search_iterations=0)

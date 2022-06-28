@@ -1,16 +1,22 @@
-import os
 import copy
+import matplotlib.pyplot as plt
+import os
+from typing import TYPE_CHECKING
+
 import numpy as np
 from sklearn import metrics
-import matplotlib.pyplot as plt
 from sklearn.model_selection import StratifiedKFold
-from .BinaryDocumenting import BinaryDocumenting
+
+from Amplo.Documenting.BinaryDocumenting import BinaryDocumenting
 from Amplo.Utils.logging import logger
+
+if TYPE_CHECKING:
+    from Amplo import Pipeline
 
 
 class MultiDocumenting(BinaryDocumenting):
 
-    def __init__(self, pipeline):
+    def __init__(self, pipeline: "Pipeline"):
         super().__init__(pipeline)
 
     def analyse(self):
@@ -72,8 +78,8 @@ class MultiDocumenting(BinaryDocumenting):
             ax.spines['right'].set_visible(False)
             ax.spines['bottom'].set_visible(False)
             ax.spines['top'].set_visible(False)
-            keys, fi = self.p.feature_processor.featureImportance['rf']
-            plt.barh(keys[:15], width=fi[:15], color='#2369ec')
+            fi = self.p.feature_processor.feature_importance_["rf"]
+            plt.barh(list(fi)[:15], width=list(fi.values())[:15], color="#2369ec")
             fig.savefig(self.p.main_dir + 'EDA/Features/v{}/RF.png'.format(self.p.version), format='png', dpi=200)
 
     def model_performance(self):

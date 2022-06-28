@@ -476,7 +476,9 @@ class DataProcessor:
 
         # Remove Constants
         if self.removeConstants:
-            self.data = self.data.drop(columns=self.data.columns[self.data.nunique() == 1])
+            const_cols = [col for col in self.data
+                          if self.data[col].nunique() == 1 and col != self.target]
+            self.data = self.data.drop(columns=const_cols)
 
         # Note
         self.removedConstantColumns = columns - len(self.data.keys())

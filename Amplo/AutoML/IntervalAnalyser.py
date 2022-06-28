@@ -1,3 +1,4 @@
+#  Copyright (c) 2022 by Amplo.
 import warnings
 from pathlib import Path
 from typing import Union
@@ -6,36 +7,36 @@ import faiss
 import numpy as np
 import pandas as pd
 
-from Amplo.AutoML import DataProcesser
-from Amplo.AutoML import FeatureProcesser
-from Amplo.Utils.io import merge_logs
+from Amplo.AutoML import DataProcessor
+from Amplo.AutoML.feature_processing import FeatureProcessor
 from Amplo.Utils.data import check_dataframe_quality, check_pearson_correlation
+from Amplo.Utils.io import merge_logs
 from Amplo.Utils.logging import logger
 
 
 class IntervalAnalyser:
 
-    # noise = "Noise"
     noise = -1
 
-    def __init__(self,
-                 target: str = None,
-                 norm: str = "euclidean",  # TODO: implement functionality
-                 min_length: int = 1000,
-                 n_neighbors: int = None,
-                 n_trees: int = 10,
-                 verbose: int = 1,
-                 ):
+    def __init__(
+        self,
+        target: str = None,
+        norm: str = "euclidean",  # TODO: implement functionality
+        min_length: int = 1000,
+        n_neighbors: int = None,
+        n_trees: int = 10,
+        verbose: int = 1,
+    ):
         """
         Interval Analyser for Log file classification. Has two purposes:
         - Remove healthy data in longer, faulty logs
         - Remove redundant data in large datasets
 
-        Uses Facebook"s FAISS for K-Nearest Neighbors approximation.
+        Uses Facebook's FAISS for K-Nearest Neighbors approximation.
 
         ** IMPORTANT **
-        To use this interval analyser, make sure that your logs are located in a folder of their label, with one parent
-        folder with all labels, e.g.:
+        To use this interval analyser, make sure that your logs are located in a
+        folder of their label, with one parent folder with all labels, e.g.:
         +-- Parent Folder
         |   +-- Label_1
         |       +-- Log_1.*
@@ -58,8 +59,7 @@ class IntervalAnalyser:
             Quantity of trees
         """
         # Test
-        self.available_norms = ["euclidean",
-                                "manhattan", "angular", "hamming", "dot"]
+        self.available_norms = ["euclidean", "manhattan", "angular", "hamming", "dot"]
         if norm not in self.available_norms:
             raise ValueError(f"Unknown norm, pick from {self.available_norms}")
         # Parameters
@@ -89,7 +89,7 @@ class IntervalAnalyser:
         self.is_fitted = False
 
     @property
-    def orig_data(self) -> pd.DataFrame:
+    def orig_data(self):
         """
         Returns
         -------
@@ -99,7 +99,7 @@ class IntervalAnalyser:
         return pd.concat([self._features, self._labels], axis=1)
 
     @property
-    def data_with_noise(self) -> pd.DataFrame:
+    def data_with_noise(self):
         """
         Returns
         -------
@@ -108,14 +108,14 @@ class IntervalAnalyser:
 
         Notes
         -----
-        Depending on the dtype of the noise attribute, the dtype of the labels" column will be affected.
+        Depending on the dtype of the noise attribute, the dtype of the labels' column will be affected.
         """
         data = self.orig_data
         data.loc[self._noise_indices, self.target] = self.noise
         return data
 
     @property
-    def data_without_noise(self) -> pd.DataFrame:
+    def data_without_noise(self):
         """
         Returns
         -------
@@ -124,7 +124,9 @@ class IntervalAnalyser:
         """
         return self.orig_data.drop(self._noise_indices)
 
-    def fit_transform(self, data_or_path: Union[pd.DataFrame, str, Path], labels: pd.Series = None) -> pd.DataFrame:
+    def fit_transform(
+        self, data_or_path: Union[pd.DataFrame, str, Path], labels: pd.Series = None
+    ):
         """
         Function that runs the K-Nearest Neighbors and returns a dataframe with the sensitivities.
 
@@ -173,7 +175,9 @@ class IntervalAnalyser:
 
         return self.data_with_noise
 
-    def _parse_data(self, data_or_path: Union[pd.DataFrame, str, Path], labels: pd.Series = None):
+    def _parse_data(
+        self, data_or_path: Union[pd.DataFrame, str, Path], labels: pd.Series = None
+    ):
         """
         Parse data for interval analysis and store it internally
 
@@ -213,45 +217,49 @@ class IntervalAnalyser:
             raise ValueError("Invalid multi-indexed data detected.")
         if not all(features.index == labels.index):
             raise ValueError(
-                "Indices mismatch: Features and labels cannot be concatenated.")
+                "Indices mismatch: Features and labels cannot be concatenated."
+            )
         if len(features) != len(labels):
             raise ValueError(
-                "Length mismatch: Features and labels cannot be concatenated.")
+                "Length mismatch: Features and labels cannot be concatenated."
+            )
         if self.target in features.columns:
             raise ValueError("Target column is present in feature data.")
 
         # Check data quality
         if not check_dataframe_quality(features):
             # Warn & clean
-            warnings.warn(
-                "Data quality is insufficient, starting DataProcessor.")
-            features = DataProcesser().fit_transform(features)
+            warnings.warn("Data quality is insufficient, starting DataProcessor.")
+            features = DataProcessor().fit_transform(features)
 
         # Check collinearity
         if not check_pearson_correlation(features, labels):
-            # Warn & select
             warnings.warn("Data is correlated, starting FeatureProcessor.")
-            features, feature_sets = FeatureProcesser(
-                extract_features=False).fit_transform(features, labels)
-            # Just pick Random Forest Increment
-            features = features[feature_sets["RFI"]]
+            # Remove collinear features and pick Random Forest Increment
+            fp = FeatureProcessor(mode="classification", extract_features=False)
+            fp.fit(features, labels)
+            features = fp.transform(features, feature_set="rf_increment")
 
         # Set name of labels
         if self.target != labels.name:
-            warnings.warn("Expected target name does not match the actual name. "
-                          f"Name will be fixed from {labels.name} to {self.target}.")
+            warnings.warn(
+                "Expected target name does not match the actual name. "
+                f"Name will be fixed from {labels.name} to {self.target}."
+            )
             labels.name = self.target
 
         # Remove datetime columns
-        _date_cols = [col for col in features.columns
-                      if pd.api.types.is_datetime64_any_dtype(features[col])]
+        _date_cols = [
+            col
+            for col in features.columns
+            if pd.api.types.is_datetime64_any_dtype(features[col])
+        ]
         if len(_date_cols) != 0:
             features.drop(_date_cols, axis=1, inplace=True)
 
         # Normalize
         self._mins, self._maxs = features.min(), features.max()
-        features = (features - features.min()) / \
-            (features.max() - features.min())
+        features = (features - features.min()) / (features.max() - features.min())
 
         # Change float64 to float32
         #  See: https://github.com/facebookresearch/faiss/issues/461
@@ -308,8 +316,9 @@ class IntervalAnalyser:
         # Search nearest neighbors for all samples -- has to be iterative for large files -.-
         distribution = []
         for i, row in features.iterrows():
-            _, neighbors = self._engine.search(np.ascontiguousarray(
-                row.values.reshape((1, -1))), int(self.n_neighbors))
+            _, neighbors = self._engine.search(
+                np.ascontiguousarray(row.values.reshape((1, -1))), int(self.n_neighbors)
+            )
             match_mask = labels.iloc[neighbors.reshape(-1)] == labels.loc[i]
             distribution.append(pd.Series(match_mask).sum() / self.n_neighbors)
 
@@ -344,17 +353,20 @@ class IntervalAnalyser:
 
             # Check distribution and find cut-off
             dist = self._distributions[file_id]
-            ind_remove_label = [(file_id, j)
-                                for j in np.where(dist < dist.mean())[0]]
+            ind_remove_label = [(file_id, j) for j in np.where(dist < dist.mean())[0]]
             # Extend list to keep track
             noise_indices.extend(ind_remove_label)
 
             # Verbose
             if len(noise_indices) > 0 and self.verbose > 1:
-                filename = self._metadata[file_id]["file"] if isinstance(
-                    self._metadata, dict) else None
+                filename = (
+                    self._metadata[file_id]["file"]
+                    if isinstance(self._metadata, dict)
+                    else None
+                )
                 logger.info(
-                    f"Removing {len(ind_remove_label)} samples from `{filename or file_id}`")
+                    f"Removing {len(ind_remove_label)} samples from `{filename or file_id}`"
+                )
 
         # Set noise indices
         self._noise_indices = noise_indices
@@ -380,12 +392,20 @@ class IntervalAnalyser:
 
     @property
     def samples(self):
-        warnings.warn(DeprecationWarning("This pseudo-attribute will be removed in a future version. "
-                                         "Consider using `n_samples` instead."))
+        warnings.warn(
+            DeprecationWarning(
+                "This pseudo-attribute will be removed in a future version. "
+                "Consider using `n_samples` instead."
+            )
+        )
         return self.n_samples
 
     @property
     def n_keys(self):
-        warnings.warn(DeprecationWarning("This pseudo-attribute will be removed in a future version. "
-                                         "Consider using `n_columns` instead."))
+        warnings.warn(
+            DeprecationWarning(
+                "This pseudo-attribute will be removed in a future version. "
+                "Consider using `n_columns` instead."
+            )
+        )
         return self.n_columns

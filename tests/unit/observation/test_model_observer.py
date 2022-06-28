@@ -83,7 +83,7 @@ class TestModelObserver:
         pipeline._data_processing()
         pipeline._feature_processing()
         pipeline.conclude_fitting(
-            model="LogisticRegression", params={}, feature_set="RFI"
+            model="LogisticRegression", params={}, feature_set="rf_increment"
         )
 
         # Observe

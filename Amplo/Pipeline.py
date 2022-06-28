@@ -23,7 +23,7 @@ from Amplo.AutoML.DataExplorer import DataExplorer
 from Amplo.AutoML.DataProcessor import DataProcessor
 from Amplo.AutoML.DataSampler import DataSampler
 from Amplo.AutoML.DriftDetector import DriftDetector
-from Amplo.AutoML.FeatureProcessor import FeatureProcessor
+from Amplo.AutoML.feature_processing import FeatureProcessor
 from Amplo.AutoML.IntervalAnalyser import IntervalAnalyser
 from Amplo.AutoML.Modeller import Modeller
 from Amplo.AutoML.Sequencer import Sequencer
@@ -39,8 +39,7 @@ class Pipeline:
         """
         Automated Machine Learning Pipeline for tabular data.
         Designed for predictive maintenance applications, failure identification,
-        failure prediction, condition
-        monitoring, etc.
+        failure prediction, condition monitoring, etc.
 
         Parameters
         ----------
@@ -356,7 +355,7 @@ class Pipeline:
             for production filing (propagated to `self.conclude_fitting`)
         """
         # Starting
-        self.logger.info("\n\n*** Starting Amplo AutoML - {} ***\n\n".format(self.name))
+        self.logger.info(f"\n\n*** Starting Amplo AutoML - {self.name} ***\n\n")
 
         # Prepare data for training
         self.data_preparation(*args, **kwargs)
@@ -397,6 +396,19 @@ class Pipeline:
         # Preprocess Data
         self._data_processing()
 
+        # Fit Drift Detector to input
+        num_cols = list(
+            set(self.x).intersection(
+                self.data_processor.float_cols + self.data_processor.int_cols
+            )
+        )
+        date_cols = list(set(self.x).intersection(self.data_processor.date_cols))
+        cat_cols = list(set(self.x) - set(num_cols + date_cols))
+        self.drift_detector = DriftDetector(
+            num_cols=num_cols, cat_cols=cat_cols, date_cols=date_cols
+        )
+        self.drift_detector.fit(self.x)
+
         # Run Exploratory Data Analysis
         self._eda()
 
@@ -406,11 +418,11 @@ class Pipeline:
         # Sequence
         self._sequencing()
 
-        # Extract and select features
-        self._feature_processing()
-
         # Interval-analyze data
         self._interval_analysis()
+
+        # Extract and select features
+        self._feature_processing()
 
         # Standardize
         # Standardizing assures equal scales, equal gradients and no clipping.
@@ -549,7 +561,9 @@ class Pipeline:
             x, y = self.data_sequencer.convert(x, y)
 
         # Convert Features
-        x = self.feature_processor.transform(x, self.settings["feature_set"])
+        x = self.feature_processor.transform(
+            x, feature_set=self.settings["feature_set"]
+        )
 
         # Standardize
         if self.standardize:
@@ -685,7 +699,7 @@ class Pipeline:
             ), "Unsupported data type for parameter ``y``"
 
             # Set target manually if not defined
-            if self.target == "":
+            if not self.target:
                 self.target = "target"
 
             # Parse x-data
@@ -701,14 +715,16 @@ class Pipeline:
             # Check data
             assert all(x.index == y.index), "``x`` and ``y`` indices do not match"
             if self.target in x.columns:
-                assert all(x[self.target] == y), (
-                    "Target column co-exists in both, ``x`` and ``y`` data, "
-                    f"but has not equal content. Rename the column ``{self.target}`` "
-                    "in ``x`` or set a (different) target in initialization."
-                )
-
-            # Concatenate x and y
-            data = pd.concat([x, y], axis=1)
+                if any(x[self.target] != y):
+                    msg = (
+                        f"Target column coexists in both, x and y data, but have "
+                        f"unequal content. Rename the column ``{self.target}`` in x."
+                    )
+                    raise ValueError(msg)
+                data = x
+            else:
+                # Concatenate x and y
+                data = pd.concat([x, y], axis=1)
 
         # Set data parameter in case it is provided through parameter ``x``
         data = data if data is not None else x
@@ -717,19 +733,22 @@ class Pipeline:
         # A path was provided to read out (multi-indexed) data
         if isinstance(data, (str, Path)):
             # Set target manually if not defined
-            if self.target == "":
+            if not self.target:
                 self.target = "target"
             # Parse data
             data, metadata = Utils.io.merge_logs(data, self.target)
 
         # Test data
-        assert self.target != "", "No target string provided"
+        assert self.target, "No target string provided"
         assert self.target in data.columns, "Target column missing"
         assert (
             len(data.columns) == data.columns.nunique()
         ), "Columns have no unique names"
 
         # Save data
+        clean_target = Utils.utils.clean_feature_name(self.target)
+        data.rename(columns={self.target: clean_target}, inplace=True)
+        self.target = clean_target
         self._set_data(data)
 
         # Store metadata in settings
@@ -802,6 +821,7 @@ class Pipeline:
             float_cols=self.float_cols,
             date_cols=self.date_cols,
             cat_cols=self.cat_cols,
+            include_output=True,
             missing_values=self.missing_values,
             outlier_removal=self.outlier_removal,
             z_score_threshold=self.z_score_threshold,
@@ -828,7 +848,6 @@ class Pipeline:
             data = self.data_processor.fit_transform(self.data)
 
             # Update pipeline
-            self.target = Utils.utils.clean_feature_name(self.target)
             self._set_data(data)
 
             # Store data
@@ -950,12 +969,9 @@ class Pipeline:
         """
         self.feature_processor = FeatureProcessor(
             mode=self.mode,
-            date_cols=self.date_cols,
-            max_lags=self.maxLags,
-            max_diff=self.maxDiff,
+            is_temporal=None,
             extract_features=self.extract_features,
-            timeout=self.feature_timeout,
-            information_threshold=self.information_threshold,
+            collinear_threshold=self.information_threshold,
         )
 
         # Set paths
@@ -970,7 +986,7 @@ class Pipeline:
             # Loading settings
             self.settings["feature_processing"] = json.load(open(settings_path, "r"))
             self.feature_processor.load_settings(self.settings["feature_processing"])
-            self.feature_sets = self.settings["feature_processing"]["featureSets"]
+            self.feature_sets = self.settings["feature_processing"]["feature_sets_"]
 
             if self.verbose > 0:
                 self.logger.info("Loaded Extracted Features")
@@ -978,11 +994,14 @@ class Pipeline:
         else:
             self.logger.info("Starting Feature Processor")
 
-            # Transform data
-            x, self.feature_sets = self.feature_processor.fit_transform(self.x, self.y)
+            # Transform data.  Note that y also needs to be transformed in the
+            # case when we're using the temporal feature processor (pooling).
+            x = self.feature_processor.fit_transform(self.x, self.y)
+            y = self.feature_processor.transform_target(self.y)
+            self.feature_sets = self.feature_processor.feature_sets_
 
             # Store data
-            self._set_x(x)
+            self._set_xy(x, y)
             self._write_csv(self.x, data_path)
 
             # Save settings
@@ -996,8 +1015,10 @@ class Pipeline:
         or resorts to pre-computed data, if present.
         """
         # Skip analysis when analysis is not possible and/or not desired
-        is_interval_analyzable = len(self.x.index.names) == 2
-        if not (self.use_interval_analyser and is_interval_analyzable):
+        is_multi_index = len(self.x.index.names) == 2
+        if not all(
+            [self.use_interval_analyser, is_multi_index, self.mode == "classification"]
+        ):
             return
 
         self.interval_analyser = IntervalAnalyser(target=self.target)
@@ -1032,7 +1053,7 @@ class Pipeline:
             self._write_csv(self.data, data_path)
 
             # TODO implement `IntervalAnalyser.get_settings` and add to
-            # `self.get_settings`
+            #  `self.get_settings`
             # # Save settings
             # self.settings['interval_analysis'] = self.intervalAnalyser.get_settings()
             # json.dump(self.settings['interval_analysis'], open(settings_path, 'w'))
@@ -1561,19 +1582,13 @@ class Pipeline:
         )
 
         # Prune Data Processor
-        required_features = self.feature_processor.get_required_features(
-            self.feature_sets[self.best_feature_set]
+        required_features = self.feature_processor.get_required_columns(
+            self.best_feature_set
         )
         self.data_processor.prune_features(required_features)
         self.settings["data_processing"] = self.data_processor.get_settings()
 
-        # Fit Drift Detector
-        self.drift_detector = DriftDetector(
-            num_cols=self.data_processor.float_cols + self.data_processor.int_cols,
-            cat_cols=self.data_processor.cat_cols,
-            date_cols=self.data_processor.date_cols,
-        )
-        self.drift_detector.fit(self.x)
+        # Fit Drift Detector to output and store settings
         self.drift_detector.fit_output(
             self.best_model, self.x[self.feature_sets[self.best_feature_set]]
         )
@@ -1950,15 +1965,18 @@ class Pipeline:
         def warn_when_too_close_to_edge(param: pd.Series, tol=0.01):
             # Min-max scaling
             scaled = np.array(param["best"]) / (param["max"] - param["min"])
+            min_, best, max_ = param["min"], param["best"], param["max"]
+            scaled = (best - min_) / (max_ - min_)
             # Check if too close and warn if so
             if not (tol < scaled < 1 - tol):
-                warnings.warn(
-                    f"Optimal value for parameter is very close to edge case: "
-                    f"{param.name}={param['best']} "
-                    f"(range: {param['min']}...{param['max']})"
-                )
+                msg = "Optimal value for parameter is very close to edge case: "
+                if min(abs(min_), abs(max_)) < 1:
+                    msg += f"{param.name}={best:.2e} (range: {min_:.2e}...{max_:.2e})"
+                else:
+                    msg += f"{param.name}={best} (range: {min_}...{max_})"
+                warnings.warn(msg)
 
-        params.apply(lambda p: warn_when_too_close_to_edge(p), axis=1)
+        params.apply(warn_when_too_close_to_edge, axis=1)
 
         return results
 
@@ -1977,10 +1995,9 @@ class Pipeline:
             "SVR",
             "BaggingRegressor",
         ]:
-            features = self.settings["feature_processing"]["featureImportance"]["shap"][
-                0
-            ]
-            values = self.settings["feature_processing"]["featureImportance"]["shap"][1]
+            fi = self.settings["feature_processing"]["feature_importance_"]
+            features = list(fi["shap"].keys())
+            values = list(fi["shap"].values())
             self._main_predictors = {
                 features[i]: values[i] for i in range(len(features))
             }

@@ -1,24 +1,22 @@
-import re
+#  Copyright (c) 2022 by Amplo.
 import logging
+import re
 import warnings
 
-
-__all__ = ["get_model", "hist_search"]
+__all__ = ["get_model", "hist_search", "clean_feature_name", "check_dtypes"]
 
 
 def get_model(model_str, **kwargs):
     # Import here to prevent ImportError (due to circular import)
     from Amplo.AutoML.Modeller import Modeller
 
+    models = Modeller(**kwargs).return_models()
+    model = [m for m in models if type(m).__name__ == model_str]
+
     try:
-        model = [
-            mod
-            for mod in Modeller(**kwargs).return_models()
-            if type(mod).__name__ == model_str
-        ]
         return model[0]
     except IndexError:
-        raise IndexError("Model not found.")
+        raise ValueError("Model not found.")
 
 
 def hist_search(array, value):
@@ -40,7 +38,8 @@ def hist_search(array, value):
     # Return -1 when no bin exists
     if value < array[0] or value >= array[-1]:
         logging.debug(
-            f"No bin (index) found for value {value}. Array(Min: {array[0]}, "
+            f"No bin (index) found for value {value}. "
+            f"Array(Min: {array[0]}, "
             "Max: {array[-1]})"
         )
         return -1
@@ -66,13 +65,13 @@ def hist_search(array, value):
         elif value >= array[middle]:  # array[middle] <= value < array[high]
             low = middle
 
-    warnings.warn(RuntimeWarning("Operation took too long. Returning -1 (no match)."))
+    warnings.warn("Operation took too long. Returning -1 (no match).", RuntimeWarning)
     return -1
 
 
 def clean_feature_name(feature_name):
-    """With the purpose to have a central feature cleaning, this function cleans
-    feature names.
+    """
+    Clean feature names.
 
     Parameters
     ----------
@@ -82,4 +81,26 @@ def clean_feature_name(feature_name):
     -------
     cleaned_feature_name : string
     """
-    return re.sub("[^a-z0-9]", "_", feature_name.lower())
+    # Remove non-numeric and non-alphabetic characters.
+    # Assert single underscores and remove underscores in prefix and suffix.
+    return re.sub("([^a-z0-9]|_)+", "_", feature_name.lower()).strip("_")
+
+
+def check_dtypes(dtype_list):
+    """
+    Checks all dtypes of given list.
+
+    Parameters
+    ----------
+    dtype_list : list of (str, Any, type or tuple of type)
+        List of tuples with name, parameter and allowed dtypes to be checked.
+
+    Raises
+    ------
+    ValueError
+        If any given constraint is not fulfilled.
+    """
+    for name, value, typ in dtype_list:
+        if not isinstance(value, typ):
+            msg = f"Invalid dtype for argument `{name}`: " f"{type(value).__name__}"
+            raise TypeError(msg)
