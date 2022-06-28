@@ -1,12 +1,16 @@
-import copy
+from copy import deepcopy
+
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
-import lightgbm as lgb
 from sklearn.metrics import log_loss
 from sklearn.model_selection import train_test_split
 
 
 class LGBMClassifier:
+    _estimator_type = "classifier"
+    has_predict_proba = True
+    default_params = {"verbosity": -1, "force_col_wise": True, "num_boost_round": 1000}
 
     def __init__(self, **params):
         """
@@ -16,24 +20,22 @@ class LGBMClassifier:
 
         callbacks [list[str]]: Callbacks as a string, transformed in a function here
         """
-        default = {'verbosity': -1, 'force_col_wise': True}
-        for k, v in default.items():
-            if k not in params.keys():
-                params[k] = v
-        self.params = params
-        self.default = default
-        self.hasPredictProba = True
-        self.set_params(**self.params)
+        self.params = None
+        self.num_boost_round = 1000
+        self.set_params(**params)
         self.classes_ = None
         self.model = None
         self.callbacks = []
         self.trained = False
-        self._estimator_type = 'classifier'
 
     @staticmethod
     def convert_to_dataset(x, y=None):
         # Convert input
-        assert type(x) in [pd.DataFrame, pd.Series, np.ndarray], 'Unsupported data input format'
+        assert type(x) in [
+            pd.DataFrame,
+            pd.Series,
+            np.ndarray,
+        ], "Unsupported data input format"
         if isinstance(x, np.ndarray) and len(x.shape) == 0:
             x = x.reshape((-1, 1))
 
@@ -41,13 +43,16 @@ class LGBMClassifier:
             return lgb.Dataset(x)
 
         else:
-            assert type(y) in [pd.Series, np.ndarray], 'Unsupported data label format'
+            assert type(y) in [pd.Series, np.ndarray], "Unsupported data label format"
             return lgb.Dataset(x, label=y)
 
-    def fit(self, x, y):
-        assert isinstance(x, np.ndarray) or isinstance(x, pd.DataFrame), 'X needs to be of type np.ndarray or ' \
-                                                                         'pd.DataFrame'
-        assert isinstance(y, np.ndarray) or isinstance(y, pd.Series), 'Y needs to be of type np.ndarray or pd.Series'
+    def fit(self, x, y, *args, **kwargs):
+        assert isinstance(x, np.ndarray) or isinstance(x, pd.DataFrame), (
+            "X needs to be of type np.ndarray or " "pd.DataFrame"
+        )
+        assert isinstance(y, np.ndarray) or isinstance(
+            y, pd.Series
+        ), "Y needs to be of type np.ndarray or pd.Series"
         if isinstance(x, pd.DataFrame):
             x = x.to_numpy()
         if isinstance(y, pd.Series):
@@ -56,31 +61,35 @@ class LGBMClassifier:
             y = y.reshape((-1, 1))
 
         # Split & Convert data
-        train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=0.1, stratify=y, shuffle=True)
+        train_x, test_x, train_y, test_y = train_test_split(
+            x, y, test_size=0.1, stratify=y, shuffle=True
+        )
         d_train = self.convert_to_dataset(train_x, train_y)
         d_test = self.convert_to_dataset(test_x, test_y)
 
         # Set Attributes
         self.classes_ = np.unique(y)
         if len(self.classes_) == 2:
-            self.params['objective'] = 'binary'
+            self.params["objective"] = "binary"
         else:
-            self.params['objective'] = 'multiclass'
-            self.params['num_classes'] = len(self.classes_)
+            self.params["objective"] = "multiclass"
+            self.params["num_classes"] = len(self.classes_)
 
         # Model training
-        self.model = lgb.train(self.params,
-                               d_train,
-                               valid_sets=[d_train, d_test],
-                               feval=self.eval_function,
-                               callbacks=[lgb.early_stopping(100, verbose=False)] + self._get_callbacks(),
-                               )
+        self.model = lgb.train(
+            self.params,
+            d_train,
+            num_boost_round=self.num_boost_round,
+            valid_sets=[d_train, d_test],
+            feval=self.eval_function,
+            callbacks=[lgb.early_stopping(100, verbose=False)] + self._get_callbacks(),
+        )
         self.trained = True
 
-    def predict(self, X):
+    def predict(self, X, *args, **kwargs):
         # todo check input data
-        assert self.trained is True, 'Model not yet trained'
-        prediction = self.model.predict(X)
+        assert self.trained is True, "Model not yet trained"
+        prediction = self.model.predict(X, *args, **kwargs)
 
         # Parse into most-likely class
         if len(prediction.shape) == 2:
@@ -90,10 +99,10 @@ class LGBMClassifier:
             # BINARY
             return np.round(prediction)
 
-    def predict_proba(self, X):
+    def predict_proba(self, X, *args, **kwargs):
         # todo check input data
-        assert self.trained is True, 'Model not yet trained'
-        prediction = self.model.predict(X)
+        assert self.trained is True, "Model not yet trained"
+        prediction = self.model.predict(X, *args, **kwargs)
 
         # Parse into probabilities
         if len(prediction.shape) == 2:
@@ -101,15 +110,20 @@ class LGBMClassifier:
             return prediction
         else:
             # BINARY
-            return np.hstack((1 - prediction, prediction)).reshape((-1, 2), order='F')
+            return np.hstack((1 - prediction, prediction)).reshape((-1, 2), order="F")
 
     def set_params(self, **params):
-        for k, v in self.default.items():
+        # Add default
+        for k, v in self.default_params.items():
             if k not in params.keys():
                 params[k] = v
-        if 'callbacks' in params.keys():
-            self.callbacks.extend(params['callbacks'])
-            params.pop('callbacks')
+
+        # Remove fit options
+        if "callbacks" in params.keys():
+            self.callbacks.extend(params.pop("callbacks"))
+
+        # Update class
+        self.num_boost_round = params.pop("num_boost_round")
         self.params = params
         return self
 
@@ -120,25 +134,29 @@ class LGBMClassifier:
         # Iterate through callbacks
         for callback in self.callbacks:
             # todo implement various callbacks - recognize string and add function
-            raise NotImplementedError('Callback not implemented.')
+            raise NotImplementedError("Callback not implemented.")
 
         # Return
         return callbacks
 
-    def get_params(self, **args):
-        params = copy.copy(self.params)
-        if 'deep' in args:
+    def get_params(self, *args, **kwargs):
+        params = deepcopy(self.params)
+        if "deep" in kwargs:
             return params
         if self.callbacks is not None:
-            params['callbacks'] = self.callbacks
+            params["callbacks"] = self.callbacks
+        params["num_boost_round"] = self.num_boost_round
         return params
 
     def eval_function(self, prediction, d_train):
         target = d_train.get_label()
         weight = d_train.get_weight()
-        if self.params['objective'] == 'multiclass':
+        if self.params["objective"] == "multiclass":
             prediction = prediction.reshape((-1, len(self.classes_)))
 
         # Return f1 score
-        return "neg_log_loss", - log_loss(target, prediction, sample_weight=weight, labels=self.classes_), True
-
+        return (
+            "neg_log_loss",
+            -log_loss(target, prediction, sample_weight=weight, labels=self.classes_),
+            True,
+        )

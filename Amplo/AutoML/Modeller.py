@@ -1,4 +1,4 @@
-import copy
+from copy import deepcopy
 from datetime import datetime
 import joblib
 import os
@@ -254,7 +254,7 @@ class Modeller:
                 for t, v in self.cv.split(x, y):
                     t_start = time.time()
                     xt, xv, yt, yv = x[t], x[v], y[t], y[v]
-                    model = copy.copy(master_model)
+                    model = deepcopy(master_model)
                     model.fit(xt, yt)
                     val_score.append(self.scoring(model, xv, yv))
                     train_score.append(self.scoring(model, xt, yt))

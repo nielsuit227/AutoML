@@ -12,8 +12,10 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import RandomForestRegressor
 
 from Amplo.Utils.logging import logger
+from Amplo.Utils.utils import deprecated
 
 
+@deprecated
 class Documenter:
     def __init__(self, pipeline):
         if not os.path.exists(

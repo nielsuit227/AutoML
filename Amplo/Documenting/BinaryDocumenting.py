@@ -11,13 +11,21 @@ from fpdf import FPDF
 from sklearn.metrics import RocCurveDisplay, auc
 from sklearn.model_selection import StratifiedKFold
 
-from Amplo.AutoML.feature_processing import NopFeatureExtractor, StaticFeatureExtractor, TemporalFeatureExtractor
+from Amplo.AutoML.feature_processing import (
+    NopFeatureExtractor,
+    StaticFeatureExtractor,
+    TemporalFeatureExtractor,
+)
 from Amplo.Utils.logging import logger
+from Amplo.Utils.utils import deprecated
 
 if TYPE_CHECKING:
     from Amplo import Pipeline
 
 
+@deprecated(
+    "This is no longer used, all information is available in the created settings.json."
+)
 class BinaryDocumenting(FPDF):
     def __init__(self, pipeline: "Pipeline"):
         super().__init__()
@@ -726,7 +734,8 @@ class BinaryDocumenting(FPDF):
             "top 15 feature with their mean decrease in Gini impurity are visualized on the right.",
         )
         path = self.p.main_dir + "EDA/Features/v{}/RF.png".format(self.p.version)
-        self.image(name=path, x=110 + self.pm, y=y - 10, w=80, h=120)
+        if os.path.exists(path):
+            self.image(name=path, x=110 + self.pm, y=y - 10, w=80, h=120)
 
     def data(self):
         if not self.check_new_page():

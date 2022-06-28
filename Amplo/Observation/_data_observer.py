@@ -42,6 +42,9 @@ class DataObserver(PipelineObserver):
 
     def observe(self):
         self.check_monotonic_columns()
+        self.check_minority_sensitivity()
+        self.check_extreme_values()
+        self.check_categorical_mismatch()
 
     @_report_obs
     def check_monotonic_columns(self):
@@ -90,6 +93,7 @@ class DataObserver(PipelineObserver):
         - Bin contains > 20% of that class
         (-> class needs to be 10% of data or smaller)
 
+        Note: Only supports numeric columns
 
         Returns
         -------
@@ -102,6 +106,10 @@ class DataObserver(PipelineObserver):
         minority_sensitive = []
 
         for key in self.x.keys():
+            if not pd.api.types.is_numeric_dtype(self.x[key]):
+                # Todo implement for categorical columns
+                continue
+
             # Make bins
             counts, edges = np.histogram(self.x[key], bins=10)
 
@@ -150,6 +158,10 @@ class DataObserver(PipelineObserver):
         extreme_values = []
 
         for key in self.x.keys():
+            if not pd.api.types.is_numeric_dtype(self.x[key]):
+                # Todo implement for categorical columns
+                continue
+
             if self.x[key].abs().max() > 1000:
                 extreme_values.append(key)
 

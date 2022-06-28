@@ -11,6 +11,8 @@ from Amplo.Utils.utils import get_model
 
 class StackingRegressor:
 
+    _estimator_type = "regressor"
+
     def __init__(self, **params):
         """
         Wrapper class for Stacking Regressor.
@@ -21,7 +23,6 @@ class StackingRegressor:
         params list[dict]: List of model parameters for stack
         """
         # Defaults
-        self._estimator_type = 'regressor'
         self.trained = False
         self.level_one = None
         self.model = None
@@ -39,14 +40,14 @@ class StackingRegressor:
         """
         # Add default models
         models = [i[0] for i in stack]
-        if 'KNeighborsRegressor' not in models:
-            stack.append(('KNeighborsRegressor', KNeighborsRegressor()))
-        if 'DecisionTreeRegressor' not in models:
-            stack.append(('DecisionTreeRegressor', DecisionTreeRegressor()))
-        if 'LinearRegression' not in models:
-            stack.append(('LinearRegression', LinearRegression()))
-        if 'SVR' not in models and self.n_samples < 5000:
-            stack.append(('SVR', SVR()))
+        if "KNeighborsRegressor" not in models:
+            stack.append(("KNeighborsRegressor", KNeighborsRegressor()))
+        if "DecisionTreeRegressor" not in models:
+            stack.append(("DecisionTreeRegressor", DecisionTreeRegressor()))
+        if "LinearRegression" not in models:
+            stack.append(("LinearRegression", LinearRegression()))
+        if "SVR" not in models and self.n_samples < 5000:
+            stack.append(("SVR", SVR()))
         return stack
 
     def fit(self, x: pd.DataFrame, y: pd.Series):
@@ -63,7 +64,9 @@ class StackingRegressor:
         # Create stack
         self.level_one = LinearRegression()
         self.stack = self._add_default_models(self.stack)
-        self.model = ensemble.StackingRegressor(self.stack, final_estimator=self.level_one)
+        self.model = ensemble.StackingRegressor(
+            self.stack, final_estimator=self.level_one
+        )
 
         # Fit
         self.model.fit(x, y)
@@ -80,16 +83,13 @@ class StackingRegressor:
         params dict: Nested dictionary, first keys are model names, second params
         """
         # Overwrite old params
-        for k, v in params.items():
-            self.params[k] = v
+        self.params.update(params)
 
         # Set default
-        if 'n_samples' in params:
-            self.n_samples = params['n_samples']
-            params.pop('n_samples')
-        if 'n_features' in params:
-            self.n_features = params['n_features']
-            params.pop('n_features')
+        if "n_samples" in params:
+            self.n_samples = params.pop("n_samples")
+        if "n_features" in params:
+            self.n_features = params.pop("n_features")
 
         for model_name, param in params.items():
             # Get index
@@ -97,7 +97,7 @@ class StackingRegressor:
 
             # Add if not in stack
             if len(ind) == 0:
-                model = get_model(model_name, mode='regression', samples=self.n_samples)
+                model = get_model(model_name, mode="regression", samples=self.n_samples)
                 self.stack.append((model_name, model.set_params(**param)))
 
             # Update otherwise
@@ -111,6 +111,8 @@ class StackingRegressor:
         """
         return self.params
 
-    def predict(self, x):
+    def predict(self, x, *args, **kwargs):
         assert self.trained
-        return self.model.predict((x - self.mean) / self.std).reshape(-1)
+        return self.model.predict((x - self.mean) / self.std, *args, **kwargs).reshape(
+            -1
+        )

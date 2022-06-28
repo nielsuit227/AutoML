@@ -5,7 +5,7 @@ from sklearn.model_selection import KFold, StratifiedKFold
 
 from Amplo import Pipeline
 from Amplo.AutoML import Modeller
-from Amplo.GridSearch import BaseGridSearch, HalvingGridSearch, OptunaGridSearch
+from Amplo.GridSearch import BaseGridSearch, OptunaGridSearch
 from Amplo.Utils.io import parse_json
 
 
@@ -52,9 +52,7 @@ class TestGridSearch:
             pipeline.results.loc[:, "type"] == "Hyper Parameter"
         ), "No hyper parameter results were found"
 
-    @pytest.mark.parametrize(
-        "grid_search", [BaseGridSearch, HalvingGridSearch, OptunaGridSearch]
-    )
+    @pytest.mark.parametrize("grid_search", [BaseGridSearch, OptunaGridSearch])
     def test_each_model(self, grid_search):
         """
         Given the models which depend on 1) mode and 2) num_samples,

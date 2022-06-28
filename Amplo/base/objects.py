@@ -450,5 +450,5 @@ class LoggingMixin:
             logging_level = logging.DEBUG
 
         self.verbose = verbose
-        self.logger = logger.getChild(type(self).__name__)
+        self.logger = logger
         self.logger.setLevel(logging_level)

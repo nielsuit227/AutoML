@@ -1,9 +1,8 @@
 import copy
-from datetime import datetime
-import re
 import time
-from typing import Dict, Union
 import warnings
+from datetime import datetime
+from typing import Dict, Union
 
 import numpy as np
 import optuna
@@ -22,6 +21,9 @@ class OptunaGridSearch(_GridSearch):
 
         Takes any model supported by `Amplo.AutoML.Modelling` whose parameter
         search space is predefined for each model.
+        Optimal choice [1]
+
+        [1] https://arxiv.org/pdf/2201.06433.pdf
 
         Parameters
         ----------

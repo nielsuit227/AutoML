@@ -10,10 +10,18 @@ import pandas as pd
 from shap import TreeExplainer
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
-from Amplo.AutoML.feature_processing._base import BaseFeatureExtractor, BaseFeatureProcessor, sanitize_series
+from Amplo.AutoML.feature_processing._base import (
+    BaseFeatureExtractor,
+    BaseFeatureProcessor,
+    sanitize_series,
+)
 from Amplo.AutoML.feature_processing.nop_feature_extractor import NopFeatureExtractor
-from Amplo.AutoML.feature_processing.static_feature_extractor import StaticFeatureExtractor
-from Amplo.AutoML.feature_processing.temporal_feature_extractor import TemporalFeatureExtractor
+from Amplo.AutoML.feature_processing.static_feature_extractor import (
+    StaticFeatureExtractor,
+)
+from Amplo.AutoML.feature_processing.temporal_feature_extractor import (
+    TemporalFeatureExtractor,
+)
 from Amplo.base.exceptions import NotFittedError
 from Amplo.Classifiers import CatBoostClassifier
 from Amplo.Regressors import CatBoostRegressor

@@ -10,3 +10,4 @@ dist
 /EDA
 .pypirc
 *.log
+**.pyc

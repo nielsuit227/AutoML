@@ -1,15 +1,17 @@
 import numpy as np
-from sklearn.svm import SVC
 from sklearn import ensemble
-from sklearn.naive_bayes import GaussianNB
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
 
 from Amplo.Utils.utils import get_model
 
 
 class StackingClassifier:
+    _estimator_type = "classifier"
+    has_predict_proba = True
 
     def __init__(self, **params):
         """
@@ -21,9 +23,7 @@ class StackingClassifier:
         params list[dict]: List of model parameters for stack
         """
         # Defaults
-        self._estimator_type = 'classifier'
         self.trained = False
-        self.hasPredictProba = True
         self.level_one = None
         self.model = None
         self.classes_ = None
@@ -41,16 +41,16 @@ class StackingClassifier:
         """
         # Add default models
         models = [i[0] for i in stack]
-        if 'KNeighborsClassifier' not in models:
-            stack.append(('KNeighborsClassifier', KNeighborsClassifier()))
-        if 'DecisionTreeClassifier' not in models:
-            stack.append(('DecisionTreeClassifier', DecisionTreeClassifier()))
-        if 'LogisticRegression' not in models:
-            stack.append(('LogisticRegression', LogisticRegression()))
-        if 'GaussianNB' not in models:
-            stack.append(('GaussianNB', GaussianNB()))
-        if 'SVC' not in models and self.n_samples < 5000:
-            stack.append(('SVC', SVC()))
+        if "KNeighborsClassifier" not in models:
+            stack.append(("KNeighborsClassifier", KNeighborsClassifier()))
+        if "DecisionTreeClassifier" not in models:
+            stack.append(("DecisionTreeClassifier", DecisionTreeClassifier()))
+        if "LogisticRegression" not in models:
+            stack.append(("LogisticRegression", LogisticRegression()))
+        if "GaussianNB" not in models:
+            stack.append(("GaussianNB", GaussianNB()))
+        if "SVC" not in models and self.n_samples < 5000:
+            stack.append(("SVC", SVC()))
         return stack
 
     def fit(self, x, y):
@@ -66,14 +66,16 @@ class StackingClassifier:
         x = (x - self.mean) / self.std
 
         # Set level one
-        solver = 'lbfgs'
+        solver = "lbfgs"
         if self.n_samples > 10000 or self.n_features > 100:
-            solver = 'sag'
+            solver = "sag"
         self.level_one = LogisticRegression(max_iter=2000, solver=solver)
 
         # Create stack
         self.stack = self._add_default_models(self.stack)
-        self.model = ensemble.StackingClassifier(self.stack, final_estimator=self.level_one)
+        self.model = ensemble.StackingClassifier(
+            self.stack, final_estimator=self.level_one
+        )
 
         # Fit
         self.model.fit(x, y)
@@ -90,16 +92,13 @@ class StackingClassifier:
         params dict: Nested dictionary, first keys are model names, second params
         """
         # Overwrite old params
-        for k, v in params.items():
-            self.params[k] = v
+        self.params.update(params)
 
         # Set default
-        if 'n_samples' in params:
-            self.n_samples = params['n_samples']
-            params.pop('n_samples')
-        if 'n_features' in params:
-            self.n_features = params['n_features']
-            params.pop('n_features')
+        if "n_samples" in params:
+            self.n_samples = params.pop("n_samples")
+        if "n_features" in params:
+            self.n_features = params.pop("n_features")
 
         for model_name, param in params.items():
             # Get index
@@ -107,7 +106,9 @@ class StackingClassifier:
 
             # Add if not in stack
             if len(ind) == 0:
-                model = get_model(model_name, mode='classification', samples=self.n_samples)
+                model = get_model(
+                    model_name, mode="classification", samples=self.n_samples
+                )
                 self.stack.append((model_name, model.set_params(**param)))
 
             # Update otherwise
@@ -119,14 +120,16 @@ class StackingClassifier:
         """
         Returns a dictionary with all params.
         """
-        self.params['n_samples'] = self.n_samples
-        self.params['n_features'] = self.n_features
+        self.params["n_samples"] = self.n_samples
+        self.params["n_features"] = self.n_features
         return self.params
 
-    def predict(self, x):
+    def predict(self, x, *args, **kwargs):
         assert self.trained
-        return self.model.predict((x - self.mean) / self.std).reshape(-1)
+        return self.model.predict((x - self.mean) / self.std, *args, **kwargs).reshape(
+            -1
+        )
 
-    def predict_proba(self, x):
+    def predict_proba(self, x, *args, **kwargs):
         assert self.trained
-        return self.model.predict_proba((x - self.mean) / self.std)
+        return self.model.predict_proba((x - self.mean) / self.std, *args, **kwargs)

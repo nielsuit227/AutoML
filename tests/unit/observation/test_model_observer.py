@@ -1,9 +1,12 @@
 import numpy as np
 import pytest
+from sklearn.datasets import make_classification, make_regression
 
 from Amplo import Pipeline
+from Amplo.Classifiers import CatBoostClassifier
 from Amplo.Observation._model_observer import ModelObserver
 from Amplo.Observation.base import ProductionWarning
+from Amplo.Regressors import CatBoostRegressor
 from tests import OverfitPredictor, RandomPredictor
 
 
@@ -95,3 +98,28 @@ class TestModelObserver:
         pipeline.best_model = RandomPredictor(mode="classification")
         obs = ModelObserver(pipeline=pipeline)
         obs.check_slice_invariance()
+
+    @pytest.mark.parametrize("mode", ["classification", "regression"])
+    def test_boosting_overfit(self, mode):
+        if mode == "classification":
+            x, y = make_classification(class_sep=0.2, n_samples=500, flip_y=0.2)
+        else:
+            x, y = make_regression(noise=0.6, n_samples=500)
+
+        # Make pipeline and simulate fit
+        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline._read_data(x, y)
+        pipeline._mode_detector()
+        if mode == "classification":
+            pipeline.best_model = CatBoostClassifier(
+                n_estimators=15000, early_stopping_rounds=15000, use_best_model=False,
+            )
+        else:
+            pipeline.best_model = CatBoostRegressor(
+                n_estimators=15000, early_stopping_rounds=15000, use_best_model=False,
+            )
+
+        # Observer
+        obs = ModelObserver(pipeline=pipeline)
+        with pytest.warns(ProductionWarning):
+            obs.check_boosting_overfit()

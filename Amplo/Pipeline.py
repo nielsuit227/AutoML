@@ -2,7 +2,6 @@ import copy
 import itertools
 import json
 import os
-import shutil
 import time
 import warnings
 from datetime import datetime
@@ -28,7 +27,6 @@ from Amplo.AutoML.IntervalAnalyser import IntervalAnalyser
 from Amplo.AutoML.Modeller import Modeller
 from Amplo.AutoML.Sequencer import Sequencer
 from Amplo.Classifiers.StackingClassifier import StackingClassifier
-from Amplo.Documenting import BinaryDocumenting, MultiDocumenting, RegressionDocumenting
 from Amplo.GridSearch import BaseGridSearch, HalvingGridSearch, OptunaGridSearch
 from Amplo.Observation import DataObserver, ProductionObserver
 from Amplo.Regressors.StackingRegressor import StackingRegressor
@@ -148,8 +146,6 @@ class Pipeline:
             Whether to run Exploratory Data Analysis
         process_data : bool, default: True
             Whether to force data processing
-        document_results : bool, default: True
-            Whether to force documenting
         no_dirs : bool, default: False
             Whether to create files or not
         verbose : int, default: 1
@@ -221,7 +217,6 @@ class Pipeline:
         # Flags
         self.plot_eda = kwargs.get("plot_eda", False)
         self.process_data = kwargs.get("process_data", True)
-        self.document_results = kwargs.get("document_results", True)
         self.verbose = kwargs.get("verbose", 1)
         self.no_dirs = kwargs.get("no_dirs", False)
 
@@ -456,7 +451,7 @@ class Pipeline:
         # Create stacking model
         self._create_stacking()
 
-    def conclude_fitting(self, *, model=None, feature_set=None, params=None, **kwargs):
+    def conclude_fitting(self, *, model=None, feature_set=None, params=None):
         """
         Prepare production files that are necessary to deploy a specific
         model / feature set combination
@@ -464,7 +459,6 @@ class Pipeline:
         Creates or modifies the following files
             - ``Model.joblib`` (production model)
             - ``Settings.json`` (model settings)
-            - ``Report.pdf`` (training report)
 
         Parameters
         ----------
@@ -475,8 +469,6 @@ class Pipeline:
         params : dict, optional
             Model parameters for which to prepare production files.
             Default: takes the best parameters
-        kwargs
-            Collecting container for keyword arguments that are passed through `.fit()`.
         """
         if not self.no_dirs:
 
@@ -507,15 +499,6 @@ class Pipeline:
             obs = ProductionObserver(pipeline=self)
             obs.observe()
             self.settings["production_observation"] = obs.observations
-
-            # Report
-            report_path = (
-                self.main_dir + f"Documentation/v{self.version}/{self.best_model_str}_"
-                f"{self.best_feature_set}.pdf"
-            )
-            if not Path(report_path).exists():
-                self.document(self.best_model_str, self.best_feature_set)
-            shutil.copy(report_path, prod_dir + "Report.pdf")
 
         # Finish
         self.is_fitted = True
@@ -674,8 +657,8 @@ class Pipeline:
             y-data (target)
         data : pd.DataFrame or str or Path, optional
             Contains both, x and y, OR provides a path to folder structure
-        kwargs
-            Collecting container for keyword arguments that are passed through `.fit()`.
+        kwargs : dict
+            Not used, but necessary as we don't split .fit() kwargs
 
         Returns
         -------
@@ -1154,7 +1137,7 @@ class Pipeline:
             # Save results
             self._write_csv(self.results, results_path)
 
-    def grid_search(self, model=None, feature_set=None, parameter_set=None, **kwargs):
+    def grid_search(self, model=None, feature_set=None, parameter_set=None):
         """Runs a grid search.
 
         By default, takes ``self.results`` and runs for the top
@@ -1251,12 +1234,7 @@ class Pipeline:
             )
 
             # Skip grid search if optimized model already exists
-            if ("Hyper Parameter" == m_results["type"]).any():
-                self.logger.info("Loading optimization results.")
-                grid_search_results = m_results[m_results["type"] == "Hyper Parameter"]
-
-            # Run grid search otherwise
-            else:
+            if not ("Hyper Parameter" == m_results["type"]).any():
                 # Run grid search for model
                 grid_search_results = self._grid_search_iteration(
                     model, parameter_set, feature_set
@@ -1271,13 +1249,6 @@ class Pipeline:
                     [self.results, grid_search_results], ignore_index=True
                 )
                 self.results.to_csv(self.main_dir + "Results.csv", index=False)
-
-            # Validate
-            if self.document_results:
-                params = Utils.io.parse_json(grid_search_results.iloc[0]["params"])
-                # TODO: What about other than our custom models? They don't have
-                # `set_params()` method
-                self.document(model.set_params(**params), feature_set)
 
         return self
 
@@ -1369,63 +1340,6 @@ class Pipeline:
                 ignore_index=True,
             )
             self.results.to_csv(self.main_dir + "Results.csv", index=False)
-
-            # Document
-            if self.document_results:
-                self.document(stack, feature_set)
-
-    def document(self, model, feature_set: str):
-        """
-        Loads the model and features and initiates the outside Documenting class.
-
-        Parameters
-        ----------
-        model : str or estimator, optional
-            Model to run grid search for
-        feature_set : str, optional
-            Which feature set to run grid search for 'rft', 'rfi' or 'pps'
-        """
-        # Get model
-        if isinstance(model, str):
-            model = Utils.utils.get_model(model, mode=self.mode, samples=len(self.x))
-
-        # Checks
-        assert feature_set in self.feature_sets.keys(), "Feature Set not available."
-        if os.path.exists(
-            self.main_dir
-            + "Documentation/v{}/{}_{}.pdf".format(
-                self.version, type(model).__name__, feature_set
-            )
-        ):
-            self.logger.info(
-                "Documentation existing for {} v{} - {} ".format(
-                    type(model).__name__, self.version, feature_set
-                )
-            )
-            return
-        if len(model.get_params()) == 0:
-            warnings.warn("[Documenting] Supplied model has no parameters!")
-
-        # Run validation
-        self.logger.info(
-            "Creating Documentation for {} - {}".format(
-                type(model).__name__, feature_set
-            )
-        )
-        if self.mode == "classification" and self.n_classes == 2:
-            documenting = BinaryDocumenting(self)
-        elif self.mode == "classification":
-            documenting = MultiDocumenting(self)
-        elif self.mode == "regression":
-            documenting = RegressionDocumenting(self)
-        else:
-            raise ValueError("Unknown mode.")
-        documenting.create(model, feature_set)
-
-        # Append to settings
-        self.settings["validation"][
-            "{}_{}".format(type(model).__name__, feature_set)
-        ] = documenting.outputMetrics
 
     def _parse_production_args(self, model=None, feature_set=None, params=None):
         """
@@ -1730,6 +1644,7 @@ class Pipeline:
         # Set single-index if not already present
         if len(data.index.names) == 1 and data.index.name is None:
             data.index.name = "index"
+
         # Raise error if unnamed index is present
         if None in data.index.names:
             raise IndexError(

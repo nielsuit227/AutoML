@@ -1,5 +1,5 @@
 import os
-import copy
+from copy import deepcopy
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -14,29 +14,32 @@ from Amplo.Utils.logging import logger
 
 
 class DataExplorer:
-
-    def __init__(self, data,
-                 y=None,
-                 mode: str = "regression",
-                 plot_time_plots: bool = True,
-                 plot_box_plots: bool = False,
-                 plot_missing_values: bool = True,
-                 plot_seasonality: bool = False,
-                 plot_co_linearity: bool = True,
-                 plot_differencing: bool = False,
-                 plot_signal_correlations: bool = False,
-                 plot_feature_importance: bool = True,
-                 plot_scatter_plots: bool = False,
-                 differ: int = 0,
-                 pre_tag: str = "",
-                 max_samples: int = 10000,
-                 season_periods: int = 24,
-                 lags: int = 60,
-                 skip_completed: bool = True,
-                 folder: str = "",
-                 version: str = "v0"):
+    def __init__(
+        self,
+        data,
+        y=None,
+        mode: str = "regression",
+        plot_time_plots: bool = True,
+        plot_box_plots: bool = False,
+        plot_missing_values: bool = True,
+        plot_seasonality: bool = False,
+        plot_co_linearity: bool = True,
+        plot_differencing: bool = False,
+        plot_signal_correlations: bool = False,
+        plot_feature_importance: bool = True,
+        plot_scatter_plots: bool = False,
+        differ: int = 0,
+        pre_tag: str = "",
+        max_samples: int = 10000,
+        season_periods: int = 24,
+        lags: int = 60,
+        skip_completed: bool = True,
+        folder: str = "",
+        version: str = "v0",
+    ):
         """
-        Automated Exploratory Data Analysis. Covers binary classification and regression.
+        Automated Exploratory Data Analysis.
+        Covers binary classification and regression.
         It generates:
         - Missing Values Plot
         - Line Plots of all features
@@ -54,7 +57,8 @@ class DataExplorer:
         - Cross Correlation Function Plot
         - Scatter Plots
 
-        All figures are organized per project, category and version with the following file structure:
+        All figures are organized per project, category and version with the following
+        file structure:
         |-- "Folder parameter"
         |   |-- EDA
         |   |   |-- Timeplots
@@ -65,32 +69,59 @@ class DataExplorer:
 
         Parameters
         ----------
-        data pd.DataFrame: Input data, either Numpy or Pandas
-        y pd.Series: Output / Target, either Numpy or Pandas
-        mode str: classification or regression
-        plot_time_plots bool: Boolean to create time plots or not
-        plot_box_plots bool: Boolean to create box plots
-        plot_missing_values bool: Boolean to create missing values plot
-        plot_seasonality bool: Boolean to create seasonality plots
-        plot_co_linearity bool: Boolean to create co-linearity plots
-        plot_differencing bool: Boolean to create differencing plots
-        plot_signal_correlations bool: Boolean to create signal correlation plots (ACF, PACF, CCF)
-        plot_feature_importance bool: Boolean to create feature importance plots (SHAP, RF, PPS)
-        plot_scatter_plots bool: Boolean to create scatter plots
-        differ int: Differencing order for signal correlation plots
-        pre_tag str: Optional, string to format file names
-        max_samples int: Optional, under-sampling for large datasets
-        season_periods int: Optional, season periods for seasonality plots
-        lags int: Optional, maximum lags to take into account for signal plots
-        skip_completed bool: Whether to create existing plots
-        folder str: Main folder to dump files in
-        version int: All graphs are put in a versioned folder
+        data : pd.DataFrame
+            Input data, either Numpy or Pandas
+        y : pd.Series
+            Output / Target, either Numpy or Pandas
+        mode : str
+            classification or regression
+        plot_time_plots : bool
+            Boolean to create time plots or not
+        plot_box_plots : bool
+            Boolean to create box plots
+        plot_missing_values : bool
+            Boolean to create missing values plot
+        plot_seasonality : bool
+            Boolean to create seasonality plots
+        plot_co_linearity : bool
+            Boolean to create co-linearity plots
+        plot_differencing : bool
+            Boolean to create differencing plots
+        plot_signal_correlations : bool
+            Boolean to create signal correlation plots (ACF, PACF, CCF)
+        plot_feature_importance : bool
+            Boolean to create feature importance plots (SHAP, RF, PPS)
+        plot_scatter_plots : bool
+            Boolean to create scatter plots
+        differ : int
+            Differencing order for signal correlation plots
+        pre_tag : str
+            String to format file names
+        max_samples : int
+            Optional, under-sampling for large datasets
+        season_periods : int
+            Optional, season periods for seasonality plots
+        lags : int
+            Optional, maximum lags to take into account for signal plots
+        skip_completed : bool
+            Whether to create existing plots
+        folder : str
+            Main folder to dump files in
+        version : int
+            All graphs are put in a versioned folder
         """
-        assert isinstance(data, np.ndarray) or isinstance(data, pd.DataFrame), "Data should be Numpy or Pandas"
+        assert isinstance(data, np.ndarray) or isinstance(
+            data, pd.DataFrame
+        ), "Data should be Numpy or Pandas"
         if y is not None:
-            assert isinstance(y, np.ndarray) or isinstance(y, pd.Series), "Y should be Numpy or Pandas"
+            assert isinstance(y, np.ndarray) or isinstance(
+                y, pd.Series
+            ), "Y should be Numpy or Pandas"
         if type(data) != pd.DataFrame:
-            data = pd.DataFrame(data=data, columns=["Feature_{}".format(i) for i in range(data.shape[1])])
+            data = pd.DataFrame(
+                data=data,
+                columns=["Feature_{}".format(i) for i in range(data.shape[1])],
+            )
         assert mode in ["classification", "regression"]
 
         # Running booleans
@@ -115,9 +146,9 @@ class DataExplorer:
 
         # General settings
         self.seasonPeriods = season_periods
-        self.maxSamples = max_samples       # Time series
-        self.differ = differ                # Correlations
-        self.lags = lags                    # Correlations
+        self.maxSamples = max_samples  # Time series
+        self.differ = differ  # Correlations
+        self.lags = lags  # Correlations
 
         # Storage settings
         self.mode = mode
@@ -183,12 +214,16 @@ class DataExplorer:
                 os.mkdir(self.folder + "MissingValues/")
 
             # Skip if exists
-            if self.tag + "v{}.png".format(self.version) in os.listdir(self.folder + "MissingValues/"):
+            if self.tag + "v{}.png".format(self.version) in os.listdir(
+                self.folder + "MissingValues/"
+            ):
                 return
 
             # Plot
             fig, (a0, a1) = plt.subplots(1, 2, gridspec_kw={"width_ratios": [9, 1]})
-            a0.imshow(self.data.isna(), cmap="Greys", aspect="auto", interpolation="none")
+            a0.imshow(
+                self.data.isna(), cmap="Greys", aspect="auto", interpolation="none"
+            )
             a0.set_ylabel("Rows")
             a0.set_xticks(range(len(self.data.keys())), self.data.keys())
             a1.plot(self.data.isna().sum(axis=1), range(len(self.data)), c="k")
@@ -205,7 +240,9 @@ class DataExplorer:
             for key in tqdm(self.data.keys()):
 
                 # Skip if existing
-                if self.tag + key + ".png" in os.listdir(self.folder + "BoxPlots/v{}/".format(self.version)):
+                if self.tag + key + ".png" in os.listdir(
+                    self.folder + "BoxPlots/v{}/".format(self.version)
+                ):
                     continue
 
                 # Figure prep
@@ -214,8 +251,13 @@ class DataExplorer:
 
                 # Classification
                 if self.mode == "classification":
-                    plt.boxplot([self.data.loc[self.Y == 1, key], self.data.loc[self.Y == -1, key]], labels=["Faulty",
-                                                                                                             "Healthy"])
+                    plt.boxplot(
+                        [
+                            self.data.loc[self.Y == 1, key],
+                            self.data.loc[self.Y == -1, key],
+                        ],
+                        labels=["Faulty", "Healthy"],
+                    )
                     plt.legend(["Faulty", "Healthy"])
 
                 # Regression
@@ -223,8 +265,15 @@ class DataExplorer:
                     plt.boxplot(self.data[key])
 
                 # Store & Close
-                fig.savefig(self.folder + "BoxPlots/v{}/".format(self.version) + self.tag + key + ".png",
-                            format="png", dpi=300)
+                fig.savefig(
+                    self.folder
+                    + "BoxPlots/v{}/".format(self.version)
+                    + self.tag
+                    + key
+                    + ".png",
+                    format="png",
+                    dpi=300,
+                )
                 plt.close()
 
     def time_plots(self):
@@ -244,7 +293,9 @@ class DataExplorer:
             # Iterate through features
             for key in tqdm(data.keys()):
                 # Skip if existing
-                if self.tag + key + ".png" in os.listdir(self.folder + "TimePlots/v{}/".format(self.version)):
+                if self.tag + key + ".png" in os.listdir(
+                    self.folder + "TimePlots/v{}/".format(self.version)
+                ):
                     continue
 
                 # Figure preparation
@@ -260,8 +311,15 @@ class DataExplorer:
                 plt.scatter(data.index, data[key], c=cm(nm_output), alpha=0.3)
 
                 # Store & Close
-                fig.savefig(self.folder + "TimePlots/v{}/".format(self.version) + self.tag + key + ".png",
-                            format="png", dpi=100)
+                fig.savefig(
+                    self.folder
+                    + "TimePlots/v{}/".format(self.version)
+                    + self.tag
+                    + key
+                    + ".png",
+                    format="png",
+                    dpi=100,
+                )
                 plt.close(fig)
 
     def seasonality(self):
@@ -271,26 +329,40 @@ class DataExplorer:
 
         # Iterate through features
         for key in tqdm(self.data.keys()):
-            if self.tag + key + "_v{}.png".format(self.version) in os.listdir(self.folder + "Seasonality/"):
+            if self.tag + key + "_v{}.png".format(self.version) in os.listdir(
+                self.folder + "Seasonality/"
+            ):
                 continue
             seasonality = STL(self.data[key], period=self.seasonPeriods).fit()
             fig = plt.figure(figsize=[24, 16])
             plt.plot(range(len(self.data)), self.data[key])
             plt.plot(range(len(self.data)), seasonality)
             plt.title(key + ", period=" + str(self.seasonPeriods))
-            fig.savefig(self.folder + "Seasonality/" + self.tag + str(self.seasonPeriods)+"/"+key +
-                        "_v{}.png".format(self.version), format="png", dpi=300)
+            fig.savefig(
+                self.folder
+                + "Seasonality/"
+                + self.tag
+                + str(self.seasonPeriods)
+                + "/"
+                + key
+                + "_v{}.png".format(self.version),
+                format="png",
+                dpi=300,
+            )
             plt.close()
 
     def co_linearity(self):
         if self.plotCoLinearity:
             # Create folder
-            if not os.path.exists(self.folder + "CoLinearity/v{}/".format(self.version)):
+            if not os.path.exists(
+                self.folder + "CoLinearity/v{}/".format(self.version)
+            ):
                 os.makedirs(self.folder + "CoLinearity/v{}/".format(self.version))
 
             # Skip if existing
-            if self.tag + "MinimumRepresentation.png" in \
-                    os.listdir(self.folder + "CoLinearity/v{}/".format(self.version)):
+            if self.tag + "MinimumRepresentation.png" in os.listdir(
+                self.folder + "CoLinearity/v{}/".format(self.version)
+            ):
                 return
 
             # Plot threshold matrix
@@ -298,8 +370,14 @@ class DataExplorer:
             fig = plt.figure(figsize=[24, 16])
             plt.title("Co-linearity matrix, threshold {:.2f}".format(threshold))
             plt.imshow(abs(self.data.corr()) < threshold, cmap="gray")
-            fig.savefig(self.folder + "CoLinearity/v{}/".format(self.version) + self.tag + "Matrix.png",
-                        format="png", dpi=300)
+            fig.savefig(
+                self.folder
+                + "CoLinearity/v{}/".format(self.version)
+                + self.tag
+                + "Matrix.png",
+                format="png",
+                dpi=300,
+            )
 
             # Minimum representation
             corr_mat = self.data.corr().abs()
@@ -308,8 +386,14 @@ class DataExplorer:
             minimal_rep = self.data.drop(self.data[col_drop], axis=1)
             fig = plt.figure(figsize=[24, 16])
             plt.imshow(abs(minimal_rep.corr()) < threshold, cmap="gray")
-            fig.savefig(self.folder + "CoLinearity/v{}/".format(self.version) + self.tag + "Minimum_Representation.png",
-                        format="png", dpi=300)
+            fig.savefig(
+                self.folder
+                + "CoLinearity/v{}/".format(self.version)
+                + self.tag
+                + "Minimum_Representation.png",
+                format="png",
+                dpi=300,
+            )
 
     def differencing(self):
         if self.plotDifferencing:
@@ -338,7 +422,9 @@ class DataExplorer:
             plt.xlabel("Lag")
             plt.yscale("log")
             plt.ylabel("Average variance")
-            fig.savefig(self.folder + "Lags/" + self.tag + "Variance.png", format="png", dpi=300)
+            fig.savefig(
+                self.folder + "Lags/" + self.tag + "Variance.png", format="png", dpi=300
+            )
 
     def complete_auto_corr(self):
         if self.plotSignalCorrelations:
@@ -347,22 +433,32 @@ class DataExplorer:
                 os.makedirs(self.folder + "Correlation/ACF/")
 
             # Difference data
-            diff_data = copy.copy(self.data)
+            diff_data = deepcopy(self.data)
             for i in range(self.differ):
                 diff_data = diff_data.diff(1)[1:]
 
             # Iterate through features
             for key in tqdm(self.data.keys()):
                 # Skip if existing
-                if self.tag + key + "_differ_" + str(self.differ) + "_v{}.png".format(self.version) in \
-                        os.listdir(self.folder + "Correlation/ACF/"):
+                if self.tag + key + "_differ_" + str(self.differ) + "_v{}.png".format(
+                    self.version
+                ) in os.listdir(self.folder + "Correlation/ACF/"):
                     continue
 
                 # Plot
                 fig = plot_acf(diff_data[key], fft=True)
                 plt.title(key)
-                fig.savefig(self.folder + "Correlation/ACF/" + self.tag + key + "_differ_" + str(self.differ) +
-                            "_v{}.png".format(self.version), format="png", dpi=300)
+                fig.savefig(
+                    self.folder
+                    + "Correlation/ACF/"
+                    + self.tag
+                    + key
+                    + "_differ_"
+                    + str(self.differ)
+                    + "_v{}.png".format(self.version),
+                    format="png",
+                    dpi=300,
+                )
                 plt.close()
 
     def partial_auto_corr(self):
@@ -374,15 +470,25 @@ class DataExplorer:
             # Iterate through features
             for key in tqdm(self.data.keys()):
                 # Skip if existing
-                if self.tag + key + "_differ_" + str(self.differ) + "_v{}.png".format(self.version) in \
-                        os.listdir(self.folder + "EDA/Correlation/PACF/"):
+                if self.tag + key + "_differ_" + str(self.differ) + "_v{}.png".format(
+                    self.version
+                ) in os.listdir(self.folder + "EDA/Correlation/PACF/"):
                     continue
 
                 # Plot
                 try:
                     fig = plot_pacf(self.data[key])
-                    fig.savefig(self.folder + "EDA/Correlation/PACF/" + self.tag + key + "_differ_" +
-                                str(self.differ) + "_v{}.png".format(self.version), format="png", dpi=300)
+                    fig.savefig(
+                        self.folder
+                        + "EDA/Correlation/PACF/"
+                        + self.tag
+                        + key
+                        + "_differ_"
+                        + str(self.differ)
+                        + "_v{}.png".format(self.version),
+                        format="png",
+                        dpi=300,
+                    )
                     plt.title(key)
                     plt.close()
                 except Exception as e:
@@ -402,8 +508,9 @@ class DataExplorer:
             # Iterate through features
             for key in tqdm(self.data.keys()):
                 # Skip if existing
-                if self.tag + key + "_differ_" + str(self.differ) + "_v{}.png".format(self.version) in \
-                        os.listdir(self.folder + folder):
+                if self.tag + key + "_differ_" + str(self.differ) + "_v{}.png".format(
+                    self.version
+                ) in os.listdir(self.folder + folder):
                     continue
 
                 # Plot
@@ -411,8 +518,17 @@ class DataExplorer:
                     fig = plt.figure(figsize=[24, 16])
                     plt.xcorr(self.data[key], y, maxlags=self.lags)
                     plt.title(key)
-                    fig.savefig(self.folder + folder + self.tag + key + "_differ_" + str(self.differ) +
-                                "_v{}.png".format(self.version), format="png", dpi=300)
+                    fig.savefig(
+                        self.folder
+                        + folder
+                        + self.tag
+                        + key
+                        + "_differ_"
+                        + str(self.differ)
+                        + "_v{}.png".format(self.version),
+                        format="png",
+                        dpi=300,
+                    )
                     plt.close()
                 except Exception as e:
                     raise ValueError(e)
@@ -426,7 +542,9 @@ class DataExplorer:
             # Iterate through features
             for key in tqdm(self.data.keys()):
                 # Skip if existing
-                if "{}{}.png".format(self.tag, key) in os.listdir(self.folder + "Scatters/v{}/".format(self.version)):
+                if "{}{}.png".format(self.tag, key) in os.listdir(
+                    self.folder + "Scatters/v{}/".format(self.version)
+                ):
                     continue
 
                 # Plot
@@ -435,8 +553,15 @@ class DataExplorer:
                 plt.ylabel(key)
                 plt.xlabel("Output")
                 plt.title("Scatter Plot " + key + " - Output")
-                fig.savefig(self.folder + "Scatters/v{}/".format(self.version) + self.tag + key + ".png",
-                            format="png", dpi=100)
+                fig.savefig(
+                    self.folder
+                    + "Scatters/v{}/".format(self.version)
+                    + self.tag
+                    + key
+                    + ".png",
+                    format="png",
+                    dpi=100,
+                )
                 plt.close(fig)
 
     def shap(self, args=None):
@@ -447,7 +572,9 @@ class DataExplorer:
                 os.makedirs(self.folder + "Features/v{}/".format(self.version))
 
             # Skip if existing
-            if self.tag + "SHAP.png" in os.listdir(self.folder + "Features/v{}/".format(self.version)):
+            if self.tag + "SHAP.png" in os.listdir(
+                self.folder + "Features/v{}/".format(self.version)
+            ):
                 return
 
             # Create model
@@ -458,13 +585,21 @@ class DataExplorer:
 
             # Calculate SHAP values
             import shap
+
             shap_values = shap.TreeExplainer(model).shap_values(self.data)
 
             # Plot
             fig = plt.figure(figsize=[8, 32])
             plt.subplots_adjust(left=0.4)
             shap.summary_plot(shap_values, self.data, plot_type="bar")
-            fig.savefig(self.folder + "Features/v{}/".format(self.version) + self.tag + "SHAP.png", format="png", dpi=300)
+            fig.savefig(
+                self.folder
+                + "Features/v{}/".format(self.version)
+                + self.tag
+                + "SHAP.png",
+                format="png",
+                dpi=300,
+            )
 
     def feature_ranking(self, **args):
         args = args if args is not None else {}
@@ -474,7 +609,9 @@ class DataExplorer:
                 os.mkdir(self.folder + "Features/v{}/".format(self.version))
 
             # Skip if existing
-            if self.tag + "RF.png" in os.listdir(self.folder + "Features/v{}/".format(self.version)):
+            if self.tag + "RF.png" in os.listdir(
+                self.folder + "Features/v{}/".format(self.version)
+            ):
                 return
 
             # Create model
@@ -490,14 +627,28 @@ class DataExplorer:
             ax.spines["bottom"].set_visible(False)
             ax.spines["top"].set_visible(False)
             ind = np.argsort(model.feature_importances_)
-            plt.barh(list(self.data.keys()[ind])[-15:], width=model.feature_importances_[ind][-15:],
-                     color="#2369ec")
-            fig.savefig(self.folder + "Features/v{}/".format(self.version) + self.tag + "RF.png", format="png", dpi=300)
+            plt.barh(
+                list(self.data.keys()[ind])[-15:],
+                width=model.feature_importances_[ind][-15:],
+                color="#2369ec",
+            )
+            fig.savefig(
+                self.folder
+                + "Features/v{}/".format(self.version)
+                + self.tag
+                + "RF.png",
+                format="png",
+                dpi=300,
+            )
             plt.close()
 
             # Store results
-            results = pd.DataFrame({"x": self.data.keys(), "score": model.feature_importances_})
-            results.to_csv(self.folder + "Features/v{}/".format(self.version) + self.tag + "RF.csv")
+            results = pd.DataFrame(
+                {"x": self.data.keys(), "score": model.feature_importances_}
+            )
+            results.to_csv(
+                self.folder + "Features/v{}/".format(self.version) + self.tag + "RF.csv"
+            )
 
     # def predictive_power_score(self):
     #     if self.plotFeatureImportance:

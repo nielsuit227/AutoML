@@ -10,38 +10,64 @@ from sklearn.datasets import make_classification, make_regression
 from sklearn.base import clone
 from sklearn.metrics import SCORERS
 
-from Amplo.Classifiers import CatBoostClassifier, LGBMClassifier, XGBClassifier, StackingClassifier
-from Amplo.Regressors import CatBoostRegressor, LGBMRegressor, XGBRegressor, StackingRegressor
+from Amplo.Classifiers import (
+    CatBoostClassifier,
+    LGBMClassifier,
+    XGBClassifier,
+    StackingClassifier,
+)
+from Amplo.Regressors import (
+    CatBoostRegressor,
+    LGBMRegressor,
+    XGBRegressor,
+    StackingRegressor,
+)
 
 
-Model = Union[CatBoostClassifier, LGBMClassifier, XGBClassifier, StackingClassifier,
-              CatBoostRegressor, LGBMRegressor, XGBRegressor, StackingRegressor]
+Model = Union[
+    CatBoostClassifier,
+    LGBMClassifier,
+    XGBClassifier,
+    StackingClassifier,
+    CatBoostRegressor,
+    LGBMRegressor,
+    XGBRegressor,
+    StackingRegressor,
+]
 
 
-setup_class_params = [CatBoostClassifier, LGBMClassifier, XGBClassifier, StackingClassifier,
-                      CatBoostRegressor, LGBMRegressor, XGBRegressor, StackingRegressor]
+setup_class_params = [
+    CatBoostClassifier,
+    LGBMClassifier,
+    XGBClassifier,
+    StackingClassifier,
+    CatBoostRegressor,
+    LGBMRegressor,
+    XGBRegressor,
+    StackingRegressor,
+]
 
 
-@pytest.fixture(scope='class', params=setup_class_params)
+@pytest.fixture(scope="class", params=setup_class_params)
 def setup_class(request):
     model = request.param
 
-    if 'Classifier' in model.__name__:
+    if "Classifier" in model.__name__:
         x, y = make_classification(n_classes=5, n_informative=15)
         is_classification = True
-    elif 'Regressor' in model.__name__:
+    elif "Regressor" in model.__name__:
         x, y = make_regression(n_informative=15)
         is_classification = False
     else:
-        raise ValueError('Invalid model requested')
+        raise ValueError("Invalid model requested")
 
-    if 'Stacking' in model.__name__:
+    if "Stacking" in model.__name__:
         if is_classification:
-            model_params = {'CatBoostClassifier': {'depth': 10}}
+            model_params = {"CatBoostClassifier": {"depth": 10}}
         else:
-            model_params = {'CatBoostRegressor': {'depth': 10}}
+            model_params = {"CatBoostRegressor": {"depth": 10}}
     else:
-        model_params = {'max_depth': 10}
+        model_params = {"max_depth": 10}
 
     request.cls._model = model
     request.cls.model_params = model_params
@@ -51,9 +77,8 @@ def setup_class(request):
     yield
 
 
-@pytest.mark.usefixtures('setup_class')
+@pytest.mark.usefixtures("setup_class")
 class TestClassifier:
-
     @pytest.fixture(autouse=True)
     def setup(self):
         # Initialize model
@@ -73,7 +98,7 @@ class TestClassifier:
         self.model.fit(self.x.to_numpy(), self.y.to_numpy())
 
     def test_trained_attr(self):
-        assert hasattr(self.model, 'trained')
+        assert hasattr(self.model, "trained")
         assert self.model.trained is False
         self.model.fit(self.x, self.y)
         assert self.model.trained is True
@@ -84,14 +109,16 @@ class TestClassifier:
 
         assert len(prediction.shape) == 1
         if self.is_classification:
-            assert np.allclose(prediction.astype('int'), prediction)
+            assert np.allclose(prediction.astype("int"), prediction)
 
     def test_predict_proba(self):
         if self.is_classification:
             self.model.fit(self.x, self.y)
             prediction = self.model.predict_proba(self.x)
 
-            assert not np.isnan(prediction).any(), 'NaN in prediction: {}'.format(prediction)
+            assert not np.isnan(prediction).any(), "NaN in prediction: {}".format(
+                prediction
+            )
             assert len(prediction.shape) == 2
             assert prediction.shape[1] == len(np.unique(self.y))
             assert np.allclose(np.sum(prediction, axis=1), 1)
@@ -112,9 +139,9 @@ class TestClassifier:
         self.model.fit(self.x, self.y)
 
         if self.is_classification:
-            scorers = ['neg_log_loss', 'accuracy', 'f1_micro']
+            scorers = ["neg_log_loss", "accuracy", "f1_micro"]
         else:
-            scorers = ['neg_mean_squared_error', 'neg_mean_absolute_error', 'r2']
+            scorers = ["neg_mean_squared_error", "neg_mean_absolute_error", "r2"]
 
         for name in scorers:
             SCORERS[name](self.model, self.x, self.y)
@@ -125,12 +152,12 @@ class TestClassifier:
             self.model.fit(x, y)
             self.model.predict(x)
             self.model.predict_proba(x)
-            SCORERS['neg_log_loss'](self.model, x, y)
-            SCORERS['accuracy'](self.model, x, y)
-            SCORERS['f1_micro'](self.model, x, y)
+            SCORERS["neg_log_loss"](self.model, x, y)
+            SCORERS["accuracy"](self.model, x, y)
+            SCORERS["f1_micro"](self.model, x, y)
 
     def test_pickleable(self):
         x, y = make_classification()
         self.model.fit(x, y)
-        joblib.dump(self.model, 'tmp.joblib')
-        os.remove('tmp.joblib')
+        joblib.dump(self.model, "tmp.joblib")
+        os.remove("tmp.joblib")

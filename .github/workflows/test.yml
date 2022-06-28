@@ -8,38 +8,76 @@ env:
   AZURE_STORAGE_STRING: ${{ secrets.AZURE_STORAGE_STRING }}
   AMPLO_PLATFORM_STRING: ${{ secrets.AMPLO_PLATFORM_STRING }}
 
-jobs:
-  build:
+jobs:    
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        group: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    steps:
+      # Checkout branch
+      - name: Checkout branch
+        uses: actions/checkout@v2
+
+      # Set python version
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.9
+
+      # Install pipenv
+      - name: Install pipenv
+        run: |
+          pip install --upgrade pip
+
+      # Attach cache
+      - id: pip-cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ hashFiles('**/requirements.txt') }}
+      
+      # Install if necessary
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-split
+
+      # Run tests
+      - name: Test Suite
+        run: |
+          pytest tests -s --cov --splits 10 --group ${{ matrix.group }}
+      
+      # Accumulate codecov
+      - name: Upload coverage
+        uses: actions/upload-artifact@v2
+        with:
+          name: coverage${{ matrix.group }}
+          path: .coverage
+      
+  coverage:
+    needs: test
     runs-on: ubuntu-latest
     steps:
-
-    # Checkout branch
-    - name: Checkout branch
-      uses: actions/checkout@v2
-
-    # Set python version
-    - name: Set up Python
-      uses: actions/setup-python@v3
-      with:
-        python-version: 3.9
-
-    # Installs dependencies
-    - name: Install dependencies
-      run : |
-        pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest
-        pip install pytest-cov
-
-    # Run tests
-    - name: Test Suite
-      run: |
-        pytest tests -s --cov=./ --cov-report=xml
-        
-    # Code coverage
-    - uses: codecov/codecov-action@v2
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
-        name: amploml-coverage # optional
-        fail_ci_if_error: true # optional (default = false)
-        verbose: true # optional (default = false)
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov
+      - name: Download all artifacts
+        uses: actions/download-artifact@v2
+      - name: Run coverage
+        run: |
+          coverage combine coverage*/.coverage*
+          coverage report --fail-under=75
+          coverage xml
+      - uses: codecov/codecov-action@v2
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
+          name: amploml-coverage # optional
+          fail_ci_if_error: true # optional (default = false)
+          verbose: true # optional (default = false)
