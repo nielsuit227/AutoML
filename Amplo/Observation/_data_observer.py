@@ -1,4 +1,5 @@
-# Copyright by Amplo
+#  Copyright (c) 2022 by Amplo.
+
 """
 Observer for checking data.
 

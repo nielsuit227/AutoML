@@ -1,0 +1,11 @@
+[tool.black]
+line-length = 88
+target-version = ["py37", "py38", "py39"]
+
+[tool.isort]
+profile = "black"
+
+# [tool.flake8]
+# ...
+# Those settings only work with 'pyproject-flake8' (pflake8). However, VSCode is yet not
+# able to use pflake8 instead of flake8.

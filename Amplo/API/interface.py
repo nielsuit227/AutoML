@@ -1,31 +1,33 @@
+#  Copyright (c) 2022 by Amplo.
+
 import re
 import warnings
-from pathlib import Path
 from copy import deepcopy
+from pathlib import Path
 
-from termcolor import cprint
 import pandas as pd
+from termcolor import cprint
 
-from Amplo import Pipeline
-from Amplo.API.storage import AzureSynchronizer
 from Amplo.API.platform import PlatformSynchronizer
+from Amplo.API.storage import AzureSynchronizer
+from Amplo.base.objects import LoggingMixin
+from Amplo.Pipeline import Pipeline
 
-__all__ = ['API']
+__all__ = ["API"]
 
 
-class API:
-
+class API(LoggingMixin):
     def __init__(
-            self,
-            local_data_dir=None,
-            download_data=True,
-            upload_model=True,
-            *,
-            teams=None,
-            machines=None,
-            services=None,
-            issues=None,
-            verbose=0,
+        self,
+        local_data_dir=None,
+        download_data=True,
+        upload_model=True,
+        *,
+        teams=None,
+        machines=None,
+        services=None,
+        issues=None,
+        verbose=1,
     ):
         """
         API for downloading data from blob storage, training models with AutoML and
@@ -52,10 +54,14 @@ class API:
         verbose : int
             Logging verbosity
         """
+        super().__init__(verbose=verbose)
 
         if local_data_dir is None:
-            warnings.warn('No local data directory provided. Falling back to using current working directory.')
-            local_data_dir = '.'
+            warnings.warn(
+                "No local data directory provided. Falling back to using current "
+                "working directory."
+            )
+            local_data_dir = "."
 
         self.dataDir = Path(local_data_dir)
         self._download_data = bool(download_data)
@@ -75,9 +81,6 @@ class API:
         self.services = self._set_azure_arg(services)
         self.issues = self._set_azure_arg(issues)
 
-        # TODO: Use Amplo`s logging instead of a print function
-        self.verbose = int(verbose)
-
     @staticmethod
     def _set_azure_arg(arg):
         """
@@ -96,9 +99,11 @@ class API:
         elif isinstance(arg, str):
             return [arg]
         elif arg is None:
-            return ['*']
+            return ["*"]
         else:
-            raise ValueError(f'List, string or None-type expected but got {type(arg)} instead.')
+            raise ValueError(
+                f"List, string or None-type expected but got {type(arg)} instead."
+            )
 
     def fit(self):
         self.sync_data()
@@ -118,25 +123,39 @@ class API:
         if not self._download_data:
             return
 
-        self.print('Downloading new data...\n', pre='\n')
+        self.logger.info("Downloading new data...")
 
         # Iterate blob data paths
-        for issue_dir, team, machine, service, issue in self._iterate_data(from_local=False, level='issue'):
+        for issue_dir, team, machine, service, issue in self._iterate_data(
+            from_local=False, level="issue"
+        ):
 
             # Logging
             if self.verbose > 0:
-                self.print('Downloading from: '
-                           f'[Team] {team} - [Machine] {machine} - [Service] {service} - [Issue] {issue}')
+                self.logger.info(
+                    f"Downloading from: [Team] {team} - [Machine] {machine} - "
+                    f"[Service] {service} - [Issue] {issue}"
+                )
 
             # Define local saving directory (note the switch of `data`s position)
-            local_issue_dir = str(self.dataDir / team / machine / service / 'data' / issue)
+            local_issue_dir = str(
+                self.dataDir / team / machine / service / "data" / issue
+            )
             # Clean spaces in path
-            local_issue_dir = re.sub(r'\s+', ' ', local_issue_dir)  # double spaces to single spaces
-            local_issue_dir = re.sub(r'^\s+', '', local_issue_dir)  # remove preceding spaces
-            local_issue_dir = re.sub(r'\s+$', '', local_issue_dir)  # remove subsequent spaces
+            local_issue_dir = re.sub(
+                r"\s+", " ", local_issue_dir
+            )  # double spaces to single spaces
+            local_issue_dir = re.sub(
+                r"^\s+", "", local_issue_dir
+            )  # remove preceding spaces
+            local_issue_dir = re.sub(
+                r"\s+$", "", local_issue_dir
+            )  # remove subsequent spaces
 
             # Synchronize all files of given issue
-            self.storage.sync_files(issue_dir, local_issue_dir)  # TODO give `last_updated` argument
+            self.storage.sync_files(
+                issue_dir, local_issue_dir
+            )  # TODO give `last_updated` argument
 
     def train_models(self, **kwargs):
         """
@@ -157,31 +176,37 @@ class API:
         if not self._train_model:
             return
 
-        self.print('Start model training...\n', pre='\n')
+        self.logger.info("Start model training...")
 
-        for service_dir, team, machine, service in self._iterate_data(from_local=True, level='service'):
+        for service_dir, team, machine, service in self._iterate_data(
+            from_local=True, level="service"
+        ):
 
-            self.print(f'Preparing data for: '
-                       f'[Team] {team} - [Machine] {machine} - [Service] {service}', pre='\n')
+            self.logger.info(
+                f"Preparing data for: "
+                f"[Team] {team} - [Machine] {machine} - [Service] {service}",
+            )
 
             # Set up directories
-            read_dir = service_dir / 'data'
-            model_dir = service_dir / 'models'
+            read_dir = service_dir / "data"
+            model_dir = service_dir / "models"
             model_dir.mkdir(exist_ok=True)
 
             # --- Prepare common data (all models will act on the essentially same data)
 
             # Set pipeline arguments
             preparing_pipeline_kwargs = dict(
-                target='labels',
+                target="labels",
                 extract_features=False,
                 balance=False,
                 grid_search_time_budget=7200,
                 grid_search_candidates=2,
             )
             preparing_pipeline_kwargs.update(kwargs)  # allow (optional) manipulation
-            preparing_pipeline_kwargs['main_dir'] = f'{model_dir}/_Data_Preparation/'
-            preparing_pipeline_kwargs['name'] = f'Preparing Pipeline ({team} - {machine} - {service})'
+            preparing_pipeline_kwargs["main_dir"] = f"{model_dir}/_Data_Preparation/"
+            preparing_pipeline_kwargs[
+                "name"
+            ] = f"Preparing Pipeline ({team} - {machine} - {service})"
 
             # Check whether new data has been added
             checker = Pipeline(no_dirs=True, **preparing_pipeline_kwargs)
@@ -192,7 +217,7 @@ class API:
             # TODO: load settings directly, if present
             checker._read_data(read_dir)  # noqa
             if not checker.has_new_training_data():
-                self.print(f'Skipped training since no new data', 'blue')
+                self.logger.info("Skipped training since no new data")
                 continue
 
             # Set up pipeline and prepare data
@@ -201,16 +226,16 @@ class API:
 
             # Select issues to iterate
             all_issues = preparing_pipeline.y_orig.unique()
-            iter_issues = all_issues if '*' in self.issues else self.issues
+            iter_issues = all_issues if "*" in self.issues else self.issues
 
             # Train one model for each issue
             for issue in iter_issues:
-                self.print(f'Training model for {issue}', 'blue')
+                self.logger.info(f"Training model for {issue}")
 
                 # Set up pipeline using a copy from the preparing pipeline
                 pipeline = deepcopy(preparing_pipeline)
-                pipeline.main_dir = f'{model_dir}/{issue}/'
-                pipeline.name = f'{team} - {machine} - {service} - {issue}'
+                pipeline.main_dir = f"{model_dir}/{issue}/"
+                pipeline.name = f"{team} - {machine} - {service} - {issue}"
 
                 # Create dirs
                 if not pipeline.no_dirs:
@@ -218,7 +243,7 @@ class API:
                     pipeline._load_version()  # noqa
 
                 # Inject model specific labels
-                new_y = pd.Series(pipeline.y_orig == issue, dtype='int32')
+                new_y = pd.Series(pipeline.y_orig == issue, dtype="int32")
                 pipeline.set_y(new_y)
                 pipeline.n_classes = 2
 
@@ -227,17 +252,18 @@ class API:
                 pipeline.conclude_fitting()
 
                 # Append to trained model arguments
-                self._trained_model_args.append([pipeline.main_dir, team, machine, service, issue, pipeline.version])
+                self._trained_model_args.append(
+                    [pipeline.main_dir, team, machine, service, issue, pipeline.version]
+                )
 
     def upload_models(self, model_args=None):
         """
-        Upload trained models or, when `model_args` provided,
-        upload given models
+        Upload trained models or, when `model_args` provided, upload given models.
 
         Parameters
         ----------
-        model_args : list, optional
-            Model arguments. List of tuples, whereas each tuple contains following info in order:
+        model_args : typing.List[list or tuple], optional
+            Model arguments. Each tuple contains following info in order:
                 - issue directory [str or Path]
                 - team [str]
                 - machine [str]
@@ -251,10 +277,14 @@ class API:
             #  and no explicit model_args have been passed.
             return
 
-        self.print('Uploading trained models...\n', pre='\n')
+        self.logger.info("Uploading trained models...")
 
         if model_args is not None and len(self._trained_model_args) > 0:
-            warnings.warn(UserWarning('An explicit list of model_args was provided despite > 1 model was trained.'))
+            warnings.warn(
+                "An explicit list of model_args was provided despite > 1 model was "
+                "trained.",
+                UserWarning,
+            )
 
         for model_args in model_args or self._trained_model_args:
             # Upload models to Amplo`s platform
@@ -262,7 +292,7 @@ class API:
 
     # --- Utilities ---
 
-    def print(self, text, fmt='yellow', pre=None):
+    def print(self, text, fmt="yellow", pre=None):
         """
         Custom printer function.
 
@@ -277,10 +307,10 @@ class API:
         """
 
         if self.verbose:
-            pre = str(pre) if pre is not None else ''
-            cprint(pre + '[AmploAPI] ' + text, fmt)
+            pre = str(pre) if pre is not None else ""
+            cprint(pre + "[AmploAPI] " + text, fmt)
 
-    def _iterate_data(self, *, from_local=True, level='issue'):
+    def _iterate_data(self, *, from_local=True, level="issue"):
         """
         Iterate over directories
 
@@ -302,46 +332,63 @@ class API:
         """
 
         # Assertions
-        assert level in ('team', 'machine', 'service', 'issue'), 'Unknown argument'
+        assert level in ("team", "machine", "service", "issue"), "Unknown argument"
 
         # Init
         parent_dir = self.dataDir if from_local else None
 
         # Iterate teams
-        for team_dir in self._iterate_directory(parent_dir, self.teams, from_local=from_local):
+        for team_dir in self._iterate_directory(
+            parent_dir, self.teams, from_local=from_local
+        ):
             info = (team_dir.name,)
 
-            if level == 'team':
+            if level == "team":
                 yield team_dir, *info
                 continue
 
             # Iterate machines
-            for machine_dir in self._iterate_directory(team_dir, self.machines, from_local=from_local):
+            for machine_dir in self._iterate_directory(
+                team_dir, self.machines, from_local=from_local
+            ):
                 info = (team_dir.name, machine_dir.name)
 
-                if level == 'machine':
+                if level == "machine":
                     yield machine_dir, *info
                     continue
 
                 # Adjust search path
-                machine_dir_ = Path(f'{machine_dir}/data/') if not from_local else machine_dir
+                machine_dir_ = (
+                    Path(f"{machine_dir}/data/") if not from_local else machine_dir
+                )
 
                 # Iterate services
-                for service_dir in self._iterate_directory(machine_dir_, self.services, from_local=from_local):
+                for service_dir in self._iterate_directory(
+                    machine_dir_, self.services, from_local=from_local
+                ):
                     info = (team_dir.name, machine_dir.name, service_dir.name)
 
-                    if level == 'service':
+                    if level == "service":
                         yield service_dir, *info
                         continue
 
                     # Adjust search path
-                    service_dir_ = Path(f'{service_dir}/data/') if from_local else service_dir
+                    service_dir_ = (
+                        Path(f"{service_dir}/data/") if from_local else service_dir
+                    )
 
                     # Iterate issues
-                    for issue_dir in self._iterate_directory(service_dir_, self.issues, from_local=from_local):
-                        info = (team_dir.name, machine_dir.name, service_dir.name, issue_dir.name)
+                    for issue_dir in self._iterate_directory(
+                        service_dir_, self.issues, from_local=from_local
+                    ):
+                        info = (
+                            team_dir.name,
+                            machine_dir.name,
+                            service_dir.name,
+                            issue_dir.name,
+                        )
 
-                        assert level == 'issue'
+                        assert level == "issue"
                         yield issue_dir, *info
 
     def _iterate_directory(self, parent_dir=None, selection=None, from_local=True):
@@ -371,35 +418,38 @@ class API:
 
         # Input checks
         if not isinstance(parent_dir, (str, Path)):
-            err = ValueError(f'Invalid argument type: {type(parent_dir)}')
+            err = ValueError(f"Invalid argument type: {type(parent_dir)}")
             if from_local:
                 raise err
             elif parent_dir is not None:
                 raise err
         if from_local and not Path(parent_dir).exists():
-            raise FileNotFoundError(f'Directory does not exist: {parent_dir}')
+            raise FileNotFoundError(f"Directory does not exist: {parent_dir}")
         if selection is not None:
-            if not hasattr(selection, '__iter__'):
-                raise ValueError(f'Selection is not iterable: {selection}')
+            if not hasattr(selection, "__iter__"):
+                raise ValueError(f"Selection is not iterable: {selection}")
             elif not all(isinstance(sel, str) for sel in selection):
-                raise ValueError(f'Selection must be an iterable of strings.')
+                raise ValueError("Selection must be an iterable of strings.")
 
         # Make selection regex-able
         if isinstance(selection, str):
             selection = [selection]
-        if selection is None or any(sel in ('*', '.*') for sel in selection):
-            selection = ['.*']
+        if selection is None or any(sel in ("*", ".*") for sel in selection):
+            selection = [".*"]
         else:
-            selection = [sel + '$' for sel in selection]
+            selection = [sel + "$" for sel in selection]
 
         # Define sorted subdirectory iterator
         if from_local:
             subdirectories = sorted(
-                child.resolve() for child in Path(parent_dir).iterdir()
-                if child.is_dir())
+                child.resolve()
+                for child in Path(parent_dir).iterdir()
+                if child.is_dir()
+            )
         else:
             subdirectories = sorted(
-                Path(child) for child in self.storage.get_dir_paths(parent_dir))
+                Path(child) for child in self.storage.get_dir_paths(parent_dir)
+            )
 
         # Yield matching subdirectories
         for subdir in subdirectories:

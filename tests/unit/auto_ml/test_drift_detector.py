@@ -1,11 +1,20 @@
+#  Copyright (c) 2022 by Amplo.
+
 import json
 import warnings
-import scipy.stats
-import numpy as np
 
-from Amplo.Utils.testing import (DummyDataSampler, make_data, make_cat_data, make_num_data)
+import numpy as np
+import pytest
+import scipy.stats
+
 from Amplo.AutoML import DriftDetector
 from Amplo.AutoML.DriftDetector import DataDriftWarning
+from Amplo.Utils.testing import (
+    DummyDataSampler,
+    make_cat_data,
+    make_data,
+    make_num_data,
+)
 
 
 class DummyPredictor(DummyDataSampler):
@@ -14,7 +23,6 @@ class DummyPredictor(DummyDataSampler):
 
 
 class TestDriftDetector:
-
     def test_distribution_fits(self):
         # Setup
         ref, cols = make_num_data(500)
@@ -24,20 +32,24 @@ class TestDriftDetector:
 
         # Checks
         assert len(drift.check(test)) == 0, "Test data found inconsistent"
-        assert len(drift.check(ref.max() + 1)) == len(ref.columns), "Maxima not detected"
-        assert len(drift.check(ref.min() - 1)) == len(ref.columns), "Minima not detected"
+        assert len(drift.check(ref.max() + 1)) == len(
+            ref.columns
+        ), "Maxima not detected"
+        assert len(drift.check(ref.min() - 1)) == len(
+            ref.columns
+        ), "Minima not detected"
 
     def test_categorical(self):
-        df, cols = make_cat_data(10, list('abcd'))
+        df, cols = make_cat_data(10, list("abcd"))
         drift = DriftDetector(**cols)
         drift.fit(df)
         for col in df.columns:
-            assert col in drift.bins, f'Column \'{col}\' rejected'
+            assert col in drift.bins, f"Column '{col}' rejected"
             assert drift.bins[col] == df[col].value_counts().to_dict()
 
     def test_add_bins(self):
-        yp, _ = make_num_data(100, 'randint::0::2')
-        df, cols = make_cat_data(10, list('abcd'))
+        yp, _ = make_num_data(100, "randint::0::2")
+        df, cols = make_cat_data(10, list("abcd"))
         drift = DriftDetector(**cols)
         drift.fit(df)
 
@@ -48,11 +60,14 @@ class TestDriftDetector:
         # Test actual adding
         new_bins = drift.add_bins(drift.bins, df)
         for col in df.columns:
-            assert col in new_bins, f'Column \'{col}\' rejected'
-            assert new_bins[col] == {key: 2 * value for key, value in df[col].value_counts().to_dict().items()}
+            assert col in new_bins, f"Column '{col}' rejected"
+            assert new_bins[col] == {
+                key: 2 * value
+                for key, value in df[col].value_counts().to_dict().items()
+            }
 
     def test_storable(self):
-        df, cols = make_data(10, cat_choices=list('abc'), num_dists='norm')
+        df, cols = make_data(10, cat_choices=list("abc"), num_dists="norm")
         drift = DriftDetector(**cols)
         drift.fit(df)
         json.dumps(drift.bins)
@@ -62,11 +77,18 @@ class TestDriftDetector:
         drift.add_output_bins(old, pred)
 
     def test_no_drift_warning(self):
-        """Ensure that minor changes in data do not trigger warnings."""
+        """
+        Ensure that minor changes in data do not trigger warnings.
+        """
         # Create dummy data
-        data_1, cols_1 = make_data(500, num_dists=['uniform', 'norm'], cat_choices=[list('abc'), list('abc')])
-        data_2, cols_2 = make_data(10, num_dists=[scipy.stats.gamma(1), scipy.stats.beta(1, 2)],
-                                   cat_choices=[list('abc'), list('xyz')])
+        data_1, cols_1 = make_data(
+            500, num_dists=["uniform", "norm"], cat_choices=[list("abc"), list("abc")]
+        )
+        data_2, cols_2 = make_data(
+            10,
+            num_dists=[scipy.stats.gamma(1), scipy.stats.beta(1, 2)],
+            cat_choices=[list("abc"), list("xyz")],
+        )
 
         # Create dummy predictors
         dummy_model_1 = DummyPredictor()
@@ -83,17 +105,16 @@ class TestDriftDetector:
             drift.check(data_1)
             # Check drift on output
             drift.check_output(dummy_model_1, data_1)
-        if any(issubclass(warning.category, DataDriftWarning) for warning in caught_warnings):
-            raise AssertionError('Unnecessary DataDriftWarning detected')
+        if any(
+            issubclass(warning.category, DataDriftWarning)
+            for warning in caught_warnings
+        ):
+            raise AssertionError("Unnecessary DataDriftWarning detected")
 
         # Assert that DataDriftWarning occurs when given new data
-        with warnings.catch_warnings(record=True) as caught_warnings:
+        with pytest.warns(DataDriftWarning):
             drift.check(data_2)
-        if not any(issubclass(warning.category, DataDriftWarning) for warning in caught_warnings):
-            raise AssertionError('No DataDriftWarning detected')
 
         # Assert that DataDriftWarning occurs when given new model
-        with warnings.catch_warnings(record=True) as caught_warnings:
+        with pytest.warns(DataDriftWarning):
             drift.check_output(dummy_model_2, data_2)
-        if not any(issubclass(warning.category, DataDriftWarning) for warning in caught_warnings):
-            raise AssertionError('No DataDriftWarning detected')

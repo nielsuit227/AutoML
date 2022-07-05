@@ -1,3 +1,5 @@
+#  Copyright (c) 2022 by Amplo.
+
 import copy
 import itertools
 import json
