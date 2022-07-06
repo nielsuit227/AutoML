@@ -11,9 +11,9 @@ import numpy as np
 import pandas as pd
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
-from Amplo.base import BaseTransformer, LoggingMixin
 from Amplo.Utils.data import clean_keys
 from Amplo.Utils.utils import check_dtypes
+from Amplo.base import BaseTransformer, LoggingMixin
 
 __all__ = [
     "sanitize_series",
@@ -129,7 +129,7 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin):
         assert not [  # important for `raw_features_` attribute to work properly
             col for col in x.columns if "__" in col
         ], "Cleaned column names should not have double underscores in it."
-        if len(x.columns) != x.columns.nunique():
+        if any(x.columns.duplicated()):
             raise ValueError("Feature column names are not unique.")
 
         # Sanitize values
