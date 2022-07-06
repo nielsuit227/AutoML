@@ -12,7 +12,10 @@ import pandas as pd
 from sklearn.cluster import MiniBatchKMeans
 from tqdm import tqdm
 
-from Amplo.AutoML.feature_processing._base import BaseFeatureExtractor, sanitize_dataframe
+from Amplo.AutoML.feature_processing._base import (
+    BaseFeatureExtractor,
+    sanitize_dataframe,
+)
 
 __all__ = ["StaticFeatureExtractor"]
 
@@ -126,7 +129,7 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
 
     @property
     def cross_features_(self):
-        out = [str(c) for c in self.features_ if re.search("__(mul|div)__", c)]
+        out = [str(c) for c in self.features_ if re.search("__(mul|div|x|d)__", c)]
         return sorted(out)
 
     def _fit_transform_cross_features(self, x, y, update_baseline=True):
@@ -186,14 +189,27 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
 
         x_out = []
         for feature_name in self.cross_features_:
+            # Deprecation support
+            if "__x__" in feature_name:
+                col_a, col_b = feature_name.split("__x__")
+                feat = x[col_a] * x[col_b]
+                x_out += [feat.rename(feature_name)]
+            elif "__d__" in feature_name:
+                col_a, col_b = feature_name.split("__d__")
+                feat = x[col_a] / x[col_b].replace(0, -1e-10)
+                x_out += [feat.rename(feature_name)]
+            # New names
             if "__mul__" in feature_name:
                 col_a, col_b = feature_name.split("__mul__")
                 feat = x[col_a] * x[col_b]
                 x_out += [feat.rename(feature_name)]
-            else:
+            elif "__div__" in feature_name:
                 col_a, col_b = feature_name.split("__div__")
                 feat = x[col_a] / x[col_b].replace(0, -1e-10)
                 x_out += [feat.rename(feature_name)]
+            else:
+                raise ValueError(f"Cross feature not recognized: {feature_name}")
+
         x_out = pd.concat(x_out, axis=1)
 
         assert set(self.cross_features_) == set(
