@@ -91,7 +91,7 @@ def clean_feature_name(feature_name):
     """
     # Remove non-numeric and non-alphabetic characters.
     # Assert single underscores and remove underscores in prefix and suffix.
-    return re.sub("([^a-z0-9]|_)+", "_", feature_name.lower()).strip("_")
+    return re.sub("([^a-z0-9]|_)+", "_", str(feature_name).lower()).strip("_")
 
 
 def deprecated(reason):
