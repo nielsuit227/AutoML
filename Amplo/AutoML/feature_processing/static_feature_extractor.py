@@ -199,7 +199,7 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
                 feat = x[col_a] / x[col_b].replace(0, -1e-10)
                 x_out += [feat.rename(feature_name)]
             # New names
-            if "__mul__" in feature_name:
+            elif "__mul__" in feature_name:
                 col_a, col_b = feature_name.split("__mul__")
                 feat = x[col_a] * x[col_b]
                 x_out += [feat.rename(feature_name)]
