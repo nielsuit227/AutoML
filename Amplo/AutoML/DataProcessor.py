@@ -8,6 +8,7 @@ from sklearn.preprocessing import LabelEncoder
 
 from Amplo.Utils.data import clean_keys
 from Amplo.Utils.logging import logger
+from Amplo.Utils.utils import clean_feature_name
 
 
 class DataProcessor:
@@ -491,7 +492,10 @@ class DataProcessor:
             self.data = data
 
         for key in self.cat_cols:
-            # Todo somehow the dummies are longer than the original
+            # Clean the categorical variables
+            self.data[key] = self.data[key].apply(clean_feature_name)
+
+            # Get dummies, convert & store
             dummies = pd.get_dummies(
                 self.data[key], prefix=key, dummy_na=self.data[key].isna().sum() > 0
             )
@@ -507,9 +511,15 @@ class DataProcessor:
             self.data = data
 
         for key in self.cat_cols:
+            # Clean column
+            self.data[key] = self.data[key].apply(clean_feature_name)
+
+            # Transform
             value = self.dummies[key]
             dummies = [i[len(key) + 1 :] for i in value]
-            self.data[value] = np.equal.outer(self.data[key].values, dummies) * 1
+            self.data[value] = (
+                np.equal.outer(self.data[key].astype("str").values, dummies) * 1
+            )
             self.data = self.data.drop(key, axis=1)
         return self.data
 
