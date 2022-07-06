@@ -1,35 +1,35 @@
 import re
 import warnings
+
 import numpy as np
 import pandas as pd
-
-from sklearn.preprocessing import LabelEncoder
 from sklearn.exceptions import NotFittedError
+from sklearn.preprocessing import LabelEncoder
 
 from Amplo.Utils.data import clean_keys
 from Amplo.Utils.logging import logger
 
 
 class DataProcessor:
-
-    def __init__(self,
-                 target: str = None,
-                 float_cols: list = None,
-                 int_cols: list = None,
-                 date_cols: list = None,
-                 cat_cols: list = None,
-                 include_output: bool = True,
-                 missing_values: str = "interpolate",
-                 outlier_removal: str = "clip",
-                 z_score_threshold: int = 4,
-                 remove_constants: bool = True,
-                 version: int = 1,
-                 verbosity: int = 1,
-                 ):
+    def __init__(
+        self,
+        target: str = None,
+        float_cols: list = None,
+        int_cols: list = None,
+        date_cols: list = None,
+        cat_cols: list = None,
+        include_output: bool = True,
+        missing_values: str = "interpolate",
+        outlier_removal: str = "clip",
+        z_score_threshold: int = 4,
+        remove_constants: bool = True,
+        version: int = 1,
+        verbosity: int = 1,
+    ):
         """
         Preprocessing Class. Cleans a dataset into a workable format.
-        Deals with Outliers, Missing Values, duplicate rows, data types (floats, categorical and
-        dates), Not a Numbers, Infinities.
+        Deals with Outliers, Missing Values, duplicate rows, data types (floats,
+        categorical and dates), Not a Numbers, Infinities.
 
         Parameters
         ----------
@@ -60,21 +60,45 @@ class DataProcessor:
         """
         # Tests
         mis_values_algo = ["remove_rows", "remove_cols", "interpolate", "mean", "zero"]
-        assert missing_values in mis_values_algo, \
-            "Missing values algorithm not implemented, pick from {}".format(", ".join(mis_values_algo))
+        if missing_values not in mis_values_algo:
+            raise ValueError(
+                "Missing values algorithm not implemented, pick from"
+                f" {mis_values_algo}"
+            )
         out_rem_algo = ["quantiles", "z-score", "clip", "none"]
-        assert outlier_removal in out_rem_algo, \
-            "Outlier Removal algorithm not implemented, pick from {}".format(", ".join(out_rem_algo))
+        if outlier_removal not in out_rem_algo:
+            raise ValueError(
+                "Outlier Removal algorithm not implemented, pick from"
+                f" {out_rem_algo}"
+            )
 
         # Arguments
         self.version = version
         self.includeOutput = include_output
-        self.target = target if target is None else re.sub("[^a-z0-9]", "_", target.lower())
-        self.float_cols = [] if float_cols is None else [re.sub("[^a-z0-9]", "_", fc.lower()) for fc in float_cols]
-        self.int_cols = [] if int_cols is None else [re.sub("[^a-z0-9]", "_", ic.lower()) for ic in int_cols]
+        self.target = (
+            target if target is None else re.sub("[^a-z0-9]", "_", target.lower())
+        )
+        self.float_cols = (
+            []
+            if float_cols is None
+            else [re.sub("[^a-z0-9]", "_", fc.lower()) for fc in float_cols]
+        )
+        self.int_cols = (
+            []
+            if int_cols is None
+            else [re.sub("[^a-z0-9]", "_", ic.lower()) for ic in int_cols]
+        )
         self.num_cols = self.float_cols + self.int_cols
-        self.cat_cols = [] if cat_cols is None else [re.sub("[^a-z0-9]", "_", cc.lower()) for cc in cat_cols]
-        self.date_cols = [] if date_cols is None else [re.sub("[^a-z0-9]", "_", dc.lower()) for dc in date_cols]
+        self.cat_cols = (
+            []
+            if cat_cols is None
+            else [re.sub("[^a-z0-9]", "_", cc.lower()) for cc in cat_cols]
+        )
+        self.date_cols = (
+            []
+            if date_cols is None
+            else [re.sub("[^a-z0-9]", "_", dc.lower()) for dc in date_cols]
+        )
         if self.target in self.num_cols:
             self.num_cols.remove(self.target)
 
@@ -105,7 +129,8 @@ class DataProcessor:
     def _fit_transform(self, data: pd.DataFrame, fit=False) -> "DataProcessor":
         """
         Wraps behavior of both, fitting and transforming the DataProcessor.
-        The function basically reduces duplicated code fragments of `self.fit_transform` and `self.transform`.
+        The function basically reduces duplicated code fragments of `self.fit_transform`
+         and `self.transform`.
 
         Parameters
         ----------
@@ -126,7 +151,12 @@ class DataProcessor:
         self._impute_columns()
 
         # Remove target
-        if fit and not self.includeOutput and self.target is not None and self.target in self.data:
+        if (
+            fit
+            and not self.includeOutput
+            and self.target is not None
+            and self.target in self.data
+        ):
             self.data = self.data.drop(self.target, axis=1)
 
         if fit:
@@ -171,20 +201,26 @@ class DataProcessor:
             Cleaned input data
         """
         if self.verbosity > 0:
-            logger.info(f"Data Cleaning Started, ({len(data)} x {len(data.keys())}) samples")
+            logger.info(
+                f"Data Cleaning Started, ({len(data)} x {len(data.keys())}) samples"
+            )
 
         self._fit_transform(data, fit=True)
 
         # Finish
         self.is_fitted = True
         if self.verbosity > 0:
-            logger.info(f"Processing completed, ({len(self.data)} x {len(self.data.keys())}) samples returned")
+            logger.info(
+                f"Processing completed, ({len(self.data)} x {len(self.data.keys())})"
+                " samples returned"
+            )
 
         return self.data
 
     def transform(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Function that takes existing settings (including dummies), and transforms new data.
+        Function that takes existing settings (including dummies), and transforms new
+        data.
 
         Parameters
         ----------
@@ -196,7 +232,8 @@ class DataProcessor:
         pd.DataFrame
             Cleaned input data
         """
-        assert self.is_fitted, "Transform only available for fitted objects, run .fit_transform() first."
+        if not self.is_fitted:
+            raise ValueError("Transform only available for fitted objects.")
 
         self._fit_transform(data, fit=False)
 
@@ -228,7 +265,7 @@ class DataProcessor:
                 "removed_constant_columns": self.removedConstantColumns,
                 "removed_duplicate_rows": self.removedDuplicateRows,
                 "removed_duplicate_columns": self.removedDuplicateColumns,
-            }
+            },
         }
         return settings
 
@@ -245,20 +282,39 @@ class DataProcessor:
         self.missing_values = settings.get("missing_values", [])
         self.outlier_removal = settings.get("outlier_removal", [])
         self.z_score_threshold = settings.get("z_score_threshold", [])
-        self._means = None if settings["_means"] is None else pd.read_json(settings["_means"], typ="series")
-        self._stds = None if settings["_stds"] is None else pd.read_json(settings["_stds"], typ="series")
-        self._q1 = None if settings["_q1"] is None else pd.read_json(settings["_q1"], typ="series")
-        self._q3 = None if settings["_q3"] is None else pd.read_json(settings["_q3"], typ="series")
+        self._means = (
+            None
+            if settings["_means"] is None
+            else pd.read_json(settings["_means"], typ="series")
+        )
+        self._stds = (
+            None
+            if settings["_stds"] is None
+            else pd.read_json(settings["_stds"], typ="series")
+        )
+        self._q1 = (
+            None
+            if settings["_q1"] is None
+            else pd.read_json(settings["_q1"], typ="series")
+        )
+        self._q3 = (
+            None
+            if settings["_q3"] is None
+            else pd.read_json(settings["_q3"], typ="series")
+        )
         self.dummies = settings.get("dummies", {})
         self.is_fitted = True
 
     def infer_data_types(self, data=None):
         """
-        In case no data types are provided, this function infers the most likely data types
+        In case no data types are provided, this function infers the most likely data
+        types
         """
         if len(self.cat_cols) == len(self.num_cols) == len(self.date_cols) == 0:
             # First cleanup
-            self.data = self.data.infer_objects() if data is None else data.infer_objects()
+            self.data = (
+                self.data.infer_objects() if data is None else data.infer_objects()
+            )
 
             # Iterate through keys
             for key in self.data.keys():
@@ -302,7 +358,9 @@ class DataProcessor:
                 elif pd.api.types.is_object_dtype(self.data[key]):
 
                     # Check numerical
-                    numeric = pd.to_numeric(self.data[key], errors="coerce", downcast="integer")
+                    numeric = pd.to_numeric(
+                        self.data[key], errors="coerce", downcast="integer"
+                    )
                     if numeric.isna().sum() < len(self.data) * 0.3:
                         # Float
                         if pd.api.types.is_float_dtype(numeric):
@@ -323,8 +381,11 @@ class DataProcessor:
                         continue
 
                     # Check date (random subsample as it's expensive)
-                    date = pd.to_datetime(self.data[key].astype("str"),
-                                          errors="coerce", infer_datetime_format=True)
+                    date = pd.to_datetime(
+                        self.data[key].astype("str"),
+                        errors="coerce",
+                        infer_datetime_format=True,
+                    )
                     if date.isna().sum() < 0.3 * len(self.data):
                         self.date_cols.append(key)
                         self.data[key] = date
@@ -349,12 +410,17 @@ class DataProcessor:
 
             # Print
             if self.verbosity > 0:
-                logger.info(f"Found {len(self.int_cols)} integer, {len(self.float_cols)} float, {len(self.cat_cols)} "
-                      f"categorical and {len(self.date_cols)} datetime columns")
+                logger.info(
+                    f"Found {len(self.int_cols)} integer, {len(self.float_cols)} float,"
+                    " {len(self.cat_cols)} "
+                    f"categorical and {len(self.date_cols)} datetime columns"
+                )
 
         return
 
-    def convert_data_types(self, data: pd.DataFrame = None, fit_categorical: bool = True) -> pd.DataFrame:
+    def convert_data_types(
+        self, data: pd.DataFrame = None, fit_categorical: bool = True
+    ) -> pd.DataFrame:
         """
         Cleans up the data types of all columns.
 
@@ -376,26 +442,41 @@ class DataProcessor:
 
         # Datetime columns
         for key in self.date_cols:
-            self.data.loc[:, key] = pd.to_datetime(self.data[key], errors="coerce", infer_datetime_format=True, utc=True)
+            self.data.loc[:, key] = pd.to_datetime(
+                self.data[key], errors="coerce", infer_datetime_format=True, utc=True
+            )
 
         # Integer columns
         for key in self.int_cols:
-            self.data.loc[:, key] = pd.to_numeric(self.data[key], errors="coerce", downcast="integer")
+            self.data.loc[:, key] = pd.to_numeric(
+                self.data[key], errors="coerce", downcast="integer"
+            )
 
         # Float columns
         for key in self.float_cols:
-            self.data.loc[:, key] = pd.to_numeric(self.data[key], errors="coerce", downcast="float")
+            self.data.loc[:, key] = pd.to_numeric(
+                self.data[key], errors="coerce", downcast="float"
+            )
 
         # Categorical columns
         if fit_categorical:
             self.data = self._fit_cat_cols()
         else:
-            assert self.is_fitted, ".convert_data_types() was called with fit_categorical=False, while categorical "\
-                                   "encoder is not yet fitted."
+            assert self.is_fitted, (
+                ".convert_data_types() was called with fit_categorical=False, while "
+                "categorical encoder is not yet fitted."
+            )
             self.data = self._transform_cat_cols()
 
-        # We need everything to become numeric, so all that is not mentioned will be handled as numeric
-        all_cols = self.float_cols + self.int_cols + self.date_cols + self.cat_cols + [self.target]
+        # We need everything to become numeric, so all that is not mentioned will be
+        # handled as numeric
+        all_cols = (
+            self.float_cols
+            + self.int_cols
+            + self.date_cols
+            + self.cat_cols
+            + [self.target]
+        )
         for key in self.data.keys():
             if key not in all_cols:
                 self.data.loc[:, key] = pd.to_numeric(self.data[key], errors="coerce")
@@ -411,7 +492,9 @@ class DataProcessor:
 
         for key in self.cat_cols:
             # Todo somehow the dummies are longer than the original
-            dummies = pd.get_dummies(self.data[key], prefix=key, dummy_na=self.data[key].isna().sum() > 0)
+            dummies = pd.get_dummies(
+                self.data[key], prefix=key, dummy_na=self.data[key].isna().sum() > 0
+            )
             self.data = pd.concat([self.data.drop(key, axis=1), dummies], axis=1)
             self.dummies[key] = dummies.keys().tolist()
         return self.data
@@ -425,12 +508,14 @@ class DataProcessor:
 
         for key in self.cat_cols:
             value = self.dummies[key]
-            dummies = [i[len(key) + 1:] for i in value]
+            dummies = [i[len(key) + 1 :] for i in value]
             self.data[value] = np.equal.outer(self.data[key].values, dummies) * 1
             self.data = self.data.drop(key, axis=1)
         return self.data
 
-    def remove_duplicates(self, data: pd.DataFrame = None, rows: bool = True) -> pd.DataFrame:
+    def remove_duplicates(
+        self, data: pd.DataFrame = None, rows: bool = True
+    ) -> pd.DataFrame:
         """
         Removes duplicate columns and rows.
 
@@ -460,9 +545,13 @@ class DataProcessor:
         # Note
         self.removedDuplicateColumns = n_columns - len(self.data.keys())
         self.removedDuplicateRows = n_rows - len(self.data)
-        if self.verbosity > 0 or (self.removedDuplicateColumns != 0 or self.removedDuplicateRows != 0):
-            logger.info(f"Removed {self.removedDuplicateColumns} duplicate columns and {self.removedDuplicateRows} "
-                  f"duplicate rows")
+        if self.verbosity > 0 or (
+            self.removedDuplicateColumns != 0 or self.removedDuplicateRows != 0
+        ):
+            logger.info(
+                f"Removed {self.removedDuplicateColumns} duplicate columns and"
+                f" {self.removedDuplicateRows} duplicate rows"
+            )
 
         return self.data
 
@@ -476,8 +565,11 @@ class DataProcessor:
 
         # Remove Constants
         if self.removeConstants:
-            const_cols = [col for col in self.data
-                          if self.data[col].nunique() == 1 and col != self.target]
+            const_cols = [
+                col
+                for col in self.data
+                if self.data[col].nunique() == 1 and col != self.target
+            ]
             self.data = self.data.drop(columns=const_cols)
 
         # Note
@@ -505,7 +597,9 @@ class DataProcessor:
             self._stds = self.data[self.num_cols].std(skipna=True, numeric_only=True)
             self._stds[self._stds == 0] = 1
 
-    def remove_outliers(self, data: pd.DataFrame = None, fit: bool = True) -> pd.DataFrame:
+    def remove_outliers(
+        self, data: pd.DataFrame = None, fit: bool = True
+    ) -> pd.DataFrame:
         """
         Removes outliers
         """
@@ -516,26 +610,44 @@ class DataProcessor:
         if fit:
             self.fit_outliers(self.data)
         else:
-            assert self.is_fitted, ".remove_outliers() is called with fit=False, yet the object isn't fitted yet."
+            if not self.is_fitted:
+                raise ValueError(
+                    ".remove_outliers() is called with fit=False, yet the object isn't"
+                    " fitted yet."
+                )
 
         # With Quantiles
         if self.outlier_removal == "quantiles":
-            self.removedOutliers = ((self.data[self.num_cols] > self._q3).sum().sum() +
-                                    (self.data[self.num_cols] < self._q1).sum().sum()).tolist()
-            self.data[self.num_cols] = self.data[self.num_cols].mask(self.data[self.num_cols] < self._q1)
-            self.data[self.num_cols] = self.data[self.num_cols].mask(self.data[self.num_cols] > self._q3)
+            self.removedOutliers = (
+                (self.data[self.num_cols] > self._q3).sum().sum()
+                + (self.data[self.num_cols] < self._q1).sum().sum()
+            ).tolist()
+            self.data[self.num_cols] = self.data[self.num_cols].mask(
+                self.data[self.num_cols] < self._q1
+            )
+            self.data[self.num_cols] = self.data[self.num_cols].mask(
+                self.data[self.num_cols] > self._q3
+            )
 
         # With z-score
         elif self.outlier_removal == "z-score":
             z_score = abs((self.data[self.num_cols] - self._means) / self._stds)
-            self.removedOutliers = (z_score > self.z_score_threshold).sum().sum().tolist()
-            self.data[self.num_cols] = self.data[self.num_cols].mask(z_score > self.z_score_threshold)
+            self.removedOutliers = (
+                (z_score > self.z_score_threshold).sum().sum().tolist()
+            )
+            self.data[self.num_cols] = self.data[self.num_cols].mask(
+                z_score > self.z_score_threshold
+            )
 
         # With clipping
         elif self.outlier_removal == "clip":
-            self.removedOutliers = ((self.data[self.num_cols] > 1e12).sum().sum() +
-                                    (self.data[self.num_cols] < -1e12).sum().sum()).tolist()
-            self.data[self.num_cols] = self.data[self.num_cols].clip(lower=-1e12, upper=1e12)
+            self.removedOutliers = (
+                (self.data[self.num_cols] > 1e12).sum().sum()
+                + (self.data[self.num_cols] < -1e12).sum().sum()
+            ).tolist()
+            self.data[self.num_cols] = self.data[self.num_cols].clip(
+                lower=-1e12, upper=1e12
+            )
         return self.data
 
     def remove_missing_values(self, data: pd.DataFrame = None) -> pd.DataFrame:
@@ -569,7 +681,9 @@ class DataProcessor:
         elif self.missing_values == "interpolate":
 
             # Columns which are present with >10% missing values are not interpolated
-            zero_keys = self.data.keys()[self.data.isna().sum() / len(self.data) > 0.1].tolist()
+            zero_keys = self.data.keys()[
+                self.data.isna().sum() / len(self.data) > 0.1
+            ].tolist()
 
             # Get all non-date_cols & interpolate
             ik = np.setdiff1d(self.data.keys().to_list(), self.date_cols + zero_keys)
@@ -582,11 +696,6 @@ class DataProcessor:
                     ints = pd.Series(self.data[key].values.astype("int64"))
                     ints[ints < 0] = np.nan
                     self.data[key] = pd.to_datetime(ints.interpolate(), unit="ns")
-
-                    # Uses date range (fixed interval)
-                    # dr = pd.date_range(self.data[key].min(), self.data[key].max(), len(self.data))
-                    # if (self.data[key] == dr).sum() > len(self.data) - self.data[key].isna().sum():
-                    #     self.data[key] = dr
 
             # Fill rest (date & more missing values cols)
             if self.data.isna().sum().sum() != 0:
@@ -614,7 +723,9 @@ class DataProcessor:
 
         for key in self.int_cols:
             if key in self.data:
-                self.data[key] = pd.to_numeric(self.data[key], errors="coerce", downcast="integer")
+                self.data[key] = pd.to_numeric(
+                    self.data[key], errors="coerce", downcast="integer"
+                )
         return self.data
 
     def _code_target_column(self, fit):
@@ -633,7 +744,9 @@ class DataProcessor:
         labels = self.data.loc[:, self.target]
 
         # Encode
-        self.data.loc[:, self.target] = self.encode_labels(labels, fit=fit, warn_unencodable=False)
+        self.data.loc[:, self.target] = self.encode_labels(
+            labels, fit=fit, warn_unencodable=False
+        )
 
     def encode_labels(self, labels, *, fit=True, warn_unencodable=True):
         """Encode labels to numerical dtype
@@ -655,7 +768,8 @@ class DataProcessor:
         Raises
         ------
         NotFittedError
-            When no label encoder has yet been trained, i.e. `self._label_encodings` is empty
+            When no label encoder has yet been trained, i.e. `self._label_encodings` is
+            empty
         """
         # Convert to pd.Series for convenience
         labels = pd.Series(labels)
@@ -677,7 +791,11 @@ class DataProcessor:
 
         # It"s probably a regression task, thus no encoding needed
         if warn_unencodable:
-            warnings.warn(UserWarning("Labels are probably for regression. No encoding happened..."))
+            warnings.warn(
+                UserWarning(
+                    "Labels are probably for regression. No encoding happened..."
+                )
+            )
         return labels.to_numpy()
 
     def decode_labels(self, labels, *, except_not_fitted=True):
@@ -693,7 +811,8 @@ class DataProcessor:
         Returns
         -------
         np.ndarray
-            Decoded labels or original labels if label encoder is not fitted and `except_not_fitted` is True
+            Decoded labels or original labels if label encoder is not fitted and
+            `except_not_fitted` is True
 
         Raises
         ------
@@ -702,8 +821,10 @@ class DataProcessor:
         """
         try:
             if len(self._label_encodings) == 0:
-                raise NotFittedError("Encoder it not yet fitted. Try first calling `encode_target` "
-                                     "to set an encoding")
+                raise NotFittedError(
+                    "Encoder it not yet fitted. Try first calling `encode_target` "
+                    "to set an encoding"
+                )
             encoder = LabelEncoder()
             encoder.classes_ = np.array(self._label_encodings)
             return encoder.inverse_transform(labels)
@@ -716,7 +837,8 @@ class DataProcessor:
     def _impute_columns(self, data: pd.DataFrame = None) -> pd.DataFrame:
         """
         *** For production ***
-        If a dataset is missing certain columns, this function looks at all registered columns and fills them with
+        If a dataset is missing certain columns, this function looks at all registered
+        columns and fills them with
         zeros.
         """
         if data is not None:
@@ -733,9 +855,9 @@ class DataProcessor:
 
     def prune_features(self, features: list):
         """
-        For use with AutoML.Pipeline. We practically never use all features. Yet this processor imputes any missing
-        features. This causes redundant operations, memory, and warnings. This function prunes the features to avoid
-        that.
+        For use with AutoML.Pipeline. We practically never use all features. Yet this
+        processor imputes any missing features. This causes redundant operations,
+        memory, and warnings. This function prunes the features to avoid that.
 
         parameters
         ----------
@@ -751,10 +873,10 @@ class DataProcessor:
 
 
 class DataProcesser(DataProcessor):
-
     def __init__(self, *args, **kwargs):
         warnings.warn(
-            "DataProcesser was renamed to DataProcessor and will be removed in the future",
-            DeprecationWarning
+            "DataProcesser was renamed to DataProcessor and will be removed in the"
+            " future",
+            DeprecationWarning,
         )
         super().__init__(*args, **kwargs)

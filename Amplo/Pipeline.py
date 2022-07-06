@@ -791,7 +791,7 @@ class Pipeline:
             # Print
             if self.verbose > 0:
                 self.logger.info(
-                    f"Setting mode to {self.mode} & objective to " "{self.objective}."
+                    f"Setting mode to {self.mode} & objective to {self.objective}."
                 )
         return
 

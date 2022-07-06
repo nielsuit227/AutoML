@@ -17,7 +17,10 @@ def rmtree_automl():
 def rmfile_automl():
     file = "AutoML.log"
     yield file
-    rmfile(file, must_exist=False)
+    try:
+        rmfile(file, must_exist=False)
+    except PermissionError:
+        pass
 
 
 @pytest.fixture

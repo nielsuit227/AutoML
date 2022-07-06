@@ -65,7 +65,9 @@ class DataObserver(PipelineObserver):
 
         monotonic_columns = []
         for col in numeric_data.columns:
-            series = numeric_data[col].sort_index()  # is shuffled when classification
+            series = (
+                numeric_data[col].sort_index().interpolate()
+            )  # is shuffled when classification
             is_monotonic = series.is_monotonic or series.is_monotonic_decreasing
             is_constant = series.nunique() == 1
             if is_monotonic and not is_constant:
@@ -112,7 +114,7 @@ class DataObserver(PipelineObserver):
                 continue
 
             # Make bins
-            counts, edges = np.histogram(self.x[key], bins=10)
+            counts, edges = np.histogram(self.x[key].fillna(0), bins=10)
 
             # Check if a minority group is present
             minority_size = min([c for c in counts if c != 0])

@@ -19,6 +19,9 @@ class TestDataObserver:
         x = np.concatenate([monotonic_incr, monotonic_decr, constants, random], axis=1)
         y = random.reshape(-1)  # does not matter
 
+        # Add nan to first and random
+        x[1, 0] = np.nan
+
         # Observe
         pipeline = Pipeline(grid_search_iterations=0)
         pipeline._read_data(x, y)
@@ -38,6 +41,9 @@ class TestDataObserver:
             )
         )
         y = np.concatenate((np.zeros(5), np.ones(95)))
+
+        # Add nan
+        x[1, 0] = np.nan
 
         # Observe
         pipeline = Pipeline(grid_search_iterations=0)
@@ -59,6 +65,9 @@ class TestDataObserver:
         )
         y = np.concatenate((np.zeros(5), np.ones(95)))
 
+        # Add nan
+        x[0, 0] = np.nan
+
         # Observe
         pipeline = Pipeline(grid_search_iterations=0)
         pipeline._read_data(x, y)
@@ -75,6 +84,9 @@ class TestDataObserver:
         # Setup
         x = np.vstack((np.random.normal(size=100), np.linspace(1000, 10000, 100))).T
         y = np.concatenate((np.zeros(5), np.ones(95)))
+
+        # Add nan
+        x[0, 0] = np.nan
 
         # Observe
         pipeline = Pipeline(grid_search_iterations=0)

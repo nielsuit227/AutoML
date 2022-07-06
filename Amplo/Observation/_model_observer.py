@@ -128,7 +128,10 @@ class ModelObserver(PipelineObserver):
             signal_energy = sum(self.xv[key] ** 2)
             noise = np.random.normal(0, 1, len(xn))
             noise_energy = sum(noise ** 2)
-            xn[key] = self.xv[key] + np.sqrt(signal_energy / noise_energy * signal_noise_ratio) * noise
+            xn[key] = (
+                self.xv[key]
+                + np.sqrt(signal_energy / noise_energy * signal_noise_ratio) * noise
+            )
 
         # Arrange message
         status_ok = True
@@ -184,16 +187,18 @@ class ModelObserver(PipelineObserver):
         probabilities = np.exp(log_probabilities)
 
         # Select smallest slice (10%) (selects per class to avoid imbalance)
-        if self.mode == 'classification':
+        if self.mode == "classification":
             slice_indices = []
             for yc in self.y.unique():
                 yc_ind = np.where(self.y == yc)[0]
-                samples = - (- len(yc_ind) // 10)  # Ceils (to avoid 0)
+                samples = int(np.ceil(len(yc_ind) // 10))  # Ceils (to avoid 0)
                 slice_indices.extend(
-                    yc_ind[np.argpartition(probabilities[yc_ind], samples)[: samples]]
+                    yc_ind[np.argpartition(probabilities[yc_ind], samples)[:samples]]
                 )
         else:
-            slice_indices = np.argpartition(probabilities, -(-len(x) // 10))[:-(-len(x) // 10)]
+            slice_indices = np.argpartition(probabilities, int(np.ceil(len(x) // 10)))[
+                : int(np.ceil(len(x) // 10))
+            ]
         train_indices = [i for i in range(len(x)) if i not in slice_indices]
         xt, xv = self.x.iloc[train_indices], self.x.iloc[slice_indices]
         yt, yv = self.y.iloc[train_indices], self.y.iloc[slice_indices]
@@ -227,9 +232,9 @@ class ModelObserver(PipelineObserver):
         """
         # Check if a boosting model has been selected
         if (
-                not type(self.model).__name__
-                    in PartialBoostingClassifier._SUPPORTED_MODELS
-                    + PartialBoostingRegressor._SUPPORTED_MODELS
+            not type(self.model).__name__
+            in PartialBoostingClassifier._SUPPORTED_MODELS
+            + PartialBoostingRegressor._SUPPORTED_MODELS
         ):
             return True, ""
         if self.mode == "classification":

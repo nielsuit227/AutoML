@@ -101,22 +101,30 @@ class TestModelObserver:
 
     @pytest.mark.parametrize("mode", ["classification", "regression"])
     def test_boosting_overfit(self, mode):
+        print(mode)
         if mode == "classification":
-            x, y = make_classification(class_sep=0.2, n_samples=500, flip_y=0.2)
+            x, y = make_classification(class_sep=0.5, n_samples=100)
         else:
-            x, y = make_regression(noise=0.6, n_samples=500)
+            x, y = make_regression(noise=0.6, n_samples=100)
 
         # Make pipeline and simulate fit
-        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline = Pipeline(grid_search_iterations=0, cv_splits=2)
         pipeline._read_data(x, y)
         pipeline._mode_detector()
+        n_estimators = 1000
         if mode == "classification":
             pipeline.best_model = CatBoostClassifier(
-                n_estimators=15000, early_stopping_rounds=15000, use_best_model=False,
+                n_estimators=n_estimators,
+                l2_leaf_reg=0,
+                early_stopping_rounds=n_estimators,
+                use_best_model=False,
             )
         else:
             pipeline.best_model = CatBoostRegressor(
-                n_estimators=15000, early_stopping_rounds=15000, use_best_model=False,
+                n_estimators=n_estimators,
+                l2_leaf_reg=0,
+                early_stopping_rounds=n_estimators,
+                use_best_model=False,
             )
 
         # Observer
