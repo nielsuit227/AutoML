@@ -1,7 +1,10 @@
+#  Copyright (c) 2022 by Amplo.
+
 import json
 import re
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from Amplo import Pipeline
@@ -10,17 +13,31 @@ from Amplo.Observation.base import ProductionWarning
 
 
 class TestDataObserver:
-    def test_monotonic_columns(self):
+    @pytest.mark.parametrize("index_type", ["single", "multi"])
+    def test_monotonic_columns(self, index_type):
         size = 100
         monotonic_incr = 4.2 * np.arange(-10, size - 10)[:, None]  # start=-10, step=4.2
         monotonic_decr = 6.3 * np.arange(-3, size - 3)[::-1, None]
         constants = np.zeros(size)[:, None]
         random = np.random.normal(size=size)[:, None]
-        x = np.concatenate([monotonic_incr, monotonic_decr, constants, random], axis=1)
-        y = random.reshape(-1)  # does not matter
+
+        # Prepare data
+        x1 = np.concatenate([monotonic_incr, monotonic_decr, constants, random], axis=1)
+        x2 = np.concatenate(4 * [random], axis=1)
+        y1 = random.reshape(-1)  # does not matter
+        if index_type == "single":
+            x = pd.DataFrame(x1)
+            y = pd.Series(y1)
+        elif index_type == "multi":
+            x = pd.DataFrame(np.concatenate([x1, x2], axis=0))
+            x.index = pd.MultiIndex.from_product([[0, 1], range(size)])
+            y = pd.Series(np.concatenate([y1, y1], axis=0))
+            y.index = x.index
+        else:
+            raise ValueError("Invalid index_type.")
 
         # Add nan to first and random
-        x[1, 0] = np.nan
+        x.iloc[1, 0] = np.nan
 
         # Observe
         pipeline = Pipeline(grid_search_iterations=0)

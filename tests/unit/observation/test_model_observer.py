@@ -129,20 +129,16 @@ class TestModelObserver:
         pipeline._read_data(x, y)
         pipeline._mode_detector()
         n_estimators = 1000
+        boost_kwargs = dict(
+            n_estimators=n_estimators,
+            l2_leaf_reg=0,
+            early_stopping_rounds=n_estimators,
+            use_best_model=False,
+        )
         if mode == "classification":
-            pipeline.best_model = CatBoostClassifier(
-                n_estimators=n_estimators,
-                l2_leaf_reg=0,
-                early_stopping_rounds=n_estimators,
-                use_best_model=False,
-            )
+            pipeline.best_model = CatBoostClassifier(**boost_kwargs)
         else:
-            pipeline.best_model = CatBoostRegressor(
-                n_estimators=n_estimators,
-                l2_leaf_reg=0,
-                early_stopping_rounds=n_estimators,
-                use_best_model=False,
-            )
+            pipeline.best_model = CatBoostRegressor(**boost_kwargs)
 
         # Observer
         obs = ModelObserver(pipeline=pipeline)

@@ -52,6 +52,8 @@ class DataObserver(PipelineObserver):
         """
         Checks whether any column is monotonically in- or decreasing.
 
+        When data is multi-indexed it checks monotonicity per group (level 0).
+
         Returns
         -------
         status_ok : bool
@@ -63,13 +65,28 @@ class DataObserver(PipelineObserver):
         x_data = pd.DataFrame(self.x)
         numeric_data = x_data.select_dtypes(include=np.number)
 
+        # Make multi-indexed if not already
+        if len(numeric_data.index.names) == 1:
+            numeric_data.index = pd.MultiIndex.from_product([[0], numeric_data.index])
+
+        # Sort index from the innermost to outermost index level since it is shuffled
+        # in classification.
+        for axis in list(range(len(numeric_data.index.names)))[::-1]:
+            numeric_data.sort_index(axis=axis, inplace=True)
+
         monotonic_columns = []
         for col in numeric_data.columns:
-            series = (
-                numeric_data[col].sort_index().interpolate()
-            )  # is shuffled when classification
-            is_monotonic = series.is_monotonic or series.is_monotonic_decreasing
-            is_constant = series.nunique() == 1
+            grouped_series = (
+                numeric_data[col]
+                .groupby(level=0)
+                .apply(lambda group: group.interpolate(limit_directions="both"))
+                .groupby(level=0)
+            )
+            is_monotonic = (
+                grouped_series.apply(lambda group: group.is_monotonic)
+                | grouped_series.apply(lambda group: group.is_monotonic_decreasing)
+            ).any()
+            is_constant = grouped_series.apply(lambda group: group.nunique() == 1).any()
             if is_monotonic and not is_constant:
                 monotonic_columns.append(col)
 
