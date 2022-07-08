@@ -1,3 +1,7 @@
+#  Copyright (c) 2022 by Amplo.
+
+import time
+
 import numpy as np
 import pytest
 from sklearn.datasets import make_classification, make_regression
@@ -24,9 +28,23 @@ def make_one_to_one_data(mode):
     yield x, y
 
 
+class DelayedRandomPredictor(RandomPredictor):
+    def __init__(self, delay: float, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.delay = delay
+
+    def predict(self, x):
+        time.sleep(self.delay)
+        return super().predict(x)
+
+    def predict_proba(self, x):
+        time.sleep(self.delay)
+        return super().predict_proba(x)
+
+
 class TestModelObserver:
     @pytest.mark.parametrize("mode", ["classification", "regression"])
-    def test_better_than_linear(self, mode, make_one_to_one_data):
+    def test_check_better_than_linear(self, mode, make_one_to_one_data):
         x, y = make_one_to_one_data
 
         # Make pipeline and simulate fit
@@ -41,7 +59,7 @@ class TestModelObserver:
             obs.check_better_than_linear()
 
     @pytest.mark.parametrize("mode", ["classification", "regression"])
-    def test_noise_invariance(self, mode, make_one_to_one_data):
+    def test_check_noise_invariance(self, mode, make_one_to_one_data):
         x, y = make_one_to_one_data
 
         # Make pipeline and simulate fit
@@ -60,7 +78,7 @@ class TestModelObserver:
         obs = ModelObserver(pipeline=pipeline)
         obs.check_noise_invariance()
 
-    def test_slice_invariance(self):
+    def test_check_slice_invariance(self):
         """
         This is a complex test. Slice invariance will be triggered with a linear
         model, when 90% of the data is linearly separable, but 10% is displaced
@@ -100,8 +118,7 @@ class TestModelObserver:
         obs.check_slice_invariance()
 
     @pytest.mark.parametrize("mode", ["classification", "regression"])
-    def test_boosting_overfit(self, mode):
-        print(mode)
+    def test_check_boosting_overfit(self, mode):
         if mode == "classification":
             x, y = make_classification(class_sep=0.5, n_samples=100)
         else:
@@ -131,3 +148,19 @@ class TestModelObserver:
         obs = ModelObserver(pipeline=pipeline)
         with pytest.warns(ProductionWarning):
             obs.check_boosting_overfit()
+
+    @pytest.mark.parametrize("mode", ["classification", "regression"])
+    def test_check_prediction_latency(self, mode, make_x_y):
+        x, y = make_x_y
+
+        # Make pipeline and simulate fit
+        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline._read_data(x, y)
+        pipeline._mode_detector()
+        pipeline.best_model = DelayedRandomPredictor(delay=0.1, mode=mode)
+        pipeline.best_model.fit(x, y)
+
+        # Observe
+        obs = ModelObserver(pipeline=pipeline)
+        with pytest.warns(ProductionWarning):
+            obs.check_prediction_latency(threshold=0.1)

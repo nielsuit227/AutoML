@@ -1,3 +1,5 @@
+#  Copyright (c) 2022 by Amplo.
+
 import shutil
 from pathlib import Path
 
@@ -51,6 +53,46 @@ def make_data(mode: str, target="target"):
 # Dummies
 
 
+class _DummyPredictor:
+    """
+    Dummy predictor for testing.
+
+    Parameters
+    ----------
+    mode : str
+        Predicting mode ("classification" or "regression").
+    """
+
+    _dummy_classifier = None
+    _dummy_regressor = None
+
+    def __init__(self, mode):
+        assert self._dummy_classifier is not None, "Dummy not set"
+        assert self._dummy_regressor is not None, "Dummy not set"
+
+        if mode == "classification":
+            self.predictor = self._dummy_classifier()
+        elif mode == "regression":
+            self.predictor = self._dummy_regressor()
+        else:
+            raise ValueError("Invalid predictor mode.")
+
+    def fit(self, x, y):
+        return self.predictor.fit(x, y)
+
+    def predict(self, x):
+        return self.predictor.predict(x)
+
+    def predict_proba(self, x):
+        assert isinstance(self.predictor, self._dummy_classifier)
+        return self.predictor.predict_proba(x)
+
+    @property
+    def classes_(self):
+        if hasattr(self.predictor, "classes"):
+            return self.predictor.classes
+
+
 class _RandomClassifier:
     """
     Dummy classifier for testing.
@@ -86,72 +128,9 @@ class _RandomRegressor:
         return np.random.uniform(*self.range, len(x))
 
 
-class RandomPredictor:
-    """
-    Dummy predictor for testing.
-
-    Parameters
-    ----------
-    mode : str
-        Predicting mode ("classification" or "regression").
-    """
-
-    def __init__(self, mode):
-        if mode == "classification":
-            self.predictor = _RandomClassifier()
-        elif mode == "regression":
-            self.predictor = _RandomRegressor()
-        else:
-            raise ValueError("Invalid predictor mode.")
-
-    def fit(self, x, y):
-        return self.predictor.fit(x, y)
-
-    def predict(self, x):
-        return self.predictor.predict(x)
-
-    def predict_proba(self, x):
-        assert isinstance(self.predictor, _RandomClassifier)
-        return self.predictor.predict_proba(x)
-
-    @property
-    def classes_(self):
-        if hasattr(self.predictor, "classes"):
-            return self.predictor.classes
-
-
-class OverfitPredictor:
-    """
-    Dummy predictor for testing.
-
-    Parameters
-    ----------
-    mode : str
-        Predicting mode ("classification" or "regression").
-    """
-
-    def __init__(self, mode):
-        if mode == "classification":
-            self.predictor = _OverfitClassifier()
-        elif mode == "regression":
-            self.predictor = _OverfitRegressor()
-        else:
-            raise ValueError("Invalid predictor mode.")
-
-    def fit(self, x, y):
-        return self.predictor.fit(x, y)
-
-    def predict(self, x):
-        return self.predictor.predict(x)
-
-    def predict_proba(self, x):
-        assert isinstance(self.predictor, _OverfitClassifier)
-        return self.predictor.predict_proba(x)
-
-    @property
-    def classes_(self):
-        if hasattr(self.predictor, "classes"):
-            return self.predictor.classes
+class RandomPredictor(_DummyPredictor):
+    _dummy_classifier = _RandomClassifier
+    _dummy_regressor = _RandomRegressor
 
 
 class _OverfitClassifier:
@@ -221,3 +200,8 @@ class _OverfitRegressor:
             else:
                 yt.append(self.y.iloc[ind[0]])
         return yt
+
+
+class OverfitPredictor(_DummyPredictor):
+    _dummy_classifier = _OverfitClassifier
+    _dummy_regressor = _OverfitRegressor

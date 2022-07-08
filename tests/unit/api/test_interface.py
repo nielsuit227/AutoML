@@ -70,7 +70,7 @@ class TestInterface(TestAPI):
         )
         test_subdirs = list(
             api._iterate_directory(
-                parent_dir="Demo", selection="diagnoses.*", from_local=False
+                parent_dir="Demo", selection="Charger 150kW.*", from_local=False
             )
         )
         assert len(test_subdirs) > 0, "List of directories should not be empty."

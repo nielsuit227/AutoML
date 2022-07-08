@@ -1,12 +1,12 @@
-# Copyright by Amplo
+#  Copyright (c) 2022 by Amplo.
 """
 Base class used to build new observers.
 """
 
 import abc
-from copy import deepcopy
-from typing import Dict, List, Union, TYPE_CHECKING
 import warnings
+from copy import deepcopy
+from typing import TYPE_CHECKING, Dict, List, Union
 
 import numpy as np
 from sklearn.metrics import get_scorer
@@ -14,8 +14,7 @@ from sklearn.metrics import get_scorer
 if TYPE_CHECKING:
     from Amplo import Pipeline
 
-__all__ = ["BaseObserver", "PipelineObserver", "ProductionWarning",
-           "_report_obs"]
+__all__ = ["BaseObserver", "PipelineObserver", "ProductionWarning", "_report_obs"]
 
 
 class ProductionWarning(RuntimeWarning):
@@ -70,14 +69,15 @@ class BaseObserver(abc.ABC):
 
         # Trigger warning when status is not okay
         if not status_ok:
-            msg = ("A production observation needs inspection. Please evaluate "
-                   f"why a warning was triggered from `{typ}/{name}`. "
-                   f"Warning message: {message}")
+            msg = (
+                "A production observation needs inspection. Please evaluate "
+                f"why a warning was triggered from `{typ}/{name}`. "
+                f"Warning message: {message}"
+            )
             warnings.warn(ProductionWarning(msg))
 
         # Add observation to list
-        obs = {"typ": typ, "name": name, "status_ok": status_ok,
-               "message": message}
+        obs = {"typ": typ, "name": name, "status_ok": status_ok, "message": message}
         self.observations.append(obs)
 
     @abc.abstractmethod
@@ -102,7 +102,7 @@ class PipelineObserver(BaseObserver, metaclass=abc.ABCMeta):
 
     Class Attributes
     ----------------
-    TYPE : str
+    _obs_type : str
         Name of the observation.
     CLASSIFICATION : str
         Name for a classification mode.
@@ -110,11 +110,11 @@ class PipelineObserver(BaseObserver, metaclass=abc.ABCMeta):
         Name for a regression mode.
     """
 
-    TYPE = None
+    _obs_type = None
     CLASSIFICATION = "classification"
     REGRESSION = "regression"
 
-    def __init__(self, pipeline: 'Pipeline'):
+    def __init__(self, pipeline: "Pipeline"):
         super().__init__()
 
         if not type(pipeline).__name__ == "Pipeline":
@@ -127,17 +127,13 @@ class PipelineObserver(BaseObserver, metaclass=abc.ABCMeta):
         """
         Name of the observation type.
         """
-        if not self.TYPE or not isinstance(self.TYPE, str):
-            raise AttributeError("Class attribute `TYPE` is not set.")
-        return self.TYPE
+        if not self._obs_type or not isinstance(self._obs_type, str):
+            raise AttributeError("Class attribute `_obs_type` is not set.")
+        return self._obs_type
 
     @property
     def mode(self):
         return self._pipe.mode
-
-    @property
-    def model(self):
-        return deepcopy(self._pipe.best_model)
 
     @property
     def scorer(self):
@@ -167,9 +163,9 @@ def _report_obs(func):
     decorator
     """
 
-    def report(self: PipelineObserver):
+    def report(self: PipelineObserver, *args, **kwargs):
         assert isinstance(self, PipelineObserver)
-        status_ok, message = func(self)
+        status_ok, message = func(self, *args, **kwargs)
         self.report_observation(self.obs_type, func.__name__, status_ok, message)
 
     return report

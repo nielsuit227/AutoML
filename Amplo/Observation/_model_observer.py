@@ -1,4 +1,5 @@
-# Copyright by Amplo
+#  Copyright (c) 2022 by Amplo.
+
 """
 Observer for checking production readiness of model.
 
@@ -10,7 +11,8 @@ References
 The ML test score: A rubric for ML production readiness and technical debt
 reduction. 1123-1132. 10.1109/BigData.2017.8258038.
 """
-import copy
+from copy import deepcopy
+from time import time
 
 import numpy as np
 from sklearn.linear_model import LinearRegression, LogisticRegression
@@ -42,7 +44,7 @@ class ModelObserver(PipelineObserver):
         7. TODO: The model is tested for considerations of inclusion.
     """
 
-    TYPE = "model_observer"
+    _obs_type = "model_observer"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -52,11 +54,25 @@ class ModelObserver(PipelineObserver):
         self.fitted_model = self.model
         self.fitted_model.fit(self.xt, self.yt)
 
+    @property
+    def model(self):
+        return deepcopy(self._pipe.best_model)
+
+    @property
+    def x(self):
+        # Use best feature set, if available.
+        if self._pipe.best_feature_set is not None:
+            select_columns = self._pipe.feature_sets[self._pipe.best_feature_set]
+            return self._pipe.x[select_columns]
+        else:
+            return self._pipe.x
+
     def observe(self):
         self.check_better_than_linear()
         self.check_noise_invariance()
         self.check_slice_invariance()
         self.check_boosting_overfit()
+        self.check_prediction_latency()
 
     @_report_obs
     def check_better_than_linear(self):
@@ -123,11 +139,11 @@ class ModelObserver(PipelineObserver):
 
         # Inject noise
         signal_noise_ratio = 20
-        xn = copy.deepcopy(self.xv)
+        xn = deepcopy(self.xv)
         for key in self.xv.keys():
             signal_energy = sum(self.xv[key] ** 2)
             noise = np.random.normal(0, 1, len(xn))
-            noise_energy = sum(noise ** 2)
+            noise_energy = sum(noise**2)
             xn[key] = (
                 self.xv[key]
                 + np.sqrt(signal_energy / noise_energy * signal_noise_ratio) * noise
@@ -176,9 +192,8 @@ class ModelObserver(PipelineObserver):
         )
 
         # Normalize
-        x = copy.deepcopy(self.x)
-        x -= x.mean()
-        x /= x.std()
+        x = deepcopy(self.x)
+        x = (x - x.mean()) / x.std()
 
         # Fit Kernel Density Estimation & get probabilities
         log_probabilities = (
@@ -231,12 +246,12 @@ class ModelObserver(PipelineObserver):
             A brief description of the observation and its results.
         """
         # Check if a boosting model has been selected
-        if (
-            not type(self.model).__name__
-            in PartialBoostingClassifier._SUPPORTED_MODELS
-            + PartialBoostingRegressor._SUPPORTED_MODELS
-        ):
+        if type(self.model).__name__ not in [
+            *PartialBoostingClassifier._SUPPORTED_MODELS,
+            *PartialBoostingRegressor._SUPPORTED_MODELS,
+        ]:
             return True, ""
+
         if self.mode == "classification":
             PartialBooster = PartialBoostingClassifier
         else:
@@ -256,7 +271,40 @@ class ModelObserver(PipelineObserver):
         # Now, the check fails if there has been a decrease in performance
         status_ok = all(np.diff(scores) / np.max(np.abs(scores)) > 0.001)
         message = (
-            "Boosting overfit detected. Please retrain with less estimators."
+            "Boosting overfit detected. Please retrain with less estimators. "
             f"Estimators: {steps}, Scores: {scores}"
         )
+        return status_ok, message
+
+    @_report_obs
+    def check_prediction_latency(self, threshold=0.1):
+        """
+        Check the latency of predicting a single sample.
+
+        If it takes longer than 100ms, something is wrong.
+
+        Parameters
+        ----------
+        threshold : float
+            Threshold for latency (in s).
+
+        Returns
+        -------
+        status_ok : bool
+            Observation status. Indicates whether a warning should be raised.
+        message : str
+            A brief description of the observation and its results.
+        """
+        prediction_latencies = []
+        for repeat in range(10):
+            t_start = time()
+            self.fitted_model.predict(self.x.sample(n=1))
+            prediction_latencies.append(time() - t_start)
+
+        status_ok = not any(latency > threshold for latency in prediction_latencies)
+        message = (
+            f"The latency of predicting a single sample took longer than "
+            f"{threshold * 1e3:.0f}ms. Latencies: {prediction_latencies}."
+        )
+
         return status_ok, message

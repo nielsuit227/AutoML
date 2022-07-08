@@ -39,7 +39,7 @@ class DataObserver(PipelineObserver):
         2. Feature columns should not be sensitive in minority classes
     """
 
-    TYPE = "data_observation"
+    _obs_type = "data_observation"
 
     def observe(self):
         self.check_monotonic_columns()
