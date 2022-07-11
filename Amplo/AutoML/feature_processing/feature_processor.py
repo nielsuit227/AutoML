@@ -7,6 +7,7 @@ import re
 
 import numpy as np
 import pandas as pd
+import psutil
 from shap import TreeExplainer
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
@@ -65,15 +66,48 @@ def find_collinear_columns(data, information_threshold=0.9):
 
     # Get collinear features
     nk = data.shape[1]
-    norm_data = (data - data.mean(skipna=True, numeric_only=True)).to_numpy()
-    ss = np.sqrt(np.sum(norm_data**2, axis=0))
     corr_mat = np.zeros((nk, nk))
-    for i in range(nk):
-        for j in range(nk):
-            if i >= j:
-                continue
-            sum_ = np.sum(norm_data[:, i] * norm_data[:, j])
-            corr_mat[i, j] = abs(sum_ / (ss[i] * ss[j]))
+
+    try:
+        # Check available memory and raise error if necessary
+        mem_avail = psutil.virtual_memory().available
+        mem_data = data.memory_usage(deep=True).sum()
+        if mem_avail < 2 * mem_data:
+            raise MemoryError(
+                "Data is too big to handle time efficient. Using memory efficient "
+                "implementation instead."
+            )
+
+        # More efficient in terms of time but may crash when data size is huge
+        norm_data = (data - data.mean(skipna=True, numeric_only=True)).to_numpy()
+        ss = np.sqrt(np.sum(norm_data**2, axis=0))
+
+        for i in range(nk):
+            for j in range(nk):
+                if i >= j:
+                    continue
+                sum_ = np.sum(norm_data[:, i] * norm_data[:, j])
+                corr_mat[i, j] = abs(sum_ / (ss[i] * ss[j]))
+
+    except MemoryError:
+        # More redundant calculations but more memory efficient
+        for i, col_name_i in enumerate(data):
+            col_i = data[col_name_i]
+            norm_col_i = (col_i - col_i.mean(skipna=True)).to_numpy()
+            del col_i
+            ss_i = np.sqrt(np.sum(norm_col_i**2))
+
+            for j, col_name_j in enumerate(data):
+                if i >= j:
+                    continue
+
+                col_j = data[col_name_j]
+                norm_col_j = (col_j - col_j.mean(skipna=True)).to_numpy()
+                del col_j
+                ss_j = np.sqrt(np.sum(norm_col_j**2))
+
+                sum_ = np.sum(norm_col_i * norm_col_j)
+                corr_mat[i, j] = abs(sum_ / (ss_i * ss_j))
 
     # Set collinear columns
     mask = np.sum(corr_mat > information_threshold, axis=0) > 0
