@@ -1,26 +1,19 @@
-from copy import deepcopy
-from datetime import datetime
-import joblib
+#  Copyright (c) 2022 by Amplo.
+
 import os
 import time
+from copy import deepcopy
+from datetime import datetime
 from typing import TypeVar
 
+import joblib
 import numpy as np
 import pandas as pd
-from sklearn import ensemble
-from sklearn import linear_model
-from sklearn import metrics
-from sklearn import svm
-from sklearn import model_selection
+from sklearn import ensemble, linear_model, metrics, model_selection, svm
 
+from Amplo.Classifiers import CatBoostClassifier, LGBMClassifier, XGBClassifier
+from Amplo.Regressors import CatBoostRegressor, LGBMRegressor, XGBRegressor
 from Amplo.Utils.logging import logger
-from Amplo.Classifiers import CatBoostClassifier
-from Amplo.Classifiers import LGBMClassifier
-from Amplo.Classifiers import XGBClassifier
-from Amplo.Regressors import CatBoostRegressor
-from Amplo.Regressors import LGBMRegressor
-from Amplo.Regressors import XGBRegressor
-
 
 __all__ = ["ClassificationType", "Modeller", "ModelType", "RegressionType"]
 
@@ -78,12 +71,10 @@ class Modeller:
 
     Parameters
     ----------
-    mode : str
-        Model mode. Either `regression` or `classification`.
-    shuffle : bool
-        Whether to shuffle samples from training / validation.
-    n_splits : int
-        Number of cross-validation splits.
+    mode : {"classification", "regression"}
+        Model mode.
+    cv : sklearn.model_selection._split._BaseKFold
+        Cross validator.
     objective : str
         Performance metric to optimize. Must be a valid string for
         `sklearn.metrics.SCORERS`.
@@ -104,7 +95,7 @@ class Modeller:
 
     See Also
     --------
-    [Sklearn scorers](https://scikit-learn.org/stable/modules/model_evaluation.html
+    [Sklearn scorers](https://scikit-learn.org/stable/modules/model_evaluation.html)
     """
 
     def __init__(

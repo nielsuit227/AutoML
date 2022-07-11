@@ -1517,28 +1517,25 @@ class Pipeline:
     @property
     def cv(self):
         """
-        Gives the Cross Validation scheme
+        Gives the Cross Validation scheme.
 
         Returns
         -------
-        cv : sklearn.model_selection._search.BaseSearchCV
-            The cross validator
+        cv : sklearn.model_selection.KFold or sklearn.model_selection.StratifiedKFold
+            The cross validator.
         """
-        # Regression
-        if self.mode == "regression":
-            return KFold(
-                n_splits=self.cv_splits,
-                shuffle=self.shuffle,
-                random_state=83847939 if self.shuffle else None,
-            )
+        cv_kwargs = dict(
+            n_splits=self.cv_splits,
+            shuffle=self.shuffle,
+            random_state=83847939 if self.shuffle else None,
+        )
 
-        # Classification
-        if self.mode == "classification":
-            return StratifiedKFold(
-                n_splits=self.cv_splits,
-                shuffle=self.shuffle,
-                random_state=83847939 if self.shuffle else None,
-            )
+        if self.mode == "regression":
+            return KFold(**cv_kwargs)
+        elif self.mode == "classification":
+            return StratifiedKFold(**cv_kwargs)
+        else:
+            raise AttributeError(f"Invalid mode attribute: {self.mode}")
 
     @property
     def data(self) -> Union[None, pd.DataFrame]:
