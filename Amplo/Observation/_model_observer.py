@@ -22,6 +22,7 @@ from sklearn.neighbors import KernelDensity
 from Amplo.Classifiers import PartialBoostingClassifier
 from Amplo.Observation.base import PipelineObserver, _report_obs
 from Amplo.Regressors import PartialBoostingRegressor
+from Amplo.Utils.sys import getsize
 
 __all__ = ["ModelObserver"]
 
@@ -68,11 +69,38 @@ class ModelObserver(PipelineObserver):
             return self._pipe.x
 
     def observe(self):
+        self.check_model_size()
         self.check_better_than_linear()
         self.check_noise_invariance()
         self.check_slice_invariance()
         self.check_boosting_overfit()
         self.check_prediction_latency()
+
+    @_report_obs
+    def check_model_size(self, threshold=20e6):
+        """
+        Check the RAM of the model. If it's bigger than 20MB, something is wrong.
+
+        Parameters
+        ----------
+        threshold : float
+            Threshold for latency (in s).
+
+        Returns
+        -------
+        status_ok : bool
+            Observation status. Indicates whether a warning should be raised.
+        message : str
+            A brief description of the observation and its results.
+        """
+        ram = getsize(self.model)
+
+        status_ok = ram < threshold
+        message = (
+            f"A model should occupy more than {threshold // 1e6:.2f}MB of RAM. "
+            f"However, the model has a size of {ram // 1e6:.2f}MB."
+        )
+        return status_ok, message
 
     @_report_obs
     def check_better_than_linear(self):

@@ -1,6 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
 import time
+import warnings
 
 import numpy as np
 import pytest
@@ -43,6 +44,26 @@ class DelayedRandomPredictor(RandomPredictor):
 
 
 class TestModelObserver:
+    @pytest.mark.parametrize("mode", ["classification", "regression"])
+    def test_check_model_size(self, mode, make_x_y):
+        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline._read_data(*make_x_y)
+        pipeline._mode_detector()
+        pipeline.best_model = RandomPredictor(mode=mode)
+
+        # Observe
+        obs = ModelObserver(pipeline=pipeline)
+        with warnings.catch_warnings(record=True) as record:
+            obs.check_model_size()
+        assert not any(
+            isinstance(r.message, ProductionWarning) for r in record
+        ), "An unnecessary warning was raised while checking model size."
+
+        # Add big chunk of data to model to make it big
+        pipeline.best_model.some_data = np.random.normal(size=3_000_000)
+        with pytest.warns(ProductionWarning):
+            obs.check_model_size()
+
     @pytest.mark.parametrize("mode", ["classification", "regression"])
     def test_check_better_than_linear(self, mode, make_one_to_one_data):
         x, y = make_one_to_one_data
