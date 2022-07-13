@@ -965,8 +965,8 @@ class Pipeline:
 
         if Path(data_path).exists() and Path(settings_path).exists():
             # Loading data
-            x = self._read_csv(data_path)
-            self._set_x(x)
+            data = self._read_csv(data_path)
+            self._set_data(data)
 
             # Loading settings
             self.settings["feature_processing"] = json.load(open(settings_path, "r"))
@@ -987,7 +987,7 @@ class Pipeline:
 
             # Store data
             self._set_xy(x, y)
-            self._write_csv(self.x, data_path)
+            self._write_csv(self.data, data_path)
 
             # Save settings
             self.settings["feature_processing"] = self.feature_processor.get_settings()
@@ -1584,23 +1584,32 @@ class Pipeline:
         self._set_data(new_data)
 
     def _set_x(self, new_x: Union[np.ndarray, pd.DataFrame]):
-        old_x = self.data.drop(self.target, axis=1)
         # Convert to dataframe
-        if isinstance(new_x, np.ndarray) and new_x.shape == old_x.shape:
-            new_x = pd.DataFrame(new_x, index=old_x.index, columns=old_x.columns)
-        elif isinstance(new_x, np.ndarray):
-            warnings.warn(
-                "Old x-data has more/less columns than new x-data. Setting dummy "
-                "feature names..."
-            )
-            new_x = pd.DataFrame(
-                new_x,
-                index=old_x.index,
-                columns=[f"Feature_{i}" for i in range(new_x.shape[1])],
-            )
+        if isinstance(new_x, np.ndarray):
+            old_x = self.data.drop(self.target, axis=1)
+            old_x_shape = old_x.shape
+            old_x_index = old_x.index
+            old_x_columns = old_x.columns
+            del old_x
+
+            if new_x.shape == old_x_shape:
+                new_x = pd.DataFrame(new_x, index=old_x_index, columns=old_x_columns)
+            else:
+                warnings.warn(
+                    "Old x-data has more/less columns than new x-data. "
+                    "Setting dummy feature names..."
+                )
+                columns = [f"Feature_{i}" for i in range(new_x.shape[1])]
+                new_x = pd.DataFrame(new_x, index=old_x_index, columns=columns)
+
+        elif not isinstance(new_x, pd.DataFrame):
+            raise ValueError(f"Invalid dtype for new x data: {type(new_x)}")
+
         # Assert that target is not in x-data
         if self.target in new_x:
             raise AttributeError("Target column name should not be in x-data")
+
+        # Set data
         self._data = pd.concat([new_x, self.y], axis=1)
 
     def set_y(self, new_y: Union[np.ndarray, pd.Series]):
