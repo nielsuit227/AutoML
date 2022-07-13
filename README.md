@@ -24,12 +24,12 @@ pip install Amplo
 ```
 
 # 2. Usage
-Usage is very simple with Amplo's AutoML Pipeline. 
+Usage is very simple with Amplo's AutoML Pipeline.
+
 ```python
-from Amplo import Pipeline
+from amplo import Pipeline
 from sklearn.datasets import make_classification
 from sklearn.datasets import make_regression
-
 
 x, y = make_classification()
 pipeline = Pipeline()

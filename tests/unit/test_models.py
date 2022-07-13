@@ -1,28 +1,28 @@
-import pytest
+#  Copyright (c) 2022 by Amplo.
+
 import os
-import joblib
 from typing import Union
 
+import joblib
 import numpy as np
 import pandas as pd
-
-from sklearn.datasets import make_classification, make_regression
+import pytest
 from sklearn.base import clone
+from sklearn.datasets import make_classification, make_regression
 from sklearn.metrics import SCORERS
 
-from Amplo.Classifiers import (
+from amplo.classification import (
     CatBoostClassifier,
     LGBMClassifier,
-    XGBClassifier,
     StackingClassifier,
+    XGBClassifier,
 )
-from Amplo.Regressors import (
+from amplo.regression import (
     CatBoostRegressor,
     LGBMRegressor,
-    XGBRegressor,
     StackingRegressor,
+    XGBRegressor,
 )
-
 
 Model = Union[
     CatBoostClassifier,

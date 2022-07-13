@@ -1,11 +1,13 @@
+#  Copyright (c) 2022 by Amplo.
+
 import os
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from Amplo import Pipeline
-from Amplo.AutoML import Modeller
+from amplo import Pipeline
+from tests import get_all_modeller_models
 
 
 class TestPipeline:
@@ -14,16 +16,11 @@ class TestPipeline:
         # Test mode
         x, y = make_x_y
         x = x.iloc[:, :5]  # for speed up
-        pipeline = Pipeline(
-            grid_search_iterations=0, plot_eda=False, extract_features=False
-        )
+        pipeline = Pipeline(n_grid_searches=0, plot_eda=False, extract_features=False)
         pipeline.fit(x, y)
         x_c, _ = pipeline.convert_data(x)
 
-        models = {
-            *Modeller(mode=mode, samples=100).return_models(),
-            *Modeller(mode=mode, samples=100_000).return_models(),
-        }
+        models = get_all_modeller_models(mode)
         for model in models:
             model.fit(x_c, y)
             pipeline.best_model = model
@@ -35,16 +32,14 @@ class TestPipeline:
     @pytest.mark.parametrize("mode", ["classification"])
     def test_no_dirs(self, mode, make_x_y):
         x, y = make_x_y
-        pipeline = Pipeline(
-            no_dirs=True, grid_search_iterations=0, extract_features=False
-        )
+        pipeline = Pipeline(no_dirs=True, n_grid_searches=0, extract_features=False)
         pipeline.fit(x, y)
-        assert not os.path.exists("AutoML"), "Directory created"
+        assert not os.path.exists("Auto_ML"), "Directory created"
 
     @pytest.mark.parametrize("mode", ["regression"])
     def test_no_args(self, mode, make_x_y):
         x, y = make_x_y
-        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline = Pipeline(n_grid_searches=0)
         pipeline.fit(x, y)
 
     @pytest.mark.parametrize("mode", ["classification", "regression"])
@@ -57,16 +52,16 @@ class TestPipeline:
     @pytest.mark.parametrize("mode", ["classification"])
     def test_create_folders(self, mode, make_x_y):
         x, y = make_x_y
-        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline = Pipeline(n_grid_searches=0)
         pipeline.fit(x, y)
 
         # Test Directories
-        assert os.path.exists("AutoML")
-        assert os.path.exists("AutoML/Data")
-        assert os.path.exists("AutoML/Features")
-        assert os.path.exists("AutoML/Production")
-        assert os.path.exists("AutoML/Documentation")
-        assert os.path.exists("AutoML/Results.csv")
+        assert os.path.exists("Auto_ML")
+        assert os.path.exists("Auto_ML/Data")
+        assert os.path.exists("Auto_ML/Features")
+        assert os.path.exists("Auto_ML/Production")
+        assert os.path.exists("Auto_ML/Documentation")
+        assert os.path.exists("Auto_ML/Results.csv")
 
     def test_read_write_csv(self):
         """
@@ -105,7 +100,5 @@ class TestPipeline:
         x, y = make_x_y
         df = pd.DataFrame(x)
         df["TARGET"] = y
-        pipeline = Pipeline(
-            target="TARGET", grid_search_iterations=0, extract_features=False
-        )
+        pipeline = Pipeline(target="TARGET", n_grid_searches=0, extract_features=False)
         pipeline.fit(df)

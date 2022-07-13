@@ -1,3 +1,5 @@
+#  Copyright (c) 2022 by Amplo.
+
 import pytest
 
 from tests import make_data as _make_data
@@ -7,7 +9,7 @@ from tests import rmfile, rmtree
 
 @pytest.fixture(autouse=True)
 def rmtree_automl():
-    folder = "AutoML"
+    folder = "Auto_ML"
     rmtree(folder, must_exist=False)
     yield folder
     rmtree(folder, must_exist=False)

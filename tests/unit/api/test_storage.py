@@ -1,5 +1,6 @@
-from Amplo.API.storage import AzureSynchronizer
+#  Copyright (c) 2022 by Amplo.
 
+from amplo.api.storage import AzureSynchronizer
 from tests.unit.api import TestAPI
 
 

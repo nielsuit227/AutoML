@@ -7,11 +7,11 @@ import numpy as np
 import pytest
 from sklearn.datasets import make_classification, make_regression
 
-from Amplo import Pipeline
-from Amplo.Classifiers import CatBoostClassifier
-from Amplo.Observation._model_observer import ModelObserver
-from Amplo.Observation.base import ProductionWarning
-from Amplo.Regressors import CatBoostRegressor
+from amplo import Pipeline
+from amplo.classification import CatBoostClassifier
+from amplo.observation._base import ProductionWarning
+from amplo.observation.model import ModelObserver
+from amplo.regression import CatBoostRegressor
 from tests import OverfitPredictor, RandomPredictor
 
 
@@ -69,7 +69,7 @@ class TestModelObserver:
         x, y = make_one_to_one_data
 
         # Make pipeline and simulate fit
-        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline = Pipeline(n_grid_searches=0)
         pipeline._read_data(x, y)
         pipeline._mode_detector()
         pipeline.best_model = RandomPredictor(mode=mode)
@@ -84,7 +84,7 @@ class TestModelObserver:
         x, y = make_one_to_one_data
 
         # Make pipeline and simulate fit
-        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline = Pipeline(n_grid_searches=0)
         pipeline._read_data(x, y)
         pipeline._mode_detector()
         pipeline.best_model = OverfitPredictor(mode=mode)
@@ -119,7 +119,7 @@ class TestModelObserver:
         )
 
         # Make pipeline and fit
-        pipeline = Pipeline(grid_search_iterations=0, document_results=False)
+        pipeline = Pipeline(n_grid_searches=0, document_results=False)
         pipeline._read_data(x, y)
         pipeline._mode_detector()
         pipeline._data_processing()
@@ -146,7 +146,7 @@ class TestModelObserver:
             x, y = make_regression(noise=0.6, n_samples=100)
 
         # Make pipeline and simulate fit
-        pipeline = Pipeline(grid_search_iterations=0, cv_splits=2)
+        pipeline = Pipeline(n_grid_searches=0, cv_splits=2)
         pipeline._read_data(x, y)
         pipeline._mode_detector()
         n_estimators = 1000
@@ -171,7 +171,7 @@ class TestModelObserver:
         x, y = make_x_y
 
         # Make pipeline and simulate fit
-        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline = Pipeline(n_grid_searches=0)
         pipeline._read_data(x, y)
         pipeline._mode_detector()
         pipeline.best_model = DelayedRandomPredictor(delay=0.1, mode=mode)

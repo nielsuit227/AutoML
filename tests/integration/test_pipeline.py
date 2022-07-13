@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 from sklearn.metrics import log_loss, r2_score
 
-from Amplo import Pipeline
-from Amplo.Utils.testing import make_interval_data
+from amplo import Pipeline
+from amplo.utils.testing import make_interval_data
 from tests import make_data, rmtree
 
 
@@ -61,7 +61,7 @@ class TestPipelineByMode:
             target=self.target,
             mode=self.mode,
             objective="r2" if self.mode == "regression" else "neg_log_loss",
-            grid_search_iterations=0,
+            n_grid_searches=0,
             plot_eda=False,
             process_data=False,
             extract_features=False,
@@ -70,12 +70,12 @@ class TestPipelineByMode:
         pipeline.fit(self.data)
 
         # Test Directories
-        assert os.path.exists("AutoML")
-        assert os.path.exists("AutoML/Data")
-        assert os.path.exists("AutoML/Features")
-        assert os.path.exists("AutoML/Production")
-        assert os.path.exists("AutoML/Documentation")
-        assert os.path.exists("AutoML/Results.csv")
+        assert os.path.exists("Auto_ML")
+        assert os.path.exists("Auto_ML/Data")
+        assert os.path.exists("Auto_ML/Features")
+        assert os.path.exists("Auto_ML/Production")
+        assert os.path.exists("Auto_ML/Documentation")
+        assert os.path.exists("Auto_ML/Results.csv")
 
         if self.mode == "classification":
             # Pipeline Prediction
@@ -101,8 +101,8 @@ class TestPipelineByMode:
             raise ValueError(f"Invalid mode {self.mode}")
 
         # Settings prediction
-        settings = json.load(open("AutoML/Production/v1/Settings.json", "r"))
-        model = joblib.load("AutoML/Production/v1/Model.joblib")
+        settings = json.load(open("Auto_ML/Production/v1/Settings.json", "r"))
+        model = joblib.load("Auto_ML/Production/v1/Model.joblib")
         p = Pipeline(no_dirs=True)
         p.load_settings(settings)
         p.load_model(model)
@@ -133,13 +133,15 @@ class TestPipeline:
         pytest.skip("This test is not yet implemented")
 
     def test_interval_analyzer(self):
-        """Use interval analyzer by default when a folder with logs is presented to pipeline"""
+        """
+        Use interval analyzer when a folder with logs is presented to pipeline.
+        """
         # Create dummy data
         data_dir = "./test_data"
         make_interval_data(directory=data_dir)
 
         # Pipeline
-        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline = Pipeline(n_grid_searches=0)
         pipeline.fit(data_dir)
 
         # Check if IntervalAnalyser is fitted
@@ -147,7 +149,7 @@ class TestPipeline:
 
         # Check data handling
         assert Path(
-            "AutoML/Data/Interval_Analyzed_v1.csv"
+            "Auto_ML/Data/Interval_Analyzed_v1.csv"
         ).exists(), "Interval-analyzed data was not properly stored"
         assert list(pipeline.data.index.names) == ["log", "index"], "Index is incorrect"
         # TODO: add checks for settings

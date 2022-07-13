@@ -1,12 +1,14 @@
+#  Copyright (c) 2022 by Amplo.
+
 import pandas as pd
 import pytest
 from sklearn.datasets import make_classification, make_regression
 from sklearn.model_selection import KFold, StratifiedKFold
 
-from Amplo import Pipeline
-from Amplo.AutoML import Modeller
-from Amplo.GridSearch import BaseGridSearch, OptunaGridSearch
-from Amplo.Utils.io import parse_json
+from amplo import Pipeline
+from amplo.grid_search import ExhaustiveGridSearch, OptunaGridSearch
+from amplo.utils.io import parse_json
+from tests import get_all_modeller_models
 
 
 @pytest.fixture(scope="class", params=["regression", "classification"])
@@ -52,7 +54,7 @@ class TestGridSearch:
             pipeline.results.loc[:, "type"] == "Hyper Parameter"
         ), "No hyper parameter results were found"
 
-    @pytest.mark.parametrize("grid_search", [BaseGridSearch, OptunaGridSearch])
+    @pytest.mark.parametrize("grid_search", [ExhaustiveGridSearch, OptunaGridSearch])
     def test_each_model(self, grid_search):
         """
         Given the models which depend on 1) mode and 2) num_samples,
@@ -61,14 +63,7 @@ class TestGridSearch:
         Thanks to the fact that all grid search models have the same interface,
         this is possible :-)
         """
-        modeller_kwargs = dict(
-            mode=self.mode,
-            objective=self.objective,
-        )
-        models = {
-            *Modeller(**modeller_kwargs, samples=100).return_models(),
-            *Modeller(**modeller_kwargs, samples=100_000).return_models(),
-        }
+        models = get_all_modeller_models(mode=self.mode, objective=self.objective)
 
         for model in models:
             # Grid search
@@ -77,7 +72,7 @@ class TestGridSearch:
                 cv=self.k_fold(n_splits=3),
                 verbose=0,
                 timeout=10,
-                candidates=2,
+                n_trials=2,
                 scoring=self.objective,
             )
             results = search.fit(self.x, self.y)

@@ -5,8 +5,8 @@ import random
 
 import pytest
 
-from Amplo.API import API
-from Amplo.Utils.testing import make_interval_data, make_production_data
+from amplo.api import API
+from amplo.utils.testing import make_interval_data, make_production_data
 from tests.unit.api import TestAPI
 
 
@@ -168,7 +168,7 @@ class TestInterface(TestAPI):
         make_interval_data(n_labels=3, directory=dummy_data_path)
         # Set up api and train models
         api = API(self.sync_dir, verbose=2)
-        api.train_models(grid_search_iterations=0)
+        api.train_models(n_grid_searches=0)
         # Assertions
         assert (
             len(api._trained_model_args) > 0

@@ -7,17 +7,20 @@ import numpy as np
 import pandas as pd
 from sklearn.datasets import make_classification, make_regression
 
+from amplo.automl import Modeller
+
 __all__ = [
     "rmtree",
     "rmfile",
     "make_x_y",
     "make_data",
+    "get_all_modeller_models",
     "RandomPredictor",
     "OverfitPredictor",
 ]
 
 
-def rmtree(folder="AutoML", must_exist=False):
+def rmtree(folder="Auto_ML", must_exist=False):
     if Path(folder).exists():
         shutil.rmtree(folder)
     elif must_exist:
@@ -47,6 +50,17 @@ def make_data(mode: str, target="target"):
     data, y = make_x_y(mode)
     data[target] = y
     return data
+
+
+def get_all_modeller_models(mode: str, **kwargs):
+    models = {  # get each model type only once (!) with dictionary trick
+        type(model).__name__: model
+        for model in [
+            *Modeller(mode=mode, samples=100, **kwargs).return_models(),
+            *Modeller(mode=mode, samples=100_000, **kwargs).return_models(),
+        ]
+    }.values()
+    return list(models)
 
 
 # ----------------------------------------------------------------------

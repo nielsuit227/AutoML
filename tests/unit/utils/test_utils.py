@@ -1,8 +1,9 @@
 #  Copyright (c) 2022 by Amplo.
+
 import numpy as np
 
-from Amplo.AutoML.Modeller import Modeller
-from Amplo.Utils.utils import check_dtypes, clean_feature_name, get_model, hist_search
+from amplo.automl.modelling import Modeller
+from amplo.utils import check_dtypes, clean_feature_name, get_model, hist_search
 
 
 class TestUtils:

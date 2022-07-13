@@ -7,9 +7,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from Amplo import Pipeline
-from Amplo.Observation._data_observer import DataObserver
-from Amplo.Observation.base import ProductionWarning
+from amplo import Pipeline
+from amplo.observation._base import ProductionWarning
+from amplo.observation.data import DataObserver
 
 
 class TestDataObserver:
@@ -40,7 +40,7 @@ class TestDataObserver:
         x.iloc[1, 0] = np.nan
 
         # Observe
-        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline = Pipeline(n_grid_searches=0)
         pipeline._read_data(x, y)
         obs = DataObserver(pipeline=pipeline)
         with pytest.warns(ProductionWarning) as record:
@@ -63,7 +63,7 @@ class TestDataObserver:
         x[1, 0] = np.nan
 
         # Observe
-        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline = Pipeline(n_grid_searches=0)
         pipeline._read_data(x, y)
         obs = DataObserver(pipeline=pipeline)
         with pytest.warns(ProductionWarning) as record:
@@ -86,7 +86,7 @@ class TestDataObserver:
         x[0, 0] = np.nan
 
         # Observe
-        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline = Pipeline(n_grid_searches=0)
         pipeline._read_data(x, y)
         obs = DataObserver(pipeline=pipeline)
         with pytest.warns(ProductionWarning) as record:
@@ -106,7 +106,7 @@ class TestDataObserver:
         x[0, 0] = np.nan
 
         # Observe
-        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline = Pipeline(n_grid_searches=0)
         pipeline._read_data(x, y)
         obs = DataObserver(pipeline=pipeline)
         with pytest.warns(ProductionWarning) as record:
