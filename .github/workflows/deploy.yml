@@ -26,7 +26,7 @@ jobs:
         pip install setuptools wheel twine
 
     - name: Create init
-      run: echo "__version__ = '$GITHUB_VERSION'" >> Amplo/__init__.py
+      run: echo "__version__ = '$GITHUB_VERSION'" >> amplo/__init__.py
 
     - name: Build and publish
       env:

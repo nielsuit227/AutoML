@@ -5,7 +5,7 @@
 ![](https://tokei.rs/b1/github/nielsuit227/automl)
 ![](https://img.shields.io/pypi/dm/amplo)
 
-Welcome to the Automated Machine Learning package `Amplo`. Amplo's AutoML is designed specifically for machine data and 
+Welcome to the Automated Machine Learning package `amplo`. Amplo's AutoML is designed specifically for machine data and 
 works very well with tabular time series data (especially unbalanced classification!).
 
 Though this is a standalone Python package, Amplo's AutoML is also available on Amplo's Smart Maintenance Platform. 
@@ -13,14 +13,14 @@ With a graphical user interface and various data connectors, it is the ideal pla
 on Predictive. 
 
 Amplo's AutoML Pipeline contains the entire Machine Learning development cycle, including exploratory data analysis, 
-data cleaning, feature extraction, feature selection, model selection, hyper parameter optimization, stacking, 
+data cleaning, feature extraction, feature selection, model selection, hyperparameter optimization, stacking, 
 version control, production-ready models and documentation. It comes with additional tools such as interval analysers, 
 drift detectors, data quality checks, etc. 
 
 # Downloading Amplo
 The easiest way is to install our Python package through [PyPi](https://pypi.org/project/amplo/):
-```commandline
-pip install Amplo
+```bash
+pip install amplo
 ```
 
 # 2. Usage
@@ -45,10 +45,12 @@ yp = pipeline.predict(x)
 # 3. Amplo AutoML Features
 
 ## Interval Analyser
-`from Amplo.AutoML import IntervalAnalyser`
+```python
+from amplo.automl import IntervalAnalyser
+```
 
 Interval Analyser for Log file classification. When log files have to be classified, and there is not enough
-data for time series methods (such as LSTMs, ROCKET or Weasel, Boss, etc), one needs to fall back to classical
+data for time series methods (such as LSTMs, ROCKET or Weasel, Boss, etc.), one needs to fall back to classical
 machine learning models which work better with lower samples. This raises the problem of which samples to
 classify. You shouldn't just simply classify on every sample and accumulate, that may greatly disrupt
 classification performance. Therefore, we introduce this interval analyser. By using an approximate K-Nearest 
@@ -66,7 +68,9 @@ To use this interval analyser, make sure that your logs are located in a folder 
 |       +-- Log_3.*
 ```
 ## Exploratory Data Analysis
-`from Amplo.AutoML import DataExplorer`
+```python
+from amplo.automl import DataExplorer
+```
 
 Automated Exploratory Data Analysis. Covers binary classification and regression.
 It generates:
@@ -87,7 +91,9 @@ Additional plots for Regression:
 - Scatter Plots
 
 ## Data Processing
-`from Amplo.AutoML import DataProcessor`
+```python
+from amplo.automl import DataProcessor
+```
 
 Automated Data Cleaning:
 - Infers & converts data types (integer, floats, categorical, datetime)
@@ -105,7 +111,9 @@ Automated Data Cleaning:
 - Removes constant columns
 
 ## Data Sampler
-`from Amplo.AutoML import DataSampler`
+```python
+from amplo.automl import DataSampler
+```
 
 This pipeline is designed to handle unbalanced classification problems. 
 Aside weighted loss functions, under sampling the majority class or down sampling the 
@@ -121,7 +129,9 @@ minority class helps. Various algorithms are analysed:
 - SMOTE Edited Nearest Neighbours
 
 ## Feature Processing
-`from Amplo.AutoML import FeatureProcessor`
+```python
+from amplo.automl import FeatureProcessor
+```
 
 Automatically extracts and selects features. Removes Co-Linear Features.
 Included Feature Extraction algorithms:
@@ -141,14 +151,18 @@ Included Feature Selection algorithms:
 - Predictive Power Score
 
 ## Sequencing
-`from Amplo.AutoML import Sequencer`
+```python
+from amplo.automl import Sequencer
+```
 
 For time series regression problems, it is often useful to include multiple previous samples instead of just the latest. 
 This class sequences the data, based on which time steps you want included in the in- and output. 
 This is also very useful when working with tensors, as a tensor can be returned which directly fits into a Recurrent Neural Network. 
 
 ## Modelling
-`from Amplo.AutoML import Modeller`
+```python
+from amplo.automl import Modeller
+```
 
 Runs various regression or classification models.
 Includes:
@@ -163,15 +177,19 @@ Includes:
 - Stacking Models
 
 ## Grid Search
-`from Amplo.GridSearch import *`
+```python
+from amplo.grid_search import *
+```
 
-Contains three hyper parameter optimizers with extended predefined model parameters:
+Contains three hyperparameter optimizers with extended predefined model parameters:
 - Grid Search
 - Halving Random Search
-- `Optuna`'s Tree-Parzen-Estimator
+- Optuna's Tree-Parzen-Estimator
 
 ## Automatic Documntation
-`from Amplo.AutoML import Documenter`
+```python
+from amplo.automl import Documenter
+```
 
 Contains a documenter for classification (`binary` and `multiclass` problems), as well as for regression. 
 Creates a pdf report for a Pipeline, including metrics, data processing steps, and everything else to recreate the result.
