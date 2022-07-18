@@ -32,6 +32,7 @@ from amplo.classification.stacking import StackingClassifier
 from amplo.grid_search import ExhaustiveGridSearch, HalvingGridSearch, OptunaGridSearch
 from amplo.observation import DataObserver, ProductionObserver
 from amplo.regression.stacking import StackingRegressor
+from amplo.validation import ModelValidator
 
 
 class Pipeline:
@@ -201,8 +202,8 @@ class Pipeline:
 
         # Modelling
         self.standardize = kwargs.get("standardize", False)
-        self.shuffle = kwargs.get("shuffle", True)
-        self.cv_splits = kwargs.get("cv_shuffle", 10)
+        self.cv_shuffle = kwargs.get("cv_shuffle", True)
+        self.cv_splits = kwargs.get("cv_splits", 10)
         self.store_models = kwargs.get("store_models", False)
 
         # Grid Search Parameters
@@ -249,7 +250,7 @@ class Pipeline:
             self._load_version()
 
         # Store Pipeline Settings
-        self.settings = {"pipeline": kwargs, "validation": {}, "feature_set": ""}
+        self.settings = {"pipeline": kwargs}
 
         # Objective & Scorer
         if self.objective is not None:
@@ -886,7 +887,7 @@ class Pipeline:
             method="both",
             margin=0.1,
             cv_splits=self.cv_splits,
-            shuffle=self.shuffle,
+            shuffle=self.cv_shuffle,
             fast_run=False,
             objective=self.objective,
         )
@@ -1499,6 +1500,16 @@ class Pipeline:
             amplo.__version__ if hasattr(amplo, "__version__") else "dev"
         )
 
+        # Validation
+        validator = ModelValidator(
+            cv_splits=self.cv_splits,
+            cv_shuffle=self.cv_shuffle,
+            verbose=self.verbose,
+        )
+        self.settings["validation"] = validator.validate(
+            model=self.best_model, x=self.x, y=self.y, mode=self.mode
+        )
+
         # Prune Data Processor
         required_features = self.feature_processor.get_required_columns(
             self.best_feature_set
@@ -1530,16 +1541,16 @@ class Pipeline:
         if self.mode == "regression":
             return KFold(
                 n_splits=self.cv_splits,
-                shuffle=self.shuffle,
-                random_state=83847939 if self.shuffle else None,
+                shuffle=self.cv_shuffle,
+                random_state=83847939 if self.cv_shuffle else None,
             )
 
         # Classification
         if self.mode == "classification":
             return StratifiedKFold(
                 n_splits=self.cv_splits,
-                shuffle=self.shuffle,
-                random_state=83847939 if self.shuffle else None,
+                shuffle=self.cv_shuffle,
+                random_state=83847939 if self.cv_shuffle else None,
             )
 
     @property
