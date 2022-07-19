@@ -583,19 +583,20 @@ class Pipeline:
         # Print
         if self.verbose > 0:
             self.logger.info(
-                "Predicting with {}, v{}".format(
-                    type(self.best_model).__name__, self.version
-                )
+                f"Predicting with {type(self.best_model).__name__}, v{self.version}"
             )
 
         # Convert
         x, y = self.convert_data(data)
 
         # Predict
+        predictions = self.best_model.predict(x)
         if self.mode == "regression" and self.standardize:
-            predictions = self._inverse_standardize(self.best_model.predict(x))
-        else:
-            predictions = self.best_model.predict(x)
+            predictions = self._inverse_standardize(predictions)
+        elif self.mode == "classification":
+            predictions[:] = self.data_processor.decode_labels(
+                predictions.astype(int), except_not_fitted=False
+            )
 
         # Stop timer
         self._prediction_time = (time.time() - start_time) / len(x) * 1000
@@ -620,14 +621,12 @@ class Pipeline:
         ), "Predict_proba only available for classification"
         assert hasattr(
             self.best_model, "predict_proba"
-        ), "{} has no attribute predict_proba".format(type(self.best_model).__name__)
+        ), f"{type(self.best_model).__name__} has no attribute predict_proba"
 
         # Print
         if self.verbose > 0:
             self.logger.info(
-                "Predicting with {}, v{}".format(
-                    type(self.best_model).__name__, self.version
-                )
+                f"Predicting with {type(self.best_model).__name__}, v{self.version}"
             )
 
         # Convert data

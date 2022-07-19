@@ -99,7 +99,7 @@ class LGBMClassifier:
             return np.argmax(prediction, axis=1)
         else:
             # BINARY
-            return np.round(prediction)
+            return np.round(prediction).astype(int)
 
     def predict_proba(self, X, *args, **kwargs):
         # todo check input data

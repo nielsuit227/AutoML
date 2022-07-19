@@ -82,7 +82,7 @@ class XGBClassifier:
 
         # Parse into most-likely class
         if self.binary:
-            return np.round(prediction)
+            return np.round(prediction).astype(int)
         else:
             return np.argmax(prediction, axis=1)
 
