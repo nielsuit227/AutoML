@@ -12,7 +12,6 @@ The ML test score: A rubric for ML production readiness and technical debt
 reduction. 1123-1132. 10.1109/BigData.2017.8258038.
 """
 from copy import deepcopy
-from time import time
 
 import numpy as np
 from sklearn.linear_model import LinearRegression, LogisticRegression
@@ -74,7 +73,6 @@ class ModelObserver(PipelineObserver):
         self.check_noise_invariance()
         self.check_slice_invariance()
         self.check_boosting_overfit()
-        self.check_prediction_latency()
 
     @_report_obs
     def check_model_size(self, threshold=20e6):
@@ -302,37 +300,4 @@ class ModelObserver(PipelineObserver):
             "Boosting overfit detected. Please retrain with less estimators. "
             f"Estimators: {steps}, Scores: {scores}"
         )
-        return status_ok, message
-
-    @_report_obs
-    def check_prediction_latency(self, threshold=0.1):
-        """
-        Check the latency of predicting a single sample.
-
-        If it takes longer than 100ms, something is wrong.
-
-        Parameters
-        ----------
-        threshold : float
-            Threshold for latency (in s).
-
-        Returns
-        -------
-        status_ok : bool
-            Observation status. Indicates whether a warning should be raised.
-        message : str
-            A brief description of the observation and its results.
-        """
-        prediction_latencies = []
-        for repeat in range(10):
-            t_start = time()
-            self.fitted_model.predict(self.x.sample(n=1))
-            prediction_latencies.append(time() - t_start)
-
-        status_ok = not any(latency > threshold for latency in prediction_latencies)
-        message = (
-            f"The latency of predicting a single sample took longer than "
-            f"{threshold * 1e3:.0f}ms. Latencies: {prediction_latencies}."
-        )
-
         return status_ok, message

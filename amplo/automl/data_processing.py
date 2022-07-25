@@ -417,7 +417,7 @@ class DataProcessor:
             if self.verbosity > 0:
                 logger.info(
                     f"Found {len(self.int_cols)} integer, {len(self.float_cols)} float,"
-                    " {len(self.cat_cols)} "
+                    f" {len(self.cat_cols)} "
                     f"categorical and {len(self.date_cols)} datetime columns"
                 )
 

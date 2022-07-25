@@ -3,17 +3,14 @@
 """
 Observer for checking production readiness.
 """
+from time import time
 
-from typing import List
-
-from amplo.observation._base import BaseObserver, PipelineObserver
-from amplo.observation.data import DataObserver
-from amplo.observation.model import ModelObserver
+from amplo.observation._base import PipelineObserver, _report_obs
 
 __all__ = ["ProductionObserver"]
 
 
-class ProductionObserver(BaseObserver):
+class ProductionObserver(PipelineObserver):
     """
     Observer before putting to production.
 
@@ -27,17 +24,45 @@ class ProductionObserver(BaseObserver):
     """
 
     def __init__(self, pipeline):
-        super().__init__()
-
-        # Set observers
-        self._observers: List[PipelineObserver] = [
-            DataObserver(pipeline=pipeline),
-            ModelObserver(pipeline=pipeline),
-        ]
+        super().__init__(pipeline)
+        # TODO read below
+        # We need this to be executed every time a prediction is made.
+        # Should probably use these as wrappers for the predict & predict_proba
+        # function to collect the statistics. For now, this class is not used.
 
     def observe(self):
-        for obs in self._observers:
-            # Make observation
-            obs.observe()
-            # Gather observations
-            self.observations.extend(obs.observations)
+        # self.check_prediction_latency()
+        pass
+
+    @_report_obs
+    def check_prediction_latency(self, threshold=0.1):
+        """
+        Check the latency of predicting a single sample.
+
+        If it takes longer than 100ms, something is wrong.
+
+        Parameters
+        ----------
+        threshold : float
+            Threshold for latency (in s).
+
+        Returns
+        -------
+        status_ok : bool
+            Observation status. Indicates whether a warning should be raised.
+        message : str
+            A brief description of the observation and its results.
+        """
+        prediction_latencies = []
+        for repeat in range(10):
+            t_start = time()
+            self.fitted_model.predict(self.x.sample(n=1))
+            prediction_latencies.append(time() - t_start)
+
+        status_ok = not any(latency > threshold for latency in prediction_latencies)
+        message = (
+            f"The latency of predicting a single sample took longer than "
+            f"{threshold * 1e3:.0f}ms. Latencies: {prediction_latencies}."
+        )
+
+        return status_ok, message

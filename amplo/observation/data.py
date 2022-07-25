@@ -13,13 +13,13 @@ reduction. 1123-1132. 10.1109/BigData.2017.8258038.
 """
 
 import json
-import re
 
 import numpy as np
 import pandas as pd
 
 from amplo.observation._base import PipelineObserver, _report_obs
 from amplo.utils.logging import logger
+from amplo.utils.metrics import levenshtein_distance
 
 __all__ = ["DataObserver"]
 
@@ -209,14 +209,8 @@ class DataObserver(PipelineObserver):
         """
         categorical_mismatches = []
 
-        # Loop through all keys
-        for key in self.x.keys():
-            # Skip if not object
-            if not pd.api.types.is_object_dtype(self.x[key]):
-                continue
-
-            # Get variants
-            variants = self.x[key].unique()
+        # Get dummy information from pipeline
+        for feature, variants in self._pipe.data_processor.dummies.items():
 
             # Check if one is similar
             for i, variant_x in enumerate(variants):
@@ -225,13 +219,18 @@ class DataObserver(PipelineObserver):
                     if j >= i:
                         continue
 
-                    # Clean
-                    clean_x = re.sub("[^a-z0-9]", "", variant_x.lower())
-                    clean_y = re.sub("[^a-z0-9]", "", variant_y.lower())
+                    # Remove feature from variants
+                    variant_x = variant_x[len(feature) + 1 :]
+                    variant_y = variant_y[len(feature) + 1 :]
+
+                    # Get distance (normalized)
+                    distance = levenshtein_distance(variant_x, variant_y) / max(
+                        len(variant_x), len(variant_y)
+                    )
 
                     # Compare
-                    if clean_x == clean_y:
-                        categorical_mismatches.append({key: [variant_x, variant_y]})
+                    if 0 < distance <= 0.2:
+                        categorical_mismatches.append({feature: [variant_x, variant_y]})
 
         status_ok = not categorical_mismatches
         message = (

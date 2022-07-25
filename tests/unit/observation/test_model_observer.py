@@ -165,19 +165,3 @@ class TestModelObserver:
         obs = ModelObserver(pipeline=pipeline)
         with pytest.warns(ProductionWarning):
             obs.check_boosting_overfit()
-
-    @pytest.mark.parametrize("mode", ["classification", "regression"])
-    def test_check_prediction_latency(self, mode, make_x_y):
-        x, y = make_x_y
-
-        # Make pipeline and simulate fit
-        pipeline = Pipeline(n_grid_searches=0)
-        pipeline._read_data(x, y)
-        pipeline._mode_detector()
-        pipeline.best_model = DelayedRandomPredictor(delay=0.1, mode=mode)
-        pipeline.best_model.fit(x, y)
-
-        # Observe
-        obs = ModelObserver(pipeline=pipeline)
-        with pytest.warns(ProductionWarning):
-            obs.check_prediction_latency(threshold=0.1)

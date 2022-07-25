@@ -1,6 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
 import shutil
+import time
 from pathlib import Path
 
 import numpy as np
@@ -17,6 +18,7 @@ __all__ = [
     "get_all_modeller_models",
     "RandomPredictor",
     "OverfitPredictor",
+    "DelayedRandomPredictor",
 ]
 
 
@@ -219,3 +221,17 @@ class _OverfitRegressor:
 class OverfitPredictor(_DummyPredictor):
     _dummy_classifier = _OverfitClassifier
     _dummy_regressor = _OverfitRegressor
+
+
+class DelayedRandomPredictor(RandomPredictor):
+    def __init__(self, delay: float, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.delay = delay
+
+    def predict(self, x):
+        time.sleep(self.delay)
+        return super().predict(x)
+
+    def predict_proba(self, x):
+        time.sleep(self.delay)
+        return super().predict_proba(x)

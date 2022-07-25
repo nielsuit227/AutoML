@@ -30,7 +30,7 @@ from amplo.automl.modelling import Modeller
 from amplo.automl.sequencing import Sequencer
 from amplo.classification.stacking import StackingClassifier
 from amplo.grid_search import ExhaustiveGridSearch, HalvingGridSearch, OptunaGridSearch
-from amplo.observation import DataObserver, ProductionObserver
+from amplo.observation import DataObserver, ModelObserver
 from amplo.regression.stacking import StackingRegressor
 from amplo.validation import ModelValidator
 
@@ -385,15 +385,15 @@ class Pipeline:
         # Reading data
         self._read_data(*args, **kwargs)
 
-        # Check data
-        obs = DataObserver(pipeline=self)
-        obs.observe()
-
         # Detect mode (classification / regression)
         self._mode_detector()
 
         # Preprocess Data
         self._data_processing()
+
+        # Check data
+        obs = DataObserver(pipeline=self)
+        obs.observe()
 
         # Fit Drift Detector to input
         num_cols = list(
@@ -497,10 +497,7 @@ class Pipeline:
             self._prepare_production_settings(prod_dir + "Settings.json")
 
             # Observe production
-            # TODO[TS, 25.05.2022]: Currently, we are observing the data also here.
-            #  However, in a future version we probably will only observe the data
-            #  directly after :func:`_read_data()`. For now we wait...
-            obs = ProductionObserver(pipeline=self)
+            obs = ModelObserver(pipeline=self)
             obs.observe()
             self.settings["production_observation"] = obs.observations
 

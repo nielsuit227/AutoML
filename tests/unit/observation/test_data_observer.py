@@ -77,6 +77,7 @@ class TestDataObserver:
         x = np.hstack(
             (
                 np.array(["New York"] * 50 + ["new-york"] * 50).reshape((-1, 1)),
+                np.array(["Something"] * 50 + ["Somethign"] * 50).reshape((-1, 1)),
                 np.random.normal(100, 5, (100, 1)),
             )
         )
@@ -86,15 +87,15 @@ class TestDataObserver:
         x[0, 0] = np.nan
 
         # Observe
-        pipeline = Pipeline(n_grid_searches=0)
-        pipeline._read_data(x, y)
+        pipeline = Pipeline(n_grid_searches=0, cv_splits=3)
+        pipeline.data_preparation(x, y)
         obs = DataObserver(pipeline=pipeline)
         with pytest.warns(ProductionWarning) as record:
             obs.check_categorical_mismatch()
         msg = str(record[0].message)
         sensitive_cols = json.loads(re.search(r"\[.*]", msg).group(0))
         assert sensitive_cols == [
-            {"0": ["new-york", "New York"]}
+            {"feature_1": ["something", "somethign"]}
         ], "Wrong categorical mismatch columns identified."
 
     def test_extreme_values(self):
