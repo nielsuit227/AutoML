@@ -10,14 +10,14 @@ from sklearn.model_selection import train_test_split
 
 class XGBRegressor:
     _estimator_type = "regressor"
-    default_params = {"verbosity": 0, "num_boost_round": 1000}
+    default_params = {"verbosity": 0, "num_boost_round": 100}
 
     def __init__(self, **params):
         """
         XG Boost wrapper
         @param params: Model parameters
         """
-        self.num_boost_round = 1000
+        self.num_boost_round = None
         self.params = None
         self.set_params(**params)
         self.model = None

@@ -3,9 +3,11 @@
 import json
 import os
 from pathlib import Path
+from datetime import datetime, timedelta
 
 import joblib
 import numpy as np
+import pandas as pd
 import pytest
 from sklearn.metrics import log_loss, r2_score
 
@@ -156,3 +158,22 @@ class TestPipeline:
 
         # Remove dummy data
         rmtree(data_dir, must_exist=True)
+
+    def test_with_time(self):
+        x = np.vstack(
+            (
+                [datetime(2020, 1, 1) + timedelta(days=i) for i in range(12)],
+                np.linspace(0, 10, 12),
+            )
+        ).T
+        y = np.linspace(0, 10, 12)
+        pipeline = Pipeline(n_grid_searches=0)
+        pipeline.fit(x, y)
+
+        # Do the same, but with temporal
+        multi_index = pd.MultiIndex.from_product(
+            [[1, 2, 3], [1, 2, 3, 4]], names=["log", "index"]
+        )
+        df = pd.DataFrame(x, index=multi_index)
+        pipeline = Pipeline(n_grid_searches=0)
+        pipeline.fit(df, y)

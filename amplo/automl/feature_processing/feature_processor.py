@@ -368,7 +368,7 @@ class FeatureProcessor(BaseFeatureProcessor):
         self.logger.info("Analysing columns of interest.")
 
         self.datetime_cols_ = [
-            col for col, typ in zip(x, x.dtypes) if np.issubdtype(typ, np.datetime64)
+            col for col in x if pd.api.types.is_datetime64_any_dtype(x[col])
         ]
         non_datetime_cols = [col for col in x if col not in self.datetime_cols_]
         self.collinear_cols_ = find_collinear_columns(
@@ -521,7 +521,7 @@ class FeatureProcessor(BaseFeatureProcessor):
         # Analyse
         analyse_gini = self.analyse_feature_sets in ("auto", "all", "gini")
         analyse_shap = self.analyse_feature_sets in ("all", "shap") or (
-            self.analyse_feature_sets == "auto" and len(y) < 5_000
+            self.analyse_feature_sets == "auto" and len(y) < 50_000
         )
         if analyse_gini:
             self._select_gini_impurity(x, y)

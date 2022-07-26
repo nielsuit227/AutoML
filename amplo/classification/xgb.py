@@ -10,7 +10,7 @@ from sklearn.model_selection import train_test_split
 
 class XGBClassifier:
     _estimator_type = "classifier"
-    default_params = {"verbosity": 0, "num_boost_round": 1000}
+    default_params = {"verbosity": 0, "num_boost_round": 100}
     has_predict_proba = True
 
     def __init__(self, **params):
@@ -18,7 +18,7 @@ class XGBClassifier:
         XG Boost wrapper
         @param params: Model parameters
         """
-        self.num_boost_round = 1000
+        self.num_boost_round = None
         self.params = None
         self.set_params(**params)
         self.classes_ = None

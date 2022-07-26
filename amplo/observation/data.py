@@ -207,6 +207,7 @@ class DataObserver(PipelineObserver):
         message : str
             A brief description of the observation and its results.
         """
+        logger.info("Checking data for categorical mismatches.")
         categorical_mismatches = []
 
         # Get dummy information from pipeline

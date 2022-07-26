@@ -43,8 +43,11 @@ def sanitize_series(series):
         Sanitized data.
     """
     dtype = series.dtype
-    if not np.issubdtype(dtype, np.number):
+    if pd.api.types.is_datetime64_any_dtype(series) or not np.issubdtype(
+        dtype, np.number
+    ):
         return series
+
     # Get info for 32-bit data
     if np.issubdtype(dtype, np.floating):
         info = np.finfo(np.float32)

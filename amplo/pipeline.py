@@ -248,6 +248,8 @@ class Pipeline:
         if not self.no_dirs:
             self._create_dirs()
             self._load_version()
+        else:
+            self.version = 1
 
         # Store Pipeline Settings
         self.settings = {"pipeline": kwargs}
@@ -811,10 +813,17 @@ class Pipeline:
         )
 
         # Set paths
+        extracted_data_path = self.main_dir + f"Data/Extracted_v{self.version}.csv"
         data_path = self.main_dir + f"Data/Cleaned_v{self.version}.csv"
         settings_path = self.main_dir + f"Settings/Cleaning_v{self.version}.json"
 
-        if Path(data_path).exists() and Path(settings_path).exists():
+        # Only load settings if feature processor is done already.
+        if Path(extracted_data_path).exists() and Path(settings_path).exists():
+            self.settings["data_processing"] = json.load(open(settings_path, "r"))
+            self.data_processor.load_settings(self.settings["data_processing"])
+
+        # Else, if data processor is done, load settings & data
+        elif Path(data_path).exists() and Path(settings_path).exists():
             # Load data
             data = self._read_csv(data_path)
             self._set_data(data)
@@ -826,6 +835,7 @@ class Pipeline:
             if self.verbose > 0:
                 self.logger.info("Loaded Cleaned Data")
 
+        # Else, run the data processor
         else:
             # Cleaning
             data = self.data_processor.fit_transform(self.data)
@@ -835,6 +845,12 @@ class Pipeline:
 
             # Store data
             self._write_csv(self.data, data_path)
+
+            # Clean up Extracted previous version
+            if os.path.exists(
+                self.main_dir + f"Data/Extracted_v{self.version - 1}.csv"
+            ):
+                os.remove(self.main_dir + f"Data/Extracted_v{self.version - 1}.csv")
 
             # Save settings
             self.settings["data_processing"] = self.data_processor.get_settings()
@@ -852,8 +868,8 @@ class Pipeline:
             self.cat_cols = self.settings["data_processing"]["cat_cols"]
 
         # Assert classes in case of classification
-        self.n_classes = self.y.nunique()
         if self.mode == "classification":
+            self.n_classes = self.y.nunique()
             if self.n_classes >= 50:
                 warnings.warn(
                     "More than 20 classes, "
@@ -986,6 +1002,10 @@ class Pipeline:
             # Store data
             self._set_xy(x, y)
             self._write_csv(self.data, data_path)
+
+            # Cleanup Cleaned_vx.csv
+            if os.path.exists(self.main_dir + f"Data/Cleaned_v{self.version}.csv"):
+                os.remove(self.main_dir + f"Data/Cleaned_v{self.version}.csv")
 
             # Save settings
             self.settings["feature_processing"] = self.feature_processor.get_settings()
@@ -1683,33 +1703,9 @@ class Pipeline:
         if self.version is not None:
             return
 
-        # Read changelog (if existent)
-        if os.path.exists(self.main_dir + "changelog.txt"):
-            with open(self.main_dir + "changelog.txt", "r") as f:
-                changelog = f.read()
-        else:
-            changelog = ""
-
         # Find production folders
         completed_versions = len(os.listdir(self.main_dir + "Production"))
-        started_versions = len(changelog.split("\n")) - 1
-
-        # For new runs
-        if started_versions == 0:
-            with open(self.main_dir + "changelog.txt", "w") as f:
-                f.write("v1: Initial Run\n")
-            self.version = 1
-
-        # If last run was completed and we start a new
-        elif started_versions == completed_versions and self.process_data:
-            self.version = started_versions + 1
-            with open(self.main_dir + "changelog.txt", "a") as f:
-                notice = input(f"Changelog v{self.version}:\n")
-                f.write(f"v{self.version}: {notice}\n")
-
-        # If no new run is started (either continue or rerun)
-        else:
-            self.version = started_versions
+        self.version = completed_versions + 1
 
         if self.verbose > 0:
             self.logger.info(f"Setting Version {self.version}")

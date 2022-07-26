@@ -288,11 +288,11 @@ class Modeller:
 
     def print_results(self, result):
         logger.info(
-            "{} {}: {} \u00B1 {}, training time: {:.1f} s".format(
+            "{} {}: {} \u00B1 {},    training time: {:.1f} s".format(
                 result["model"].ljust(30),
                 self.objective,
-                f"{result['mean_objective']:.4f}".ljust(15),
-                f"{result['std_objective']:.4f}".ljust(15),
+                f"{result['mean_objective']:.4f}",
+                f"{result['std_objective']:.4f}",
                 result["mean_time"],
             )
         )

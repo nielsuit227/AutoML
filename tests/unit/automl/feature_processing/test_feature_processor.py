@@ -147,7 +147,7 @@ class TestFeatureProcessor:
         # Additional test for shap features:
         # When data size is >= 5000 samples, don't calculate shap features.
         if analyse_fs == "auto":
-            size = 5000
+            size = 50_000
             y = pd.Series(self.rng.choice([0, 1], size))
             x = pd.DataFrame({"y": y, "zeros": np.zeros(size)})
             fp._analyse_feature_sets(x, y)

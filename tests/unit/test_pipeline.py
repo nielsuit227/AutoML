@@ -63,6 +63,28 @@ class TestPipeline:
         assert os.path.exists("Auto_ML/Documentation")
         assert os.path.exists("Auto_ML/Results.csv")
 
+    @pytest.mark.parametrize("mode", ["classification"])
+    def test_data_organisation(self, mode, make_x_y):
+        x, y = make_x_y
+        pipeline = Pipeline(n_grid_searches=0)
+        pipeline._read_data(x, y)
+        pipeline._mode_detector()
+        pipeline._data_processing()
+        assert os.path.exists("Auto_ML/Data/Cleaned_v1.csv")
+        pipeline._feature_processing()
+        assert not os.path.exists("Auto_ML/Data/Cleaned_v1.csv")
+        assert os.path.exists("Auto_ML/Data/Extracted_v1.csv")
+        pipeline._initial_modelling()
+        pipeline.conclude_fitting()
+        assert len(os.listdir("Auto_ML/Production/v1/")) > 0
+        pipeline = Pipeline(n_grid_searches=0)
+        assert pipeline.version == 2
+        pipeline._read_data(x, y)
+        pipeline._mode_detector()
+        pipeline._data_processing()
+        assert os.path.exists("Auto_ML/Data/Cleaned_v2.csv")
+        assert not os.path.exists("Auto_ML/Data/Extracted_v1.csv")
+
     def test_read_write_csv(self):
         """
         Check whether intermediate data is stored and read correctly
