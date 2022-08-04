@@ -226,7 +226,6 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             check_dtypes([("fit_wavelets", fit_wavelets, list)])
             check_dtypes([("fit_wavelets_item", item, str) for item in fit_wavelets])
         self.fit_wavelets = fit_wavelets
-        self._received_multi_index = True
 
     def _fit_transform(self, x, y=None, **fit_params):
         self.logger.info("Start fitting data.")
@@ -282,14 +281,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             axis=1,
         )
 
-        # Sanitize df
-        x_out = sanitize_dataframe(x_out[self.features_])
-
-        # Return
-        if self._received_multi_index:
-            return x_out
-        else:
-            x_out.set_index(x_out.index.droplevel(0))
+        return sanitize_dataframe(x_out[self.features_])
 
     # ----------------------------------------------------------------------
     # Feature processing
@@ -447,14 +439,14 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
     # ----------------------------------------------------------------------
     # Utils
 
-    def _check_x(self, x, copy=True, sanitize=True, convert_single_index=False):
+    @staticmethod
+    def _check_x(x, copy=True, sanitize=True, convert_single_index=False):
         # Call parent checking method
         x_check = BaseFeatureExtractor._check_x(x, copy=copy, sanitize=sanitize)
         # Check multi-index
         n_index_cols = len(x.index.names)
         if n_index_cols == 1 and convert_single_index:
             x_check.index = pd.MultiIndex.from_product([[0], x_check.index])
-            self._received_multi_index = False
         elif n_index_cols != 2:
             raise ValueError("Data is not properly multi-indexed.")
         return x_check
