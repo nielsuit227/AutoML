@@ -6,6 +6,7 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 
+import pytz
 from azure.storage.blob import BlobServiceClient
 
 __all__ = ["AzureSynchronizer"]
@@ -32,7 +33,6 @@ class AzureSynchronizer:
             os.getenv(connection_string_name)
         )
         self.container = client.get_container_client(container_client_name)
-        # TODO: Use Amplo`s logging instead of a print function
         self.verbose = int(verbose)
         self._metadata_filename = ".metadata"
         self._str_time_format = "%Y-%m-%d %H:%M:%S:%z"
@@ -53,7 +53,7 @@ class AzureSynchronizer:
         """
         if path is not None:
             # Provide a slash from right
-            path = f"{Path(path)}/"
+            path = f"{Path(path).as_posix()}/"
         dirs = [
             b.name for b in self.container.walk_blobs(path) if str(b.name).endswith("/")
         ]
@@ -77,7 +77,7 @@ class AzureSynchronizer:
         list of str
         """
         # Provide a slash from right
-        path = f"{Path(path)}/"
+        path = f"{Path(path).as_posix()}/"
 
         # List files
         if sub_folders:
@@ -157,7 +157,7 @@ class AzureSynchronizer:
         # Load local metadata from previous synchronization
         local_metadata = self.load_local_metadata(metadata_dir, not_exist_ok=True)
         last_updated = local_metadata.get(
-            "last_modified", datetime(year=1900, month=1, day=1).astimezone()
+            "last_modified", datetime(1900, 1, 1, tzinfo=pytz.UTC)
         )
 
         # Read & write all files

@@ -63,7 +63,7 @@ class API(LoggingMixin):
             )
             local_data_dir = "."
 
-        self.dataDir = Path(local_data_dir)
+        self.data_dir = Path(local_data_dir)
         self._download_data = bool(download_data)
         self._train_model = True
         self._upload_model = bool(upload_model)
@@ -139,7 +139,7 @@ class API(LoggingMixin):
 
             # Define local saving directory (note the switch of `data`s position)
             local_issue_dir = str(
-                self.dataDir / team / machine / service / "data" / issue
+                self.data_dir / team / machine / service / "data" / issue
             )
             # Clean spaces in path
             local_issue_dir = re.sub(
@@ -292,24 +292,6 @@ class API(LoggingMixin):
 
     # --- Utilities ---
 
-    def print(self, text, fmt="yellow", pre=None):
-        """
-        Custom printer function.
-
-        Parameters
-        ----------
-        text : str
-            Text to print
-        fmt : str
-            Formatting info for ``termcolor.cprint``.
-        pre : str, optional
-            String to attach at the very beginning
-        """
-
-        if self.verbose:
-            pre = str(pre) if pre is not None else ""
-            cprint(pre + "[AmploAPI] " + text, fmt)
-
     def _iterate_data(self, *, from_local=True, level="issue"):
         """
         Iterate over directories
@@ -335,7 +317,7 @@ class API(LoggingMixin):
         assert level in ("team", "machine", "service", "issue"), "Unknown argument"
 
         # Init
-        parent_dir = self.dataDir if from_local else None
+        parent_dir = self.data_dir if from_local else None
 
         # Iterate teams
         for team_dir in self._iterate_directory(
