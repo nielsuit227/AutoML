@@ -144,6 +144,9 @@ class FeatureProcessor(BaseFeatureProcessor):
         Lower feature importance threshold for increment feature selection.
     verbose : int
         Verbosity for logger.
+    **extractor_kwargs : typing.Any
+        Additional keyword arguments for feature extractor.
+        Currently, only the `TemporalFeatureExtractor` module supports this parameter.
     """
 
     _add_to_settings = [
@@ -166,6 +169,7 @@ class FeatureProcessor(BaseFeatureProcessor):
         selection_cutoff=0.85,
         selection_increment=0.005,
         verbose=1,
+        **extractor_kwargs,
     ):
         super().__init__(mode=mode, verbose=verbose)
 
@@ -193,6 +197,7 @@ class FeatureProcessor(BaseFeatureProcessor):
         self.selection_cutoff = selection_cutoff
         self.selection_increment = selection_increment
         self.feature_extractor = None
+        self.extractor_kwargs = extractor_kwargs
 
     def _fit_transform(self, x, y=None, **fit_params):
         self.logger.info("Start fitting data.")
@@ -288,8 +293,8 @@ class FeatureProcessor(BaseFeatureProcessor):
         -------
         pd.Series
         """
-        if self.extract_features and self.is_temporal:
-            # Target has to be pooled
+        if isinstance(self.feature_extractor, TemporalFeatureExtractor):
+            y = self.feature_extractor._fit_data_to_window_size(y)  # noqa
             y = self.feature_extractor._pool_target(y)  # noqa
 
         return y
@@ -441,13 +446,11 @@ class FeatureProcessor(BaseFeatureProcessor):
             self.feature_extractor = NopFeatureExtractor(mode=None)
         elif self.is_temporal:
             self.feature_extractor = TemporalFeatureExtractor(
-                mode=self.mode,
-                verbose=self.verbose,
+                mode=self.mode, verbose=self.verbose, **self.extractor_kwargs
             )
         else:
             self.feature_extractor = StaticFeatureExtractor(
-                mode=self.mode,
-                verbose=self.verbose,
+                mode=self.mode, verbose=self.verbose  # , **self.extractor_kwargs
             )
 
         # Extract features

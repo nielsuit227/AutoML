@@ -44,6 +44,7 @@ class TestFeatureProcessor:
             index = pd.MultiIndex.from_product([[0, 1], range(len(x) // 2)])
             x.index = index
             y.index = index
+            kwargs = {**kwargs, "timeout": 1}
             fp = FeatureProcessor(extract_features=True, is_temporal=True, **kwargs)
         else:
             raise ValueError("Invalid extraction mode.")
@@ -55,7 +56,8 @@ class TestFeatureProcessor:
 
         # Test transform_target
         if isinstance(fp.feature_extractor, TemporalFeatureExtractor):
-            y_transformed = fp.feature_extractor._pool_target(y)
+            y_transformed = fp.feature_extractor._fit_data_to_window_size(y)
+            y_transformed = fp.feature_extractor._pool_target(y_transformed)
         else:
             y_transformed = y
         assert all(y_transformed == fp.transform_target(y))

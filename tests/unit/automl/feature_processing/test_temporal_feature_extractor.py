@@ -7,32 +7,45 @@ import pandas as pd
 import pytest
 import pywt
 
+from amplo.automl.feature_processing.pooling import get_pool_functions
 from amplo.automl.feature_processing.temporal_feature_extractor import (
+    ScoreWatcher,
     TemporalFeatureExtractor,
     _extract_wavelets,
-    pool_single_index,
+    pl_pool,
 )
+
+
+class TestScoreWatcher:
+    def test_singular_scores(self):
+        watcher = ScoreWatcher(["a", "b"])
+        watcher.update("a", 1)
+        watcher.update("a", np.array(9))
+        watcher.update("a", 15, weight=2)
+        watcher.update("b", 20)
+        assert watcher.mean() == 15.0
+        assert watcher.std() == 5.0
+
+    def test_multi_scores(self):
+        watcher = ScoreWatcher(["a", "b"])
+        watcher.update("a", [1, 2, 3])
+        watcher.update("a", np.array([9, 8, 7]))
+        watcher.update("a", [15, 15, 15], weight=2)
+        watcher.update("b", [20, 20, 20])
+        assert all(watcher.mean() == 15.0)
+        assert all(watcher.std() == 5.0)
 
 
 @pytest.mark.usefixtures("make_rng")
 class TestFunctions:
-    @pytest.mark.parametrize("agg_func", ["callable", "dict", "no_axis_kwarg"])
-    def test_pool_single_index(self, agg_func):
+    def test_pool_single_index(self):
         size = 100
         window_size = 10
         x = pd.Series(self.rng.normal(size=size))
 
-        if agg_func == "callable":
-            agg_func = np.mean
-        elif agg_func == "dict":
-            agg_func = {"mean": np.mean}
-        elif agg_func == "no_axis_kwarg":
-            # Functions that don't support an `axis` keyword argument must work, too.
-            agg_func = lambda arr: np.mean(arr)  # noqa: E731
-        else:
-            raise ValueError("Invalid 'agg_func' option.")
+        agg_func = get_pool_functions("mean")
 
-        pooled = pool_single_index(x, window_size, agg_func)
+        pooled = pl_pool(x, window_size, agg_func, use_multi_index=False)
         desired_pool = x.values.reshape((-1, window_size)).mean(1)
         assert np.allclose(pooled.values.reshape(-1), desired_pool)
 
@@ -59,7 +72,7 @@ class TestTemporalFeatureExtractor:
         x.index = index
         y.index = index
 
-        fe = TemporalFeatureExtractor(mode=mode)
+        fe = TemporalFeatureExtractor(mode=mode, timeout=3)
 
         # Test output
         out1 = fe.fit_transform(x, y)
@@ -241,7 +254,7 @@ class TestTemporalFeatureExtractor:
         y = pd.Series(y_np, index=index)
         y_pooled = fe._pool_target(y).values
 
-        assert all(y_pooled == desired_pool), "Pooling doesn't work as expected."
+        assert np.allclose(y_pooled, desired_pool), "Pooling doesn't work as expected."
 
     def test_pool_features(self):
         size = 90
