@@ -1,91 +1,92 @@
 #  Copyright (c) 2022 by Amplo.
 
-from copy import deepcopy
-
-import numpy as np
-import pandas as pd
-import xgboost as xgb
+import xgboost.callback
 from sklearn.model_selection import train_test_split
+from xgboost import XGBRegressor as _XGBRegressor
+
+from amplo.regression._base import BaseRegressor
+from amplo.utils import check_dtypes
 
 
-class XGBRegressor:
-    _estimator_type = "regressor"
-    default_params = {"verbosity": 0, "num_boost_round": 100}
+def _validate_xgboost_callbacks(callbacks):
+    if not callbacks:
+        return []
 
-    def __init__(self, **params):
-        """
-        XG Boost wrapper
-        @param params: Model parameters
-        """
-        self.num_boost_round = None
-        self.params = None
-        self.set_params(**params)
-        self.model = None
-        self.callbacks = None
-        self.trained = False
-        self.binary = False
+    for cb in callbacks:
+        raise NotImplementedError
 
-    @staticmethod
-    def convert_to_d_matrix(x, y=None):
-        # Convert input
-        assert type(x) in [
-            pd.DataFrame,
-            pd.Series,
-            np.ndarray,
-        ], "Unsupported data input format"
-        if isinstance(x, np.ndarray) and len(x.shape) == 0:
-            x = x.reshape((-1, 1))
+    return callbacks
 
-        if y is None:
-            return xgb.DMatrix(x)
 
-        else:
-            assert type(y) in [pd.Series, np.ndarray], "Unsupported data label format"
-            return xgb.DMatrix(x, label=y)
+class XGBRegressor(BaseRegressor):
+    """
+    Amplo wrapper for xgboost.XGBRegressor.
 
-    def fit(self, x, y):
-        # Split & Convert data
-        train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=0.1)
-        d_train = self.convert_to_d_matrix(train_x, train_y)
-        d_test = self.convert_to_d_matrix(test_x, test_y)
+    Parameters
+    ----------
+    callbacks : list of str, optional
+        ...
+    test_size : float, default: 0.1
+        Test size for train-test-split in fitting the model.
+    random_state : int, default: None
+        Random state for train-test-split in fitting the model.
+    verbose : {0, 1, 2}, default: 0
+        Verbose logging.
+    **model_params : Any
+        Model parameters for underlying xgboost.XGBRegressor.
+    """
 
-        # Model training
-        self.model = xgb.train(
-            self.params,
-            d_train,
-            evals=[(d_test, "validation"), (d_train, "train")],
-            verbose_eval=False,
-            num_boost_round=self.num_boost_round,
-            callbacks=[self.callbacks] if self.callbacks is not None else None,
-            early_stopping_rounds=100,
+    model: _XGBRegressor  # type hint
+
+    def __init__(
+        self,
+        callbacks=None,
+        test_size=0.1,
+        random_state=None,
+        verbose=0,
+        **model_params,
+    ):
+        # Verify input dtypes and integrity
+        check_dtypes(
+            ("callbacks", callbacks, (type(None), list)),
+            ("test_size", test_size, float),
+            ("random_state", random_state, (type(None), int)),
+            ("model_params", model_params, dict),
         )
-        self.trained = True
+        if not 0 <= test_size < 1:
+            raise ValueError(f"Invalid attribute for test_size: {test_size}")
 
-    def predict(self, x, *args, **kwargs):
-        # todo check input data
-        assert self.trained is True, "Model not yet trained"
-        d_predict = self.convert_to_d_matrix(x)
-        return self.model.predict(d_predict, *args, **kwargs)
+        # Set up model
+        default_model_params = {
+            "n_estimators": 100,  # number of boosting rounds
+            "early_stopping_rounds": 100,
+            "verbose": verbose,
+        }
+        for k, v in default_model_params.items():
+            if k not in model_params:
+                model_params[k] = v
+        model = _XGBRegressor(**model_params)
 
-    def set_params(self, **params):
-        # Add default
-        for k, v in self.default_params.items():
-            if k not in params:
-                params[k] = v
+        # Set attributes
+        self.callbacks = callbacks
+        self.test_size = test_size
+        self.random_state = random_state
 
-        # Remove fit options
-        if "callbacks" in params:
-            self.callbacks = params.pop("callbacks")
+        super().__init__(model=model, verbose=verbose)
 
-        # Update class
-        self.num_boost_round = params.pop("num_boost_round")
-        self.params = params
-        return self
+    def _fit(self, x, y=None, **fit_params):
+        # Set up fitting callbacks
+        callbacks = _validate_xgboost_callbacks(self.callbacks)
+        callbacks.append(
+            xgboost.callback.EarlyStopping(
+                self.model.get_params().get("early_stopping_rounds")
+            )
+        )
 
-    def get_params(self, **args):
-        params = deepcopy(self.params)
-        if "deep" in args:
-            return params
-        if self.callbacks is not None:
-            params["callbacks"] = self.callbacks
-        return params
+        # Split data and fit model
+        xt, xv, yt, yv = train_test_split(
+            x, y, test_size=self.test_size, random_state=self.random_state
+        )
+        self.model.fit(
+            xt, yt, eval_set=[(xv, yv)], callbacks=callbacks, verbose=bool(self.verbose)
+        )

@@ -303,7 +303,7 @@ class BaseGridSearch(LoggingMixin):
             params["lambda"] = ("loguniform", [1e-8, 1], 10)
             if is_classification:
                 params.update(
-                    objective=("categorical", ["multi:softprob"]),
+                    # objective=("categorical", ["multi:softprob"]),
                     eval_metric=("categorical", ["logloss"]),
                 )
             params["CONDITIONALS"] = dict(

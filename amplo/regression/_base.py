@@ -4,11 +4,11 @@ from abc import ABCMeta
 
 from amplo.base import BasePredictor, LoggingMixin
 
-__all__ = ["BaseClassifier"]
+__all__ = ["BaseRegressor"]
 
 
-class BaseClassifier(BasePredictor, LoggingMixin, metaclass=ABCMeta):
-    _estimator_type = "classifier"
+class BaseRegressor(BasePredictor, LoggingMixin, metaclass=ABCMeta):
+    _estimator_type = "regressor"
 
     def __init__(self, model, verbose=0):
         BasePredictor.__init__(self)
@@ -22,19 +22,8 @@ class BaseClassifier(BasePredictor, LoggingMixin, metaclass=ABCMeta):
     def _predict(self, x, y=None, **predict_params):
         return self.model.predict(x, **predict_params).reshape(-1)
 
-    def predict_proba(self, x, **predict_params):
-        self.check_is_fitted()
-        if not hasattr(self.model, "predict_proba"):
-            raise AttributeError("Model has no attribute `predict_proba`.")
-
-        return self.model.predict_proba(x, **predict_params)
-
     def score(self, x, y):
         return self.model.score(x, y)
-
-    @property
-    def classes_(self):
-        return self.model.classes_
 
     def _get_model_params(self, deep=True):
         """Gets JSON serializable model parameters only."""

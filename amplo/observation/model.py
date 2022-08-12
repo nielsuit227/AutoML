@@ -290,9 +290,9 @@ class ModelObserver(PipelineObserver):
         scores = []
         for step in steps:
             # Can directly use scorer, as no training is involved at all
-            scores.append(
-                self.scorer(PartialBooster(self.fitted_model, step), self.xv, self.yv)
-            )
+            booster = PartialBooster(self.fitted_model, step)
+            booster._is_fitted = True
+            scores.append(self.scorer(booster, self.xv, self.yv))
 
         # Now, the check fails if there has been a decrease in performance
         status_ok = all(np.diff(scores) / np.max(np.abs(scores)) > 0.001)

@@ -171,21 +171,21 @@ def deprecated(reason):
         raise TypeError(repr(type(reason)))
 
 
-def check_dtypes(dtype_list):
+def check_dtypes(*dtype_tuple):
     """
     Checks all dtypes of given list.
 
     Parameters
     ----------
-    dtype_list : list of (str, Any, type or tuple of type)
-        List of tuples with name, parameter and allowed dtypes to be checked.
+    *dtype_tuple : (str, Any, type or tuple of type)
+        Tuples of (name, parameter, allowed types) to be checked.
 
     Raises
     ------
     ValueError
         If any given constraint is not fulfilled.
     """
-    for name, value, typ in dtype_list:
+    for name, value, typ in dtype_tuple:
         if not isinstance(value, typ):
             msg = f"Invalid dtype for argument `{name}`: " f"{type(value).__name__}"
             raise TypeError(msg)

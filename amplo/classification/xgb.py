@@ -1,123 +1,91 @@
 #  Copyright (c) 2022 by Amplo.
-
-from copy import deepcopy
-
-import numpy as np
-import pandas as pd
-import xgboost as xgb
+import xgboost.callback
 from sklearn.model_selection import train_test_split
+from xgboost import XGBClassifier as _XGBClassifier
+
+from amplo.classification._base import BaseClassifier
+from amplo.utils import check_dtypes
 
 
-class XGBClassifier:
-    _estimator_type = "classifier"
-    default_params = {"verbosity": 0, "num_boost_round": 100}
-    has_predict_proba = True
+def _validate_xgboost_callbacks(callbacks):
+    if not callbacks:
+        return []
 
-    def __init__(self, **params):
-        """
-        XG Boost wrapper
-        @param params: Model parameters
-        """
-        self.num_boost_round = None
-        self.params = None
-        self.set_params(**params)
-        self.classes_ = None
-        self.model = None
-        self.callbacks = None
-        self.trained = False
-        self.binary = False
+    for cb in callbacks:
+        raise NotImplementedError
 
-    @staticmethod
-    def convert_to_d_matrix(X, y=None):
-        # Convert input
-        assert type(X) in [
-            pd.DataFrame,
-            pd.Series,
-            np.ndarray,
-        ], "Unsupported data input format"
-        if isinstance(X, np.ndarray) and len(X.shape) == 0:
-            X = X.reshape((-1, 1))
+    return callbacks
 
-        if y is None:
-            return xgb.DMatrix(X)
 
-        else:
-            assert type(y) in [pd.Series, np.ndarray], "Unsupported data label format"
-            return xgb.DMatrix(X, label=y)
+class XGBClassifier(BaseClassifier):
+    """
+    Amplo wrapper for xgboost.XGBClassifier.
 
-    def fit(self, X, y):
-        # Split & Convert data
-        train_x, test_x, train_y, test_y = train_test_split(
-            X, y, stratify=y, test_size=0.1
+    Parameters
+    ----------
+    callbacks : list of str, optional
+        ...
+    test_size : float, default: 0.1
+        Test size for train-test-split in fitting the model.
+    random_state : int, default: None
+        Random state for train-test-split in fitting the model.
+    verbose : {0, 1, 2}, default: 0
+        Verbose logging.
+    **model_params : Any
+        Model parameters for underlying xgboost.XGBClassifier.
+    """
+
+    model: _XGBClassifier  # type hint
+
+    def __init__(
+        self,
+        callbacks=None,
+        test_size=0.1,
+        random_state=None,
+        verbose=0,
+        **model_params,
+    ):
+        # Verify input dtypes and integrity
+        check_dtypes(
+            ("callbacks", callbacks, (type(None), list)),
+            ("test_size", test_size, float),
+            ("random_state", random_state, (type(None), int)),
+            ("model_params", model_params, dict),
         )
-        d_train = self.convert_to_d_matrix(train_x, train_y)
-        d_test = self.convert_to_d_matrix(test_x, test_y)
+        if not 0 <= test_size < 1:
+            raise ValueError(f"Invalid attribute for test_size: {test_size}")
 
-        # Set loss function
-        self.classes_ = np.unique(y)
-        self.binary = len(self.classes_) == 2
-        if self.binary:
-            self.params["objective"] = "binary:logistic"
-        else:
-            self.params["objective"] = "multi:softprob"
-            self.params["num_class"] = len(self.classes_)
+        # Set up model
+        default_model_params = {
+            "n_estimators": 100,  # number of boosting rounds
+            "early_stopping_rounds": 100,
+            "verbose": verbose,
+        }
+        for k, v in default_model_params.items():
+            if k not in model_params:
+                model_params[k] = v
+        model = _XGBClassifier(**model_params)
 
-        # Model training
-        self.model = xgb.train(
-            self.params,
-            d_train,
-            evals=[(d_test, "validation"), (d_train, "train")],
-            verbose_eval=False,
-            num_boost_round=self.num_boost_round,
-            callbacks=[self.callbacks] if self.callbacks is not None else None,
-            early_stopping_rounds=100,
+        # Set attributes
+        self.callbacks = callbacks
+        self.test_size = test_size
+        self.random_state = random_state
+
+        super().__init__(model=model, verbose=verbose)
+
+    def _fit(self, x, y=None, **fit_params):
+        # Set up fitting callbacks
+        callbacks = _validate_xgboost_callbacks(self.callbacks)
+        callbacks.append(
+            xgboost.callback.EarlyStopping(
+                self.model.get_params().get("early_stopping_rounds")
+            )
         )
-        self.trained = True
 
-    def predict(self, X, *args, **kwargs):
-        # todo check input data
-        assert self.trained is True, "Model not yet trained"
-        d_predict = self.convert_to_d_matrix(X)
-        prediction = self.model.predict(d_predict, *args, **kwargs)
-
-        # Parse into most-likely class
-        if self.binary:
-            return np.round(prediction).astype(int)
-        else:
-            return np.argmax(prediction, axis=1)
-
-    def predict_proba(self, X, *args, **kwargs):
-        # todo check input data
-        assert self.trained is True, "Model not yet trained"
-        d_predict = self.convert_to_d_matrix(X)
-        prediction = self.model.predict(d_predict, *args, **kwargs)
-
-        # Parse into probabilities
-        if self.binary:
-            return np.hstack((1 - prediction, prediction)).reshape((-1, 2), order="F")
-        else:
-            return prediction
-
-    def set_params(self, **params):
-        # Add default
-        for k, v in self.default_params.items():
-            if k not in params:
-                params[k] = v
-
-        # Remove fit args
-        if "callbacks" in params:
-            self.callbacks = params.pop("callbacks")
-
-        # Update class
-        self.num_boost_round = params.pop("num_boost_round")
-        self.params = params
-        return self
-
-    def get_params(self, **args):
-        params = deepcopy(self.params)
-        if "deep" in args:
-            return params
-        if self.callbacks is not None:
-            params["callbacks"] = self.callbacks
-        params["num_boost_round"] = self.num_boost_round
-        return params
+        # Split data and fit model
+        xt, xv, yt, yv = train_test_split(
+            x, y, stratify=y, test_size=self.test_size, random_state=self.random_state
+        )
+        self.model.fit(
+            xt, yt, eval_set=[(xv, yv)], callbacks=callbacks, verbose=bool(self.verbose)
+        )

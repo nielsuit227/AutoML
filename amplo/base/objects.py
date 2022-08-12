@@ -17,6 +17,7 @@ __all__ = [
     "BaseObject",
     "BaseEstimator",
     "BaseTransformer",
+    "BasePredictor",
     "LoggingMixin",
 ]
 
@@ -283,15 +284,9 @@ class BaseEstimator(BaseObject):
                 f"fitted yet; please call `fit` first."
             )
 
-
-class BaseTransformer(BaseEstimator):
-    """
-    Transformer base class.
-    """
-
     def fit(self, x, y=None, **fit_params):
         """
-        Fit transformer to x, optionally to y.
+        Fit the estimator to x and optionally to y.
 
         State change:
             Changes state to "fitted".
@@ -324,6 +319,32 @@ class BaseTransformer(BaseEstimator):
         self._is_fitted = True
 
         return self
+
+    def _fit(self, x, y=None, **fit_params):
+        """
+        Fit the estimator to x and optionally to y.
+
+        Parameters
+        ----------
+        x : numpy.ndarray or pandas.DataFrame
+            Checked feature data to fit.
+        y : numpy.ndarray or pandas.Series
+            Checked target data to fit.
+        **fit_params : dict
+            Additional fit parameters.
+
+        Returns
+        -------
+        self : estimator
+            A fitted instance of the transformer.
+        """
+        return self
+
+
+class BaseTransformer(BaseEstimator):
+    """
+    Transformer base class.
+    """
 
     def transform(self, x, y=None):
         """
@@ -378,26 +399,6 @@ class BaseTransformer(BaseEstimator):
         # can be optimized.
         return self.fit(x, y, **fit_params).transform(x, y)
 
-    def _fit(self, x, y=None, **fit_params):
-        """
-        Fit transformer to x and y.
-
-        Parameters
-        ----------
-        x : numpy.ndarray or pandas.DataFrame
-            Checked feature data to fit.
-        y : numpy.ndarray or pandas.Series
-            Checked target data to fit.
-        **fit_params : dict
-            Additional fit parameters.
-
-        Returns
-        -------
-        self : estimator
-            A fitted instance of the transformer.
-        """
-        return self
-
     def _transform(self, x, y=None):
         """
         Transform data.
@@ -413,6 +414,87 @@ class BaseTransformer(BaseEstimator):
         -------
         pandas.DataFrame
             Transformed version of x.
+        """
+        raise NotImplementedError("Abstract method.")
+
+
+class BasePredictor(BaseEstimator):
+    """
+    Predictor base class.
+    """
+
+    def predict(self, x, y=None, **predict_params):
+        """
+        Transform data and return it.
+
+        State required:
+            Requires state to be "fitted".
+
+        Accesses in self:
+            Fitted model attributes ending in "_".
+            self._is_fitted
+
+        Parameters
+        ----------
+        x : numpy.ndarray or pandas.DataFrame
+            Feature data to transform.
+        y : numpy.ndarray or pandas.Series
+            Additional target data to transform.
+        **predict_params
+            Additional predict parameters.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Prediction for x.
+        """
+        # Check whether is fitted
+        self.check_is_fitted()
+
+        # Transform data
+        xt = self._predict(x, y, **predict_params)
+
+        return xt
+
+    def fit_predict(self, x, y=None, **fit_predict_params):
+        """
+        Fit and predict data.
+
+        Parameters
+        ----------
+        x : numpy.ndarray or pandas.DataFrame
+            Feature data to transform.
+        y : numpy.ndarray or pandas.Series
+            Additional target data to transform.
+        **fit_predict_params : dict
+            Additional fit and predict parameters.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Prediction for x.
+        """
+        # Default, non-optimized version for `fit_predict`. Overwrite, when
+        # can be optimized.
+        return self.fit(x, y, **fit_predict_params).predict(x, **fit_predict_params)
+
+    def _predict(self, x, y=None, **predict_params):
+        """
+        Predict on data.
+
+        Parameters
+        ----------
+        x : numpy.ndarray or pandas.DataFrame
+            Checked feature data to fit.
+        y : numpy.ndarray or pandas.Series
+            Checked target data to fit.
+        **predict_params : dict
+            Additional predict parameters.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Prediction for x.
         """
         raise NotImplementedError("Abstract method.")
 

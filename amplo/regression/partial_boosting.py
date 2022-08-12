@@ -2,70 +2,69 @@
 
 from copy import deepcopy
 
+from amplo.regression._base import BaseRegressor
 
-class PartialBoostingRegressor:
+
+class PartialBoostingRegressor(BaseRegressor):
     """
-    Wrapper for boosting models which limits the number of estimators being used in
-    the prediction.
+    Amplo wrapper for regressor boosting models.
+
+    The number of estimators being used in the prediction are limited.
+
+    Parameters
+    ----------
+    model
+        Boosting model to wrap.
+    step : int
+        Number of iterations/estimators to limit the model on predictions.
+    verbose : {0, 1, 2}
+        Verbose logging.
     """
 
-    _estimator_type = "regressor"
-
-    _SUPPORTED_MODELS = (
+    _SUPPORTED_MODELS = [
         "AdaBoostRegressor",
         "GradientBoostingRegressor",
         "LGBMRegressor",
         "XGBRegressor",
         "CatBoostRegressor",
-    )
+    ]
 
-    def __init__(self, model, step):
-        """
-        Construct wrapper for model with `predict` and `predict_proba` methods.
+    def __init__(self, model, step, verbose=0):
+        model = deepcopy(model)
 
-        Parameters
-        ----------
-        model
-            boosting model to wrap.
-        step : int
-            Number of iterations/estimators to limit the model on predictions.
-        """
-        self.model_class = type(model).__name__
+        model_name = type(model).__name__
+        if model_name not in self._SUPPORTED_MODELS:
+            raise ValueError(f"Unsupported model {model_name}")
+        if model_name in ("AdaBoostRegressor", "GradientBoostingRegressor"):
+            model.estimators_ = model.estimators_[:step]
+
+        super().__init__(model=model, verbose=verbose)
         self.step = step
-        if self.model_class in ["AdaBoostRegressor", "GradientBoostingRegressor"]:
-            self.model = deepcopy(model)
-            self.model.estimators_ = self.model.estimators_[: self.step]
-        else:
-            self.model = model
 
-    def predict(self, x):
-        if self.model_class in [
-            "AdaBoostRegressor",
-            "GradientBoostingRegressor",
-        ]:
-            return self.model.predict(x)
-        elif self.model_class == "LGBMRegressor":
-            return self.model.predict(x, num_iteration=self.step)
-        elif self.model_class == "XGBRegressor":
-            return self.model.predict(x, iteration_range=(0, self.step))
-        elif self.model_class == "CatBoostRegressor":
-            return self.model.predict(x, ntree_end=self.step)
+    def _get_prediction_kwargs(self):
+        model_name = type(self.model).__name__
+        if model_name in ("AdaBoostRegressor", "GradientBoostingRegressor"):
+            return {}
+        elif model_name == "LGBMRegressor":
+            return {"num_iterations": self.step}
+        elif model_name == "XGBRegressor":
+            return {"iteration_range": (0, self.step)}
+        elif model_name == "CatBoostRegressor":
+            return {"ntree_end": self.step}
         else:
-            raise ValueError("Incorrect model type.")
+            raise AttributeError(f"Unsupported model {model_name}")
+
+    def _predict(self, x, y=None, **kwargs):
+        return self.model.predict(x, **kwargs, **self._get_prediction_kwargs())
 
     @classmethod
     def n_estimators(cls, model):
-        model_class = type(model).__name__
-        if model_class in [
-            "AdaBoostRegressor",
-            "GradientBoostingRegressor",
-        ]:
+        model_name = type(model).__name__
+        if model_name in ("AdaBoostRegressor", "GradientBoostingRegressor"):
             return len(model.estimators_)
-        elif model_class == "LGBMRegressor":
-            return model.num_trees()
-        elif model_class == "XGBRegressor":
-            return model.model.num_boosted_rounds()
-        elif model_class == "CatBoostRegressor":
+        elif model_name in ("LGBMRegressor", "XGBRegressor"):
+            return model.model.n_estimators
+        elif model_name == "CatBoostRegressor":
             return model.model.tree_count_
         else:
-            raise ValueError("Incorrect model type.")
+            raise ValueError(f"Unsupported model {model_name}")

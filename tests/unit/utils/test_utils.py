@@ -1,6 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
 import numpy as np
+import pytest
 
 from amplo.automl.modelling import Modeller
 from amplo.utils import check_dtypes, clean_feature_name, get_model, hist_search
@@ -39,11 +40,8 @@ class TestUtils:
     def test_check_dtypes(self):
         # Test valid dtypes
         valid = [("1", 1, int), ("2.0", 2.0, float), ("both", 3.0, (int, float))]
-        check_dtypes(valid)
+        check_dtypes(*valid)
         # Test invalid dtypes
         invalid = [("invalid", 1.0, int)]
-        try:
-            check_dtypes(invalid)
-            raise AssertionError("`check_dtypes` did not raise a ValueError.")
-        except TypeError:
-            pass
+        with pytest.raises(TypeError):
+            check_dtypes(*invalid)

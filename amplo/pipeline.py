@@ -1316,16 +1316,22 @@ class Pipeline:
                 ]
             )
             self.logger.info("Stacked models: {}".format(list(stacking_models.keys())))
+            # Make the dict of dict flat
+            add_to_stack = list(stacking_models)
+            stacking_models = {
+                f"{model}__{param}": parameters[param]
+                for model, parameters in stacking_models.items()
+                for param in parameters
+            }
 
             # Add samples & Features
             stacking_models["n_samples"], stacking_models["n_features"] = self.x.shape
 
             # Prepare Stack
             if self.mode == "regression":
-                stack = StackingRegressor(**stacking_models)
-
+                stack = StackingRegressor(add_to_stack, **stacking_models)
             elif self.mode == "classification":
-                stack = StackingClassifier(**stacking_models)
+                stack = StackingClassifier(add_to_stack, **stacking_models)
             else:
                 raise NotImplementedError("Unknown mode")
 

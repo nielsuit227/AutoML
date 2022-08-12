@@ -170,14 +170,12 @@ class FeatureProcessor(BaseFeatureProcessor):
         super().__init__(mode=mode, verbose=verbose)
 
         check_dtypes(
-            [
-                ("is_temporal", is_temporal, (bool, type(None))),
-                ("extract_features", extract_features, bool),
-                ("collinear_threshold", collinear_threshold, float),
-                ("analyse_feature_sets", analyse_feature_sets, (str, type(None))),
-                ("selection_cutoff", selection_cutoff, float),
-                ("selection_increment", selection_increment, float),
-            ]
+            ("is_temporal", is_temporal, (bool, type(None))),
+            ("extract_features", extract_features, bool),
+            ("collinear_threshold", collinear_threshold, float),
+            ("analyse_feature_sets", analyse_feature_sets, (str, type(None))),
+            ("selection_cutoff", selection_cutoff, float),
+            ("selection_increment", selection_increment, float),
         )
         for value, name in (
             (collinear_threshold, "collinear_threshold"),

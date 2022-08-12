@@ -223,8 +223,8 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             # Set defaults
             fit_wavelets = ["cmor1.5-1.0", "gaus4", "gaus7", "cgau2", "cgau6", "mexh"]
         else:
-            check_dtypes([("fit_wavelets", fit_wavelets, list)])
-            check_dtypes([("fit_wavelets_item", item, str) for item in fit_wavelets])
+            check_dtypes(*[("fit_wavelets", fit_wavelets, list)])
+            check_dtypes(*[("fit_wavelets_item", item, str) for item in fit_wavelets])
         self.fit_wavelets = fit_wavelets
         self._received_multi_index = True
 

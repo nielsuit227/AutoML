@@ -95,7 +95,7 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin):
         BaseTransformer.__init__(self)
         LoggingMixin.__init__(self, verbose=verbose)
 
-        check_dtypes([("mode", mode, (str, type(None)))])
+        check_dtypes(("mode", mode, (str, type(None))))
 
         if isinstance(mode, str):
             mode = mode.lower()
@@ -124,7 +124,7 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin):
         -------
         pd.DataFrame
         """
-        check_dtypes([("x", x, pd.DataFrame)])
+        check_dtypes(("x", x, pd.DataFrame))
 
         x = deepcopy(x) if copy else x  # make copy
 
@@ -155,7 +155,7 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin):
         -------
         pd.Series
         """
-        check_dtypes([("y", y, pd.Series)])
+        check_dtypes(("y", y, pd.Series))
 
         y = deepcopy(y) if copy else y  # make copy
         y.name = str(y.name) if y.name else "target"  # stringify name
@@ -276,7 +276,7 @@ class BaseFeatureExtractor(BaseFeatureProcessor):
         # Check input
         if isinstance(features, str):
             features = [features]
-        check_dtypes([("feature_item", x, str) for x in features])
+        check_dtypes(*[("feature_item", x, str) for x in features])
         # Apply
         self.features_ = sorted(features)
 
@@ -291,7 +291,7 @@ class BaseFeatureExtractor(BaseFeatureProcessor):
         # Check input
         if isinstance(features, str):
             features = [features]
-        check_dtypes([("feature_item", x, str) for x in features])
+        check_dtypes(*[("feature_item", x, str) for x in features])
         # Apply
         self.features_.extend(features)
         self.features_ = sorted(set(self.features_))
@@ -307,7 +307,7 @@ class BaseFeatureExtractor(BaseFeatureProcessor):
         # Check input
         if isinstance(features, str):
             features = [features]
-        check_dtypes([("feature_item", x, str) for x in features])
+        check_dtypes(*[("feature_item", x, str) for x in features])
         # Check integrity
         if not set(features).issubset(self.features_):
             raise ValueError(
@@ -452,7 +452,7 @@ class BaseFeatureExtractor(BaseFeatureProcessor):
         For the scores dataframe, values represent the scores (per class) and column
         names the respective feature name.
         """
-        check_dtypes([("scores", scores, pd.DataFrame)])
+        check_dtypes(("scores", scores, pd.DataFrame))
 
         if scores.shape[1] == 0:
             return scores

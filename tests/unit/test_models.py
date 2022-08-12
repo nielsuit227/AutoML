@@ -11,6 +11,7 @@ from sklearn.base import clone
 from sklearn.datasets import make_classification, make_regression
 from sklearn.metrics import SCORERS
 
+from amplo.base.exceptions import NotFittedError
 from amplo.classification import (
     CatBoostClassifier,
     LGBMClassifier,
@@ -63,9 +64,9 @@ def setup_class(request):
 
     if "Stacking" in model.__name__:
         if is_classification:
-            model_params = {"CatBoostClassifier": {"depth": 10}}
+            model_params = {"DecisionTreeClassifier__max_depth": 10}
         else:
-            model_params = {"CatBoostRegressor": {"depth": 10}}
+            model_params = {"DecisionTreeRegressor__max_depth": 10}
     else:
         model_params = {"max_depth": 10}
 
@@ -78,7 +79,7 @@ def setup_class(request):
 
 
 @pytest.mark.usefixtures("setup_class")
-class TestClassifier:
+class TestModel:
     @pytest.fixture(autouse=True)
     def setup(self):
         # Initialize model
@@ -97,11 +98,11 @@ class TestClassifier:
     def test_fit_numpy(self):
         self.model.fit(self.x.to_numpy(), self.y.to_numpy())
 
-    def test_trained_attr(self):
-        assert hasattr(self.model, "trained")
-        assert self.model.trained is False
+    def test_is_fitted(self):
+        with pytest.raises(NotFittedError):
+            self.model.check_is_fitted()
         self.model.fit(self.x, self.y)
-        assert self.model.trained is True
+        self.model.check_is_fitted()
 
     def test_predict(self):
         self.model.fit(self.x, self.y)
