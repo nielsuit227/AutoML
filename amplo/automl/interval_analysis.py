@@ -265,9 +265,9 @@ class IntervalAnalyser:
         self._mins, self._maxs = features.min(), features.max()
         features = (features - features.min()) / (features.max() - features.min())
 
-        # Change float64 to float32
+        # Assert that all dtypes are of dtype float32
         #  See: https://github.com/facebookresearch/faiss/issues/461
-        for col in features.select_dtypes(include=["float64"]).columns:
+        for col in features.select_dtypes(exclude=["float32"]).columns:
             features[col] = features[col].astype("float32")
 
         # Store data in self
