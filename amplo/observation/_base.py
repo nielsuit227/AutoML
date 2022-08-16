@@ -6,10 +6,12 @@ Base class used to build new observers.
 
 import abc
 import warnings
+from copy import deepcopy
 from typing import TYPE_CHECKING, Dict, List, Union
 
 import numpy as np
 from sklearn.metrics import get_scorer
+from sklearn.model_selection import train_test_split
 
 if TYPE_CHECKING:
     from amplo import Pipeline
@@ -120,7 +122,13 @@ class PipelineObserver(BaseObserver, metaclass=abc.ABCMeta):
         if not type(pipeline).__name__ == "Pipeline":
             raise ValueError("Must be an Amplo pipeline.")
 
+        # Set pipeline
         self._pipe = pipeline
+
+        # Split data
+        self.xt, self.xv, self.yt, self.yv = train_test_split(
+            self.x, self.y, test_size=0.3, random_state=9276306
+        )
 
     @property
     def obs_type(self) -> str:
@@ -140,8 +148,23 @@ class PipelineObserver(BaseObserver, metaclass=abc.ABCMeta):
         return get_scorer(self._pipe.objective)
 
     @property
+    def model(self):
+        return deepcopy(self._pipe.best_model)
+
+    @property
+    def fitted_model(self):
+        fitted_model = self.model
+        fitted_model.fit(self.xt, self.yt)
+        return fitted_model
+
+    @property
     def x(self):
-        return self._pipe.x
+        # Use best feature set, if available.
+        if self._pipe.best_feature_set is not None:
+            select_columns = self._pipe.feature_sets[self._pipe.best_feature_set]
+            return self._pipe.x[select_columns]
+        else:
+            return self._pipe.x
 
     @property
     def y(self):

@@ -16,6 +16,8 @@ import json
 
 import numpy as np
 import pandas as pd
+from cleanlab.filter import find_label_issues
+from sklearn.model_selection import cross_val_predict
 
 from amplo.observation._base import PipelineObserver, _report_obs
 from amplo.utils.logging import logger
@@ -46,6 +48,7 @@ class DataObserver(PipelineObserver):
         self.check_minority_sensitivity()
         self.check_extreme_values()
         self.check_categorical_mismatch()
+        self.check_label_issues()
 
     @_report_obs
     def check_monotonic_columns(self):
@@ -237,5 +240,34 @@ class DataObserver(PipelineObserver):
         message = (
             f"{len(categorical_mismatches)} categorical columns have mismatching."
             f"categories. More specifically: {json.dumps(categorical_mismatches)}."
+        )
+        return status_ok, message
+
+    @_report_obs
+    def check_label_issues(self):
+        """
+        Checks for label issues (classification only). Uses cleanlabs.
+        """
+        # Only classification
+        if self._pipe.mode != "classification":
+            return True, "All good"
+
+        # Get predicted labels
+        predicted_probabilities = cross_val_predict(
+            self.model, self.x, self.y, cv=3, method="predict_proba"
+        )
+
+        # Analyse with cleanlabs
+        ranked_label_issues = find_label_issues(
+            labels=self.y,
+            pred_probs=predicted_probabilities,
+            return_indices_ranked_by="self_confidence",
+        ).tolist()
+
+        # Return
+        status_ok = not ranked_label_issues
+        message = (
+            f"{len(ranked_label_issues)} sample(s) seem incorrectly labelled."
+            f"More specifically: {json.dumps(ranked_label_issues)}."
         )
         return status_ok, message

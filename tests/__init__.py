@@ -16,6 +16,7 @@ __all__ = [
     "make_x_y",
     "make_data",
     "get_all_modeller_models",
+    "find_first_warning_of_type",
     "RandomPredictor",
     "OverfitPredictor",
     "DelayedRandomPredictor",
@@ -63,6 +64,27 @@ def get_all_modeller_models(mode: str, **kwargs):
         ]
     }.values()
     return list(models)
+
+
+def find_first_warning_of_type(typ, record):
+    """
+    Find first warning of type ``typ`` in warnings record.
+
+    Parameters
+    ----------
+    typ : Any
+        Warning to search for.
+    record : pytest.WarningsRecorder
+        Warnings record from ``with pytest.warns(...) as record`` context manager.
+
+    Returns
+    -------
+    pytest.WarningsMessage
+    """
+    for item in record:
+        if issubclass(item.category, typ):
+            return item
+    raise ValueError(f"No warning of type {typ} found in warnings record.")
 
 
 # ----------------------------------------------------------------------

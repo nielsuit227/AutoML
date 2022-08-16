@@ -10,6 +10,7 @@ import pytest
 from amplo import Pipeline
 from amplo.observation._base import ProductionWarning
 from amplo.observation.data import DataObserver
+from tests import find_first_warning_of_type
 
 
 class TestDataObserver:
@@ -45,7 +46,7 @@ class TestDataObserver:
         obs = DataObserver(pipeline=pipeline)
         with pytest.warns(ProductionWarning) as record:
             obs.check_monotonic_columns()
-        msg = str(record[0].message)
+        msg = str(find_first_warning_of_type(ProductionWarning, record).message)
         monotonic_cols = json.loads(re.search(r"\[.*]", msg).group(0))
         assert set(monotonic_cols) == {0, 1}, "Wrong monotonic columns identified."
 
@@ -68,7 +69,7 @@ class TestDataObserver:
         obs = DataObserver(pipeline=pipeline)
         with pytest.warns(ProductionWarning) as record:
             obs.check_minority_sensitivity()
-        msg = str(record[0].message)
+        msg = str(find_first_warning_of_type(ProductionWarning, record).message)
         sensitive_cols = json.loads(re.search(r"\[.*]", msg).group(0))
         assert sensitive_cols == [1], "Wrong minority sensitive columns identified."
 
@@ -92,7 +93,7 @@ class TestDataObserver:
         obs = DataObserver(pipeline=pipeline)
         with pytest.warns(ProductionWarning) as record:
             obs.check_categorical_mismatch()
-        msg = str(record[0].message)
+        msg = str(find_first_warning_of_type(ProductionWarning, record).message)
         sensitive_cols = json.loads(re.search(r"\[.*]", msg).group(0))
         assert sensitive_cols == [
             {"feature_1": ["something", "somethign"]}
@@ -112,6 +113,23 @@ class TestDataObserver:
         obs = DataObserver(pipeline=pipeline)
         with pytest.warns(ProductionWarning) as record:
             obs.check_extreme_values()
-        msg = str(record[0].message)
+        msg = str(find_first_warning_of_type(ProductionWarning, record).message)
         extreme_cols = json.loads(re.search(r"\[.*]", msg).group(0))
         assert extreme_cols == [1], "Wrong minority sensitive columns identified."
+
+    def test_label_issues(self):
+        # Setup
+        x = np.hstack(
+            (np.random.normal(-2, 0.1, size=50), np.random.normal(2, 0.1, size=50))
+        )
+        y = np.hstack((np.ones(50), np.zeros(49), 1))
+
+        # Observe
+        pipeline = Pipeline(n_grid_searches=0)
+        pipeline.fit(x, y)
+        obs = DataObserver(pipeline=pipeline)
+        with pytest.warns(ProductionWarning) as record:
+            obs.check_label_issues()
+        msg = str(find_first_warning_of_type(ProductionWarning, record).message)
+        label_issues = json.loads(re.search(r"\[.*]", msg).group(0))
+        assert label_issues == [99], "Wrong label issues identified."

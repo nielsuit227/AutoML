@@ -15,7 +15,6 @@ from copy import deepcopy
 
 import numpy as np
 from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KernelDensity
 
 from amplo.classification import PartialBoostingClassifier
@@ -45,27 +44,6 @@ class ModelObserver(PipelineObserver):
     """
 
     _obs_type = "model_observer"
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.xt, self.xv, self.yt, self.yv = train_test_split(
-            self.x, self.y, test_size=0.3, random_state=9276306
-        )
-        self.fitted_model = self.model
-        self.fitted_model.fit(self.xt, self.yt)
-
-    @property
-    def model(self):
-        return deepcopy(self._pipe.best_model)
-
-    @property
-    def x(self):
-        # Use best feature set, if available.
-        if self._pipe.best_feature_set is not None:
-            select_columns = self._pipe.feature_sets[self._pipe.best_feature_set]
-            return self._pipe.x[select_columns]
-        else:
-            return self._pipe.x
 
     def observe(self):
         self.check_model_size()
@@ -284,13 +262,13 @@ class ModelObserver(PipelineObserver):
             PartialBooster = PartialBoostingRegressor
 
         # Determine steps & initiate results
-        steps = np.ceil(
-            np.linspace(0, PartialBooster.n_estimators(self.fitted_model), 7)
-        )[1:-1]
+        steps = np.ceil(np.linspace(0, PartialBooster.n_estimators(self.model), 7))[
+            1:-1
+        ]
         scores = []
         for step in steps:
             # Can directly use scorer, as no training is involved at all
-            booster = PartialBooster(self.fitted_model, step)
+            booster = PartialBooster(self.model, step)
             booster._is_fitted = True
             scores.append(self.scorer(booster, self.xv, self.yv))
 

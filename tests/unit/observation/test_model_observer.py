@@ -147,6 +147,7 @@ class TestModelObserver:
 
         # Make pipeline and simulate fit
         pipeline = Pipeline(n_grid_searches=0, cv_splits=2)
+
         pipeline._read_data(x, y)
         pipeline._mode_detector()
         n_estimators = 1000
@@ -160,6 +161,7 @@ class TestModelObserver:
             pipeline.best_model = CatBoostClassifier(**boost_kwargs)
         else:
             pipeline.best_model = CatBoostRegressor(**boost_kwargs)
+        pipeline.best_model.fit(x, y)
 
         # Observer
         obs = ModelObserver(pipeline=pipeline)

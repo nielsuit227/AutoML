@@ -393,10 +393,6 @@ class Pipeline(LoggingMixin):
         # Preprocess Data
         self._data_processing()
 
-        # Check data
-        obs = DataObserver(pipeline=self)
-        obs.observe()
-
         # Fit Drift Detector to input
         num_cols = list(
             set(self.x).intersection(
@@ -497,10 +493,15 @@ class Pipeline(LoggingMixin):
             # Set and store production settings
             self._prepare_production_settings(prod_dir + "Settings.json")
 
+            # Check data
+            obs = DataObserver(pipeline=self)
+            obs.observe()
+            self.settings["data_observer"] = obs.observations
+
             # Observe production
             obs = ModelObserver(pipeline=self)
             obs.observe()
-            self.settings["production_observation"] = obs.observations
+            self.settings["model_observer"] = obs.observations
 
         # Finish
         self.is_fitted = True
