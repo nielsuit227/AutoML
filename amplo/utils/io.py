@@ -2,9 +2,9 @@
 
 import json
 import os
-import warnings
 from pathlib import Path
 from typing import Union
+from warnings import warn
 
 import pandas as pd
 
@@ -35,7 +35,7 @@ def boolean_input(question: str) -> bool:
     elif x.lower() == "y" or x.lower() == "yes":
         return True
     else:
-        print('Sorry, I did not understand. Please answer with "n" or "y"')
+        warn('Sorry, I did not understand. Please answer with "n" or "y"')
         return boolean_input(question)
 
 
@@ -52,8 +52,7 @@ def parse_json(json_string: Union[str, dict]) -> Union[str, dict]:
                 .replace("None", "null")
             )
         except json.decoder.JSONDecodeError:
-            print("[AutoML] Cannot validate, impassable JSON.")
-            print(json_string)
+            warn(f"Cannot validate, impassable JSON: {json_string}")
             return json_string
 
 
@@ -134,10 +133,10 @@ def merge_logs(path_to_folder, target="labels"):
         try:
             datum = read_pandas(metadata[file_id]["full_path"])
         except pd.errors.EmptyDataError:
-            warnings.warn(f"Empty file: {metadata[file_id]}")
+            warn(f"Empty file: {metadata[file_id]}")
             continue
         except NotImplementedError:
-            warnings.warn(f"Unknown file format: {metadata[file_id]}")
+            warn(f"Unknown file format: {metadata[file_id]}")
 
         # Set labels
         datum[target] = metadata[file_id]["folder"]
@@ -206,10 +205,10 @@ def get_log_metadata(path_to_folder):
 
             # Check file
             if file.suffix not in FILE_READERS:
-                warnings.warn(f"[AutoML] Skipped unsupported file format: {file}")
+                warn(f"Skipped unsupported file format: {file}")
                 continue
             elif file.stat().st_size == 0:
-                warnings.warn(f"[AutoML] Skipped empty file: {file}")
+                warn(f"Skipped empty file: {file}")
                 continue
 
             # Add to metadata

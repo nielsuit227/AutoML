@@ -1920,44 +1920,64 @@ class Pipeline(LoggingMixin):
         Using Shapely Additive Explanations, this function calculates the main
         predictors for a given prediction and sets them into the class' memory.
         """
-        # Shap is not implemented for all models.
-        if type(self.best_model).__name__ in [
-            "SVC",
-            "BaggingClassifier",
-            "RidgeClassifier",
-            "LinearRegression",
-            "LogisticRegression",
-            "SVR",
-            "BaggingRegressor",
-        ]:
-            fi = self.settings["feature_processing"]["feature_importance_"]
-            features = list(fi["shap"].keys())
-            values = list(fi["shap"].values())
-            self._main_predictors = {
-                features[i]: values[i] for i in range(len(features))
-            }
+        # shap.TreeExplainer is not implemented for all models. So we try and fall back
+        # to the feature importance given by the feature processor.
+        # Note that the error would be raised when calling `TreeExplainer(best_model)`.
+        try:
+            # Get shap values
+            best_model = self.best_model
+            if type(best_model).__module__.startswith("amplo"):
+                best_model = self.best_model.model
+            # Note: The error would be raised at this point.
+            #  So we have not much overhead.
+            shap_values = np.array(TreeExplainer(best_model).shap_values(data))
 
-        else:
-            if type(self.best_model).__module__[:5] == "amplo":
-                shap_values = np.array(
-                    TreeExplainer(self.best_model.model).shap_values(data)
-                )
-            else:
-                shap_values = np.array(TreeExplainer(self.best_model).shap_values(data))
-
-            # Shape them (multiclass outputs ndim=3, for binary/regression ndim=2)
+            # Average over classes if necessary
             if shap_values.ndim == 3:
-                shap_values = shap_values[1]
+                shap_values = np.mean(np.abs(shap_values), axis=0)
 
-            # Take mean over samples
-            shap_values = np.mean(shap_values, axis=0)
-
-            # Sort them
-            inds = sorted(range(len(shap_values)), key=lambda x: -abs(shap_values[x]))
+            # Average over samples
+            shap_values = np.mean(np.abs(shap_values), axis=0)
+            shap_values /= shap_values.sum()  # normalize to sum up to 1
+            idx_sort = np.flip(np.argsort(shap_values))
 
             # Set class attribute
-            self._main_predictors = dict(
-                [(data.keys()[i], float(abs(shap_values[i]))) for i in inds]
-            )
+            main_predictors = {
+                col: score
+                for col, score in zip(data.columns[idx_sort], shap_values[idx_sort])
+            }
 
-        return self._main_predictors
+        except Exception:  # the exception can't be more specific  # noqa
+            # Get shap feature importance
+            fi = self.settings["feature_processing"]["feature_importance_"]["shap"]
+
+            # Use only those columns that are present in the data
+            main_predictors = {}
+            missing_columns = []
+            for col in data:
+                if col in fi:
+                    main_predictors[col] = fi[col]
+                else:
+                    missing_columns.append(col)
+
+            if missing_columns:
+                self.logger.warning(
+                    f"Some data column names are missing in the shap feature "
+                    f"importance dictionary: {missing_columns}"
+                )
+
+        # Some feature names are obscure since they come from the feature processing
+        # module. Here, we relate the feature importance back to the original features.
+        translation = self.feature_processor.translate_features(list(main_predictors))
+        scores = {}
+        for key, features in translation.items():
+            for feat in features:
+                scores[feat] = scores.get(feat, 0.0) + main_predictors[key]
+        # Normalize
+        total_score = np.sum(list(scores.values()))
+        for key in scores:
+            scores[key] /= total_score
+
+        # Set attribute and return
+        self._main_predictors = scores
+        return scores

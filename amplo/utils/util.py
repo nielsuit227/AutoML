@@ -5,6 +5,7 @@ import inspect
 import logging
 import re
 import warnings
+from collections.abc import Generator
 
 __all__ = [
     "get_model",
@@ -171,21 +172,49 @@ def deprecated(reason):
         raise TypeError(repr(type(reason)))
 
 
-def check_dtypes(*dtype_tuple):
+def check_dtypes(*dtype_tuples):
     """
     Checks all dtypes of given list.
 
     Parameters
     ----------
-    *dtype_tuple : (str, Any, type or tuple of type)
+    *dtype_tuples : Any
         Tuples of (name, parameter, allowed types) to be checked.
+        When checking only one parameter, the wrapping in a tuple can be omitted.
+
+    Returns
+    -------
+    None
+
+    Examples
+    --------
+    Check a single parameter:
+    >>> check_dtypes(("var1", 123, int))  # tuple
+    >>> check_dtypes("var1", 123, int)  # without tuple
+
+    Check multiple:
+    >>> check_dtypes(("var1", 123, int), ("var2", 1.0, (int, float)))  # tuples
+    >>> check_dtypes(("var", var, str) for var in ["a", "b"])  # list or generator
 
     Raises
     ------
     ValueError
         If any given constraint is not fulfilled.
     """
-    for name, value, typ in dtype_tuple:
+    # Allow single dtype check without wrapping in a tuple
+    if isinstance(dtype_tuples[0], str):
+        if len(dtype_tuples) != 3:
+            raise TypeError("Invalid arguments for `check_dtypes` function.")
+        dtype_tuples = (dtype_tuples,)
+
+    # Allow single list or generator object
+    if isinstance(dtype_tuples[0], (list, Generator)):
+        if len(dtype_tuples) != 1:
+            raise TypeError("Invalid arguments for `check_dtypes` function.")
+        dtype_tuples = dtype_tuples[0]
+
+    # Check dtypes
+    for name, value, typ in dtype_tuples:
         if not isinstance(value, typ):
             msg = f"Invalid dtype for argument `{name}`: " f"{type(value).__name__}"
             raise TypeError(msg)

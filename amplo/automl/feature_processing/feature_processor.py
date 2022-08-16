@@ -3,6 +3,7 @@
 """
 Feature processor for extracting and selecting features.
 """
+from __future__ import annotations
 
 import re
 
@@ -298,6 +299,59 @@ class FeatureProcessor(BaseFeatureProcessor):
             y = self.feature_extractor._pool_target(y)  # noqa
 
         return y
+
+    # ----------------------------------------------------------------------
+    # Feature name translation
+
+    def translate_features(self, feature_columns: list[str]) -> dict[str, list[str]]:
+        """
+        Translates (extracted) features and tells its underlying original feature.
+
+        Parameters
+        ----------
+        feature_columns : list of str
+            Feature columns to be translated.
+
+        Returns
+        -------
+        dict of {str: list of str}
+            Dictionary with `feature_columns` as keys and their underlying original
+            features as values.
+        """
+        check_dtypes(("item", item, str) for item in feature_columns)
+
+        translation = {}
+        for filtr, split, pos in self.feature_extractor._feature_translation:  # noqa
+            for col in feature_columns:
+                if not re.search(filtr, col):
+                    # Column doesn't match the filter
+                    continue
+                elif col in translation:
+                    # We don't want to overwrite an existing key-value pair
+                    raise ValueError(
+                        "`_feature_translation` doesn't give unique filters."
+                    )
+                elif split is None:
+                    translation[col] = [col]  # 1-to-1 translation
+                    continue
+
+                left, _, right = re.split(split, col, maxsplit=1)
+                if pos == "left":
+                    translation[col] = [left]
+                elif pos == "right":
+                    translation[col] = [right]
+                elif pos == "left-and-right":
+                    translation[col] = [left, right]
+                else:
+                    raise ValueError(f"Unknown positioning identifier: {pos}")
+
+        if set(translation) != set(feature_columns):
+            raise ValueError(
+                f"Some feature columns are unknown how to handle: "
+                f"{set(feature_columns) - set(translation)}"
+            )
+
+        return translation
 
     def get_required_columns(self, feature_set=None):
         """

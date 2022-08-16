@@ -123,7 +123,7 @@ def pl_pool(
 
 
 def _extract_wavelets(series, scales, wavelet, name=None):
-    check_dtypes(("series", series, pd.Series))
+    check_dtypes("series", series, pd.Series)
 
     # Transform
     # Note that sampling_frequency does not matter.
@@ -156,8 +156,8 @@ class ScoreWatcher:
     """
 
     def __init__(self, keys: list[str]):
-        check_dtypes(("keys", keys, list))
-        check_dtypes(*[("key__item", item, str) for item in keys])
+        check_dtypes("keys", keys, list)
+        check_dtypes(("key__item", item, str) for item in keys)
         self.watch: dict[str, (int, int, np.ndarray)] = {
             key: (0, 0, np.array(0)) for key in keys
         }
@@ -273,6 +273,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
     """
 
     _add_to_settings = ["window_size_", *BaseFeatureExtractor._add_to_settings]
+    _feature_translation = [(".*", "(__)", "left")]
 
     def __init__(
         self,
@@ -308,7 +309,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         if fit_wavelets is True:
             fit_wavelets = ["cmor1.5-1.0", "gaus4", "gaus7", "cgau2", "cgau6", "mexh"]
         elif fit_wavelets:  # if not True, must be an iterable
-            check_dtypes(*[("fit_wavelets__item", item, str) for item in fit_wavelets])
+            check_dtypes(("fit_wavelets__item", item, str) for item in fit_wavelets)
         pooling = list(get_pool_functions(pooling))  # validate
 
         # Integrity checks
@@ -671,13 +672,6 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         # Count log sizes
         counts = pd.Series(index=index, dtype=int).fillna(0).groupby(level=0).count()
 
-        # # We set the window size such that we can expect about 10 - 30 windows
-        # # per log.  In the case where each log has the same size, we end up with
-        # # 15 windows.
-        # shortest, longest = counts.min(), counts.max()
-        # window_size = int(shortest / 10 + longest / 30) // 2
-        # self.window_size_ = max(1, window_size)
-
         if self.mode == "classification":
             # We set the window size such that it fits the smallest indices count.
             # However, we want that at least 100 data rows will be present after pool.
@@ -717,20 +711,28 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         -------
         data : PandasType or List of PandasType
         """
+        self.logger.debug("Fitting data to window size")
+
         if len(data) < 1:
             raise ValueError("Got no data.")
-        if any(not all(datum.index == data[0].index) for datum in data):
-            raise ValueError("Indices don't match.")
-        if len(data[0].index.names) != 2:
-            raise ValueError("Index is not a MultiIndex of size 2.")
 
         data = list(data)  # make `data` indexable
         for i, datum in enumerate(data):
+            # Check datum
+            if len(datum.index.names) != 2:
+                raise ValueError("Index is not a MultiIndex of size 2.")
+            if pd.unique(datum.index.names).size == 1:
+                warn("Index names are not unique. Setting them to ['log', 'index'].")
+                datum.index.names = ["log", "index"]
+            datum_index_names = list(datum.index.names)
+
+            # Add or remove tail
             datum = datum.groupby(level=0).apply(self._add_or_remove_tail)
+
             # Somehow the groupby-apply function doesn't always duplicate the first
             # index level. Therefore, using `.droplevel(0)` isn't safe enough.
-            index_df = datum.index.to_frame().T.drop_duplicates().T
-            # index_df = datum.index.to_frame()[np.unique(datum.index.names)]  # variant
+            index_df = datum.index.to_frame()[pd.unique(datum.index.names)]
+            index_df = index_df[datum_index_names]  # preserve order
             datum.index = pd.MultiIndex.from_frame(index_df)
             data[i] = datum
 

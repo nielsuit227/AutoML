@@ -3,7 +3,9 @@
 """
 Implements the basic behavior of feature processing.
 """
+from __future__ import annotations
 
+from abc import ABCMeta
 from copy import deepcopy
 from typing import List
 from warnings import warn
@@ -79,7 +81,7 @@ def sanitize_dataframe(frame):
     return frame.apply(sanitize_series, axis=0)
 
 
-class BaseFeatureProcessor(BaseTransformer, LoggingMixin):
+class BaseFeatureProcessor(BaseTransformer, LoggingMixin, metaclass=ABCMeta):
     """
     Base class for feature processors.
 
@@ -95,7 +97,7 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin):
         BaseTransformer.__init__(self)
         LoggingMixin.__init__(self, verbose=verbose)
 
-        check_dtypes(("mode", mode, (str, type(None))))
+        check_dtypes("mode", mode, (str, type(None)))
 
         if isinstance(mode, str):
             mode = mode.lower()
@@ -124,7 +126,7 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin):
         -------
         pd.DataFrame
         """
-        check_dtypes(("x", x, pd.DataFrame))
+        check_dtypes("x", x, pd.DataFrame)
 
         x = deepcopy(x) if copy else x  # make copy
 
@@ -155,7 +157,7 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin):
         -------
         pd.Series
         """
-        check_dtypes(("y", y, pd.Series))
+        check_dtypes("y", y, pd.Series)
 
         y = deepcopy(y) if copy else y  # make copy
         y.name = str(y.name) if y.name else "target"  # stringify name
@@ -203,9 +205,6 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin):
         """
         raise NotImplementedError("Abstract method.")
 
-    def _transform(self, x, y=None):
-        raise NotImplementedError("Abstract method.")
-
     def fit(self, x, y=None, **fit_params):
         # Feature processors always have to transform the data in order to fit. So it
         # just makes sense to wrap the main behavior in the fit_transform function and
@@ -235,7 +234,7 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin):
         return x_out
 
 
-class BaseFeatureExtractor(BaseFeatureProcessor):
+class BaseFeatureExtractor(BaseFeatureProcessor, metaclass=ABCMeta):
     """
     Base class for feature extractors.
 
@@ -248,9 +247,18 @@ class BaseFeatureExtractor(BaseFeatureProcessor):
         Model mode: {"classification", "regression"}.
     verbose : int
         Verbosity for logger.
+
+    Class attributes
+    ----------------
+    _add_to_settings : list of str
+        Attribute names to be included in settings.
+    _feature_translation : list of (str, str or None, str or None)
+        Instructions for `FeatureProcessor.translate_features()` on how to relate
+        extracted features to their original, raw features.
     """
 
     _add_to_settings = ["features_", *BaseFeatureProcessor._add_to_settings]
+    _feature_translation: list[tuple[str, str | None, str | None]] = None
 
     def __init__(self, mode="notset", verbose=0):
         super().__init__(mode=mode, verbose=verbose)
@@ -258,12 +266,6 @@ class BaseFeatureExtractor(BaseFeatureProcessor):
         self.features_: List[str] = []
         self._validation_model = None
         self._baseline_scores = None
-
-    def _fit_transform(self, x, y=None, **fit_params):
-        raise NotImplementedError("Abstract method.")
-
-    def _transform(self, x, y=None):
-        raise NotImplementedError("Abstract method.")
 
     def set_features(self, features):
         """
@@ -276,7 +278,7 @@ class BaseFeatureExtractor(BaseFeatureProcessor):
         # Check input
         if isinstance(features, str):
             features = [features]
-        check_dtypes(*[("feature_item", x, str) for x in features])
+        check_dtypes(("feature_item", x, str) for x in features)
         # Apply
         self.features_ = sorted(features)
 
@@ -291,7 +293,7 @@ class BaseFeatureExtractor(BaseFeatureProcessor):
         # Check input
         if isinstance(features, str):
             features = [features]
-        check_dtypes(*[("feature_item", x, str) for x in features])
+        check_dtypes(("feature_item", x, str) for x in features)
         # Apply
         self.features_.extend(features)
         self.features_ = sorted(set(self.features_))
@@ -307,7 +309,7 @@ class BaseFeatureExtractor(BaseFeatureProcessor):
         # Check input
         if isinstance(features, str):
             features = [features]
-        check_dtypes(*[("feature_item", x, str) for x in features])
+        check_dtypes(("feature_item", x, str) for x in features)
         # Check integrity
         if not set(features).issubset(self.features_):
             raise ValueError(
@@ -454,7 +456,7 @@ class BaseFeatureExtractor(BaseFeatureProcessor):
         For the scores dataframe, values represent the scores (per class) and column
         names the respective feature name.
         """
-        check_dtypes(("scores", scores, pd.DataFrame))
+        check_dtypes("scores", scores, pd.DataFrame)
 
         if scores.shape[1] == 0:
             return scores
