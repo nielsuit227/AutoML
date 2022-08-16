@@ -39,7 +39,7 @@ class PartialBoostingRegressor(BaseRegressor):
             model.estimators_ = model.estimators_[:step]
 
         super().__init__(model=model, verbose=verbose)
-        self.step = step
+        self.step = int(step)
 
     def _get_prediction_kwargs(self):
         model_name = type(self.model).__name__

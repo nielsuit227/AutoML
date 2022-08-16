@@ -71,41 +71,59 @@ class TimeFilter(logging.Filter):
         return True
 
 
+class NameFilter(logging.Filter):
+    """
+    Logging filter that ignores child names of loggers that inherit from ``AutoML``.
+    """
+
+    def filter(self, record):
+        split_name = record.name.split(".", 1)
+        if split_name[0] == "AmploML":
+            record.name = split_name[0]
+        return True
+
+
 # Get custom logger
 logger = logging.getLogger("AmploML")
 logger.setLevel("INFO")
 
 # Set console handler
 console_formatter = colorlog.ColoredFormatter(
-    "%(blue)s[%(name)s]%(log_color)s[%(levelname)s] %(white)s%(message)s "
-    "%(light_black)s<%(filename)s:%(lineno)d> (%(relative)ss)"
+    "%(white)s%(asctime)s %(blue)s[%(name)s]%(log_color)s[%(levelname)s] "
+    "%(white)s%(message)s %(light_black)s<%(filename)s:%(lineno)d> (%(relative)ss)",
+    datefmt="%H:%M",
 )
 console_handler = logging.StreamHandler()
-console_handler.setLevel("INFO")
+console_handler.setLevel(logging.NOTSET)
 console_handler.setFormatter(console_formatter)
 logger.addHandler(console_handler)
 
 # Set file handler
 file_formatter = logging.Formatter(
-    "[%(name)s][%(levelname)s] %(message)s <%(filename)s:%(lineno)d> (%(relative)ss)"
+    "%(asctime)s [%(name)s][%(levelname)s] %(message)s  "
+    "<%(filename)s:%(lineno)d> (%(relative)ss)",
+    datefmt="%H:%M",
 )
 file_handler = logging.FileHandler("AutoML.log", mode="a")
-file_handler.setLevel("INFO")
+file_handler.setLevel(logging.NOTSET)
 file_handler.setFormatter(file_formatter)
 logger.addHandler(file_handler)
 
-# Add TimeFilter
+# Add filters
 [handler.addFilter(TimeFilter()) for handler in logger.handlers]
+[handler.addFilter(NameFilter()) for handler in logger.handlers]
 
 # Capture warnings from `warnings.warn(...)`
 logging.captureWarnings(True)
 py_warnings_logger = logging.getLogger("py.warnings")
 warnings_formatter = colorlog.ColoredFormatter(
-    "%(white)s[%(name)s] %(log_color)s%(levelname)s: %(message)s"
+    "%(white)s%(asctime)s %(log_color)s[%(levelname)s] %(white)s%(message)s",
+    datefmt="%H:%M",
 )
 warnings_handler = logging.StreamHandler()
 warnings_handler.setLevel("WARNING")
 warnings_handler.setFormatter(warnings_formatter)
+warnings_handler.terminator = ""  # suppress unnecessary newline
 py_warnings_logger.addHandler(warnings_handler)
 
 

@@ -105,7 +105,7 @@ class StackingRegressor(BaseRegressor):
         verbose=0,
         **model_params,
     ):
-        check_dtypes(("add_default_estimators", add_defaults_to_stack, bool))
+        check_dtypes(("add_defaults_to_stack", add_defaults_to_stack, bool))
 
         # Set attributes
         if add_to_stack is None:

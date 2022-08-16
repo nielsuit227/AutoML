@@ -536,6 +536,5 @@ class LoggingMixin:
         # Notice: Without creating a new logger (through `getChild`), setting the
         # logging level will influence all logging. Setting logging levels individually
         # per class is therefore not possible.
-        # self.logger = logger.getChild(type(self).__name__)
-        self.logger = logger
+        self.logger = logger.getChild(type(self).__name__)
         self.logger.setLevel(logging_level)

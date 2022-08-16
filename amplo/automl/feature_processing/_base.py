@@ -399,6 +399,8 @@ class BaseFeatureExtractor(BaseFeatureProcessor):
         if self.mode == "classification":
             self.classes_ = sorted(y.unique())
 
+        self.logger.debug(f"Initialized the baseline score to {self._baseline_scores}")
+
     def _update_feature_baseline_scores(self, scores):
         """
         Update the baseline scores.

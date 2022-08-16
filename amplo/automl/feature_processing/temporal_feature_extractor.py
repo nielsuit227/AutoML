@@ -415,9 +415,11 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         self.logger.info("Fitting raw features.")
 
         # Pool all features
+        self.logger.debug("...pooling raw features.")
         x_pooled = self._pool_features(x, drop_nan_columns=True)
 
         # Score and decide which features to accept
+        self.logger.debug("...scoring pooled features.")
         scores = self.select_scores(
             x_pooled.apply(self._calc_feature_scores, y=y_pooled, axis=0),
             best_n_per_class=50,
@@ -501,9 +503,10 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
                 and time.time() - start_time > self.timeout
             ):
                 self.logger.info(
-                    f"Timeout: Stopped search for wavelet-transformed features. "
+                    f"TIMEOUT: Stopped search for wavelet-transformed features. "
                     f"Examined {counter}/{len(col_wav_iterator)} wavelet-column "
-                    f"combinations (100 * {counter / len(col_wav_iterator):.2f}%)."
+                    f"combinations ({100 * counter / len(col_wav_iterator):.2f}%) "
+                    f"whereas {counter - not_skipped_counter} unpromising were skipped."
                 )
                 break
 
@@ -522,8 +525,10 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
                     and all(wav_score < wav_watcher.mean() - wav_watcher.std())
                 )
             ):
-                self.logger.debug(f"Skipped: col `{col}` / wav `{wav}`")
+                self.logger.debug(f"SKIPPED: wav `{wav}`, col `{col}`")
                 continue
+
+            self.logger.debug(f"Fitting: wav `{wav}`, col `{col}`")
 
             # Update counter
             not_skipped_counter += 1
@@ -550,12 +555,15 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             scales = np.round(s2f_const / peak_freqs[col], 2)
 
             # Extract features, pool and score
+            self.logger.debug("...extracting wavelet.")
             feats = (
                 x[col]
                 .groupby(level=0, sort=False)
                 .apply(_extract_wavelets, scales=scales, wavelet=wav, name=col)
             )
+            self.logger.debug("...pooling extracted wavelet.")
             feats_pooled = self._pool_features(feats, pooling_instructions, True)
+            self.logger.debug("...calculating feature scores.")
             scores = feats_pooled.apply(self._calc_feature_scores, y=y_pooled, axis=0)
 
             # Update watchers
@@ -577,6 +585,14 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             )
             all_scores.append(good_scores)
             all_feats_pooled.append(feats_pooled[good_scores.columns])
+
+            # Debug logging
+            if not_skipped_counter % 10 == 0:
+                self.logger.debug(
+                    f"Finished {not_skipped_counter:5.0f}/{len(col_wav_iterator):5.0f} "
+                    f"column-wavelet combinations with a mean time of "
+                    f"{(time.time() - start_time) / not_skipped_counter:5.2f} seconds."
+                )
 
         # Finish fitting: concatenate all accepted, pooled features
         x_out = pd.concat(all_feats_pooled, axis=1)

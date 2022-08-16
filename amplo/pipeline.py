@@ -28,6 +28,7 @@ from amplo.automl.feature_processing import FeatureProcessor
 from amplo.automl.interval_analysis import IntervalAnalyser
 from amplo.automl.modelling import Modeller
 from amplo.automl.sequencing import Sequencer
+from amplo.base.objects import LoggingMixin
 from amplo.classification.stacking import StackingClassifier
 from amplo.grid_search import ExhaustiveGridSearch, HalvingGridSearch, OptunaGridSearch
 from amplo.observation import DataObserver, ModelObserver
@@ -35,7 +36,7 @@ from amplo.regression.stacking import StackingRegressor
 from amplo.validation import ModelValidator
 
 
-class Pipeline:
+class Pipeline(LoggingMixin):
     def __init__(self, **kwargs):
         """
         Automated Machine Learning Pipeline for tabular data.
@@ -157,7 +158,7 @@ class Pipeline:
         """
 
         # Set logger
-        self.logger = utils.logging.logger
+        super().__init__(verbose=kwargs.get("verbose", 1))
 
         # Copy arguments
         ##################
@@ -221,7 +222,6 @@ class Pipeline:
         # Flags
         self.plot_eda = kwargs.get("plot_eda", False)
         self.process_data = kwargs.get("process_data", True)
-        self.verbose = kwargs.get("verbose", 1)
         self.no_dirs = kwargs.get("no_dirs", False)
 
         # Checks
@@ -486,13 +486,12 @@ class Pipeline:
             self._parse_production_args(model, feature_set, params)
 
             # Verbose printing
-            if self.verbose > 0:
-                self.logger.info(
-                    f"Preparing Production files for {self.best_model}, "
-                    f"{self.best_feature_set}"
-                )
+            self.logger.info(
+                f"Preparing Production files for {self.best_model_str}, "
+                f"{self.best_feature_set}"
+            )
 
-            # Set best model (`self.bestModel`)
+            # Set best model
             self._prepare_production_model(prod_dir + "Model.joblib")
 
             # Set and store production settings
@@ -580,10 +579,9 @@ class Pipeline:
         assert self.is_fitted, "Pipeline not yet fitted."
 
         # Print
-        if self.verbose > 0:
-            self.logger.info(
-                f"Predicting with {type(self.best_model).__name__}, v{self.version}"
-            )
+        self.logger.info(
+            f"Predicting with {type(self.best_model).__name__}, v{self.version}"
+        )
 
         # Convert
         x, y = self.convert_data(data)
@@ -622,11 +620,10 @@ class Pipeline:
             self.best_model, "predict_proba"
         ), f"{type(self.best_model).__name__} has no attribute predict_proba"
 
-        # Print
-        if self.verbose > 0:
-            self.logger.info(
-                f"Predicting with {type(self.best_model).__name__}, v{self.version}"
-            )
+        # Logging
+        self.logger.info(
+            f"Predicting with {type(self.best_model).__name__}, v{self.version}"
+        )
 
         # Convert data
         x, y = self.convert_data(data)
@@ -788,11 +785,10 @@ class Pipeline:
             self.settings["pipeline"]["mode"] = self.mode
             self.settings["pipeline"]["objective"] = self.objective
 
-            # Print
-            if self.verbose > 0:
-                self.logger.info(
-                    f"Setting mode to {self.mode} & objective to {self.objective}."
-                )
+            # Logging
+            self.logger.info(
+                f"Setting mode to {self.mode} & objective to {self.objective}."
+            )
         return
 
     def _data_processing(self):
@@ -832,8 +828,7 @@ class Pipeline:
             self.settings["data_processing"] = json.load(open(settings_path, "r"))
             self.data_processor.load_settings(self.settings["data_processing"])
 
-            if self.verbose > 0:
-                self.logger.info("Loaded Cleaned Data")
+            self.logger.info("Loaded Cleaned Data")
 
         # Else, run the data processor
         else:
@@ -915,8 +910,7 @@ class Pipeline:
                 data = self._read_csv(data_path)
                 self._set_data(data)
 
-                if self.verbose > 0:
-                    self.logger.info("Loaded Balanced data")
+                self.logger.info("Loaded Balanced data")
 
             else:
                 # Fit and resample
@@ -949,8 +943,7 @@ class Pipeline:
                 data = self._read_csv(data_path)
                 self._set_data(data)
 
-                if self.verbose > 0:
-                    self.logger.info("Loaded Extracted Features")
+                self.logger.info("Loaded Extracted Features")
 
             else:
                 # Sequencing
@@ -971,6 +964,7 @@ class Pipeline:
             is_temporal=None,
             extract_features=self.extract_features,
             collinear_threshold=self.information_threshold,
+            verbose=self.verbose,
         )
 
         # Set paths
@@ -987,8 +981,7 @@ class Pipeline:
             self.feature_processor.load_settings(self.settings["feature_processing"])
             self.feature_sets = self.settings["feature_processing"]["feature_sets_"]
 
-            if self.verbose > 0:
-                self.logger.info("Loaded Extracted Features")
+            self.logger.info("Loaded Extracted Features")
 
         else:
             self.logger.info("Starting Feature Processor")
@@ -1042,8 +1035,7 @@ class Pipeline:
             # self.settings['interval_analysis'] = json.load(open(settings_path, 'r'))
             # self.intervalAnalyser.load_settings(self.settings['interval_analysis'])
 
-            if self.verbose > 0:
-                self.logger.info("Loaded interval-analyzed data")
+            self.logger.info("Loaded interval-analyzed data")
 
         else:
             self.logger.info("Interval-analyzing data")
@@ -1464,15 +1456,20 @@ class Pipeline:
         if "Stacking" in self.best_model_str:
             # Create stacking
             if self.mode == "regression":
-                self.best_model = StackingRegressor(
-                    n_samples=len(self.x), n_features=len(self.x.keys())
-                )
+                stacking_model = StackingRegressor
             elif self.mode == "classification":
-                self.best_model = StackingClassifier(
-                    n_samples=len(self.x), n_features=len(self.x.keys())
-                )
+                stacking_model = StackingClassifier
             else:
                 raise NotImplementedError("Mode not set")
+
+            self.best_model = stacking_model(
+                add_to_stack=self.best_params.get("add_to_stack", None),
+                add_defaults_to_stack=self.best_params.get(
+                    "add_defaults_to_stack", True
+                ),
+                n_samples=self.x.shape[0],
+                n_features=self.x.shape[1],
+            )
         else:
             # Take model as is
             self.best_model = utils.get_model(
@@ -1491,10 +1488,9 @@ class Pipeline:
             self.x[self.feature_sets[self.best_feature_set]],
             self.y,
         )
-        if self.verbose > 0:
-            self.logger.info(
-                f"Model fully fitted, in-sample {self.objective}: {self.best_score:4f}"
-            )
+        self.logger.info(
+            f"Model fully fitted, in-sample {self.objective}: {self.best_score:4f}"
+        )
 
         return
 
@@ -1713,8 +1709,7 @@ class Pipeline:
         completed_versions = len(os.listdir(self.main_dir + "Production"))
         self.version = completed_versions + 1
 
-        if self.verbose > 0:
-            self.logger.info(f"Setting Version {self.version}")
+        self.logger.info(f"Setting Version {self.version}")
 
     def _create_dirs(self):
         folders = [
@@ -1854,7 +1849,7 @@ class Pipeline:
         INTERNAL | Grid search for defined model, parameter set and feature set.
         """
         self.logger.info(
-            f"\nStarting Hyper Parameter Optimization for {type(model).__name__} on "
+            f"Starting Hyper Parameter Optimization for {type(model).__name__} on "
             f"{feature_set} features ({len(self.x)} samples, "
             f"{len(self.feature_sets[feature_set])} features)"
         )
