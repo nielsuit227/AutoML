@@ -267,7 +267,11 @@ class BaseEstimator(BaseObject):
     @property
     def is_fitted(self):
         """Whether `fit` has been called."""
-        return self._is_fitted
+        # Note: for backwards compatibility
+        if hasattr(self, "_is_fitted"):
+            return self._is_fitted
+        else:
+            return True
 
     def check_is_fitted(self):
         """
