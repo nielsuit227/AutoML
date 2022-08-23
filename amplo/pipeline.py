@@ -258,11 +258,7 @@ class Pipeline(LoggingMixin):
         if self.objective is not None:
             if not isinstance(self.objective, str):
                 raise ValueError("Objective needs to be a string.")
-            if self.objective not in metrics.SCORERS:
-                raise NotImplementedError(
-                    "Metric not supported, look at sklearn.metrics."
-                )
-            self.scorer = metrics.SCORERS[self.objective]
+            self.scorer = metrics.get_scorer(self.objective)
         else:
             self.scorer = None
 
@@ -780,7 +776,7 @@ class Pipeline(LoggingMixin):
                 self.objective = self.objective or "neg_mean_absolute_error"
 
             # Set scorer
-            self.scorer = metrics.SCORERS[self.objective]
+            self.scorer = metrics.get_scorer(self.objective)
 
             # Copy to settings
             self.settings["pipeline"]["mode"] = self.mode

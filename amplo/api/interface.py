@@ -6,7 +6,6 @@ from copy import deepcopy
 from pathlib import Path
 
 import pandas as pd
-from termcolor import cprint
 
 from amplo.api.platform import PlatformSynchronizer
 from amplo.api.storage import AzureSynchronizer

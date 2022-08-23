@@ -69,9 +69,7 @@ class PlatformSynchronizer:
         assert os.path.isdir(
             file_dir
         ), f"Production files for version {version} do not exist"
-        files = [
-            file_dir / file for file in ("Settings.json", "Model.joblib", "Report.pdf")
-        ]
+        files = [file_dir / file for file in ("Settings.json", "Model.joblib")]
         for file in files:
             assert file.exists(), f"File {file.name} does not exist"
 

@@ -13,6 +13,8 @@ import numpy as np
 from sklearn.metrics import get_scorer
 from sklearn.model_selection import train_test_split
 
+from amplo.utils import check_dtypes
+
 if TYPE_CHECKING:
     from amplo import Pipeline
 
@@ -60,14 +62,14 @@ class BaseObserver(abc.ABC):
             A brief description of the observation and its results.
         """
         # Check input
-        if not isinstance(typ, str):
-            raise ValueError("Invalid dtype for observation type.")
-        if not isinstance(name, str):
-            raise ValueError("Invalid dtype for observation name.")
-        if not isinstance(status_ok, (bool, np.bool_)):
-            raise ValueError("Invalid dtype for observation status.")
-        if not isinstance(message, str):
-            raise ValueError("Invalid dtype for observation message.")
+        check_dtypes(
+            ("typ", typ, str),
+            ("name", name, str),
+            ("status_ok", status_ok, (bool, np.bool_)),
+            ("message", message, str),
+        )
+        if not isinstance(status_ok, bool):
+            status_ok = bool(status_ok)
 
         # Trigger warning when status is not okay
         if not status_ok:

@@ -416,11 +416,9 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         self.logger.info("Fitting raw features.")
 
         # Pool all features
-        self.logger.debug("...pooling raw features.")
         x_pooled = self._pool_features(x, drop_nan_columns=True)
 
         # Score and decide which features to accept
-        self.logger.debug("...scoring pooled features.")
         scores = self.select_scores(
             x_pooled.apply(self._calc_feature_scores, y=y_pooled, axis=0),
             best_n_per_class=50,
@@ -479,7 +477,12 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             peak_freqs[col] = freqs[peak_idx]
 
         # Initialize column-wavelet iterator
-        col_wav_iterator = [(col, wav) for col in x for wav in self.fit_wavelets]
+        col_wav_iterator = [
+            (col, wav)
+            for col in x
+            for wav in self.fit_wavelets
+            if peak_freqs[col].size > 0
+        ]
         if self.strategy in ("random", "smart"):
             # Shuffle iterator
             rng.shuffle(col_wav_iterator)
@@ -556,15 +559,12 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             scales = np.round(s2f_const / peak_freqs[col], 2)
 
             # Extract features, pool and score
-            self.logger.debug("...extracting wavelet.")
             feats = (
                 x[col]
                 .groupby(level=0, sort=False)
                 .apply(_extract_wavelets, scales=scales, wavelet=wav, name=col)
             )
-            self.logger.debug("...pooling extracted wavelet.")
             feats_pooled = self._pool_features(feats, pooling_instructions, True)
-            self.logger.debug("...calculating feature scores.")
             scores = feats_pooled.apply(self._calc_feature_scores, y=y_pooled, axis=0)
 
             # Update watchers
@@ -588,7 +588,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             all_feats_pooled.append(feats_pooled[good_scores.columns])
 
             # Debug logging
-            if not_skipped_counter % 10 == 0:
+            if not_skipped_counter % 25 == 0:
                 self.logger.debug(
                     f"Finished {not_skipped_counter:5.0f}/{len(col_wav_iterator):5.0f} "
                     f"column-wavelet combinations with a mean time of "
