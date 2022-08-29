@@ -36,7 +36,7 @@ class OptunaGridSearch(BaseGridSearch):
     cv : sklearn.model_selection.BaseCrossValidator
         Cross validation object.
     scoring : str or sklearn.metrics._scorer._BaseScorer
-        A valid string for `sklearn.metrics.SCORERS`
+        A valid string for `sklearn.metrics.get_scorer`.
     verbose : int
         Verbose logging.
     """

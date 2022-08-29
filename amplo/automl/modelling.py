@@ -13,6 +13,7 @@ from sklearn import ensemble, linear_model, metrics, model_selection, svm
 
 from amplo.classification import CatBoostClassifier, LGBMClassifier, XGBClassifier
 from amplo.regression import CatBoostRegressor, LGBMRegressor, XGBRegressor
+from amplo.utils import check_dtypes
 from amplo.utils.logging import logger
 
 __all__ = ["ClassificationType", "Modeller", "ModelType", "RegressionType"]
@@ -79,7 +80,7 @@ class Modeller:
         Number of cross-validation splits.
     objective : str
         Performance metric to optimize. Must be a valid string for
-        `sklearn.metrics.SCORERS`.
+        `sklearn.metrics.get_scorer`.
     samples : int
         Hypothetical number of samples in dataset. Useful to manipulate behavior
         of `return_models()` function.
@@ -112,24 +113,23 @@ class Modeller:
         store_models=False,
         store_results=True,
     ):
-        # Test
-        assert mode in ["classification", "regression"], "Unsupported mode"
-        assert isinstance(objective, str)
-        assert (
-            objective in metrics.SCORERS.keys()
-        ), "Pick scorer from sklearn.metrics.SCORERS: \n{}".format(
-            list(metrics.SCORERS.keys())
+        # Check input
+        check_dtypes(
+            ("mode", mode, str),
+            ("objective", objective, str),
+            ("samples", samples, (type(None), int)),
+            ("folder", folder, str),
+            ("dataset", dataset, str),
+            ("store_models", store_models, bool),
+            ("store_results", store_results, bool),
         )
-        assert isinstance(samples, int) or samples is None
-        assert isinstance(folder, str)
-        assert isinstance(dataset, str)
-        assert isinstance(store_models, bool)
-        assert isinstance(store_results, bool)
+        if mode not in ("classification", "regression"):
+            raise ValueError(f"Unsupported mode: {mode}")
 
         # Parameters
         self.cv = cv
         self.objective = objective
-        self.scoring = metrics.SCORERS[objective]
+        self.scoring = metrics.get_scorer(objective)
         self.mode = mode
         self.samples = samples
         self.dataset = str(dataset)

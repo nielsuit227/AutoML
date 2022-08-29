@@ -258,7 +258,6 @@ class BaseFeatureExtractor(BaseFeatureProcessor, metaclass=ABCMeta):
     """
 
     _add_to_settings = ["features_", *BaseFeatureProcessor._add_to_settings]
-    _feature_translation: list[tuple[str, str | None, str | None]] = None
 
     def __init__(self, mode="notset", verbose=0):
         super().__init__(mode=mode, verbose=verbose)

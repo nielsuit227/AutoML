@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 from sklearn.base import clone
 from sklearn.datasets import make_classification, make_regression
-from sklearn.metrics import SCORERS
+from sklearn.metrics import get_scorer
 
 from amplo.base.exceptions import NotFittedError
 from amplo.classification import (
@@ -145,7 +145,7 @@ class TestModel:
             scorers = ["neg_mean_squared_error", "neg_mean_absolute_error", "r2"]
 
         for name in scorers:
-            SCORERS[name](self.model, self.x, self.y)
+            get_scorer(name)(self.model, self.x, self.y)
 
     def test_binary(self):
         if self.is_classification:
@@ -153,9 +153,9 @@ class TestModel:
             self.model.fit(x, y)
             self.model.predict(x)
             self.model.predict_proba(x)
-            SCORERS["neg_log_loss"](self.model, x, y)
-            SCORERS["accuracy"](self.model, x, y)
-            SCORERS["f1_micro"](self.model, x, y)
+            get_scorer("neg_log_loss")(self.model, x, y)
+            get_scorer("accuracy")(self.model, x, y)
+            get_scorer("f1_micro")(self.model, x, y)
 
     def test_pickleable(self):
         x, y = make_classification()

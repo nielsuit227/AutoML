@@ -321,35 +321,31 @@ class FeatureProcessor(BaseFeatureProcessor):
         check_dtypes(("item", item, str) for item in feature_columns)
 
         translation = {}
-        for filtr, split, pos in self.feature_extractor._feature_translation:  # noqa
-            for col in feature_columns:
-                if not re.search(filtr, col):
-                    # Column doesn't match the filter
-                    continue
-                elif col in translation:
-                    # We don't want to overwrite an existing key-value pair
-                    raise ValueError(
-                        "`_feature_translation` doesn't give unique filters."
-                    )
-                elif split is None:
-                    translation[col] = [col]  # 1-to-1 translation
-                    continue
+        for feature in feature_columns:
+            # Raw features
+            if "__" not in feature:
+                t = [feature]
+            # From StaticFeatureExtractor
+            elif re.search("__(mul|div|x|d)__", feature):
+                f1, _, f2 = feature.split("__")
+                t = [f1, f2]
+            elif re.search("^(sin|cos|inv)__", feature):
+                _, f = feature.split("__")
+                t = [f]
+            elif re.search("^dist__", feature):
+                # k-Means clusters need all numeric columns
+                t = self.numeric_cols_
+            # From TemporalFeatureExtractor
+            elif re.search("^((?!__).)*__pool=.+", feature):  # `__` appears only once
+                f, _ = feature.split("__")
+                t = [f]
+            elif re.search(".+__wav__.+__pool=.+", feature):
+                f, _ = feature.split("__", maxsplit=1)
+                t = [f]
+            else:
+                raise ValueError(f"Could not translate feature: {feature}")
 
-                left, _, right = re.split(split, col, maxsplit=1)
-                if pos == "left":
-                    translation[col] = [left]
-                elif pos == "right":
-                    translation[col] = [right]
-                elif pos == "left-and-right":
-                    translation[col] = [left, right]
-                else:
-                    raise ValueError(f"Unknown positioning identifier: {pos}")
-
-        if set(translation) != set(feature_columns):
-            raise ValueError(
-                f"Some feature columns are unknown how to handle: "
-                f"{set(feature_columns) - set(translation)}"
-            )
+            translation[feature] = t
 
         return translation
 
@@ -459,19 +455,26 @@ class FeatureProcessor(BaseFeatureProcessor):
         self.check_is_fitted()
 
         # Find missing columns
-        missing_datetime = [col for col in self.datetime_cols_ if col not in x]
-        missing_numeric = [col for col in self.numeric_cols_ if col not in x]
+        required_cols = [
+            col
+            for columns in self.translate_features(self.features_).values()
+            for col in columns
+        ]
+        required_cols = list(set(required_cols))
+        missing_cols = [col for col in required_cols if col not in x]
+        missing_datetime = [col for col in missing_cols if col in self.datetime_cols_]
+        missing_numeric = [col for col in missing_cols if col in self.numeric_cols_]
+        assert set(missing_cols) == set(missing_datetime) | set(missing_numeric), (
+            "Internal problem: "
+            "Missing datetime and numeric columns don't add up to all missing columns."
+        )
         if missing_datetime or missing_numeric:
-            self.logger.warning(
-                f"Imputing {len(missing_datetime) + len(missing_numeric)} "
-                f"missing columns."
-            )
+            self.logger.warning(f"Imputing {len(missing_cols)} missing column(s).")
 
         # Impute missing datetime columns
         if missing_datetime:
-            raise NotImplementedError(
-                "Imputing missing datetime columns is " "currently not supported."
-            )
+            msg = "Imputing missing datetime columns is currently not supported."
+            raise NotImplementedError(msg)
 
         # Impute missing numeric columns with zeros
         for col in missing_numeric:

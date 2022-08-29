@@ -273,7 +273,6 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
     """
 
     _add_to_settings = ["window_size_", *BaseFeatureExtractor._add_to_settings]
-    _feature_translation = [(".*", "(__)", "left")]
 
     def __init__(
         self,

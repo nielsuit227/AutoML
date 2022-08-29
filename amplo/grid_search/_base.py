@@ -4,14 +4,16 @@ import multiprocessing as mp
 import re
 from abc import abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Union
+from warnings import warn
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import SCORERS
+from sklearn.metrics import get_scorer
 from sklearn.metrics._scorer import _BaseScorer  # noqa
 from sklearn.model_selection import KFold
 
 from amplo.base.objects import LoggingMixin
+from amplo.utils import check_dtypes
 
 __all__ = ["BaseGridSearch"]
 
@@ -27,7 +29,7 @@ class BaseGridSearch(LoggingMixin):
 
     Parameters
     ----------
-    model : Amplo.AutoML.Modeller.ModelType
+    model : amplo.automl.modelling.ModelType
         Model object to optimize.
     params : optional
         Parameters to optimize. Has no effect for `OptunaGridSearch`.
@@ -38,7 +40,7 @@ class BaseGridSearch(LoggingMixin):
     cv : sklearn.model_selection.BaseCrossValidator
         Cross validation object.
     scoring : str or sklearn.metrics._scorer._BaseScorer
-        A valid string for `sklearn.metrics.SCORERS`
+        A valid string for `sklearn.metrics.get_scorer`.
     verbose : int
         Verbose logging.
     """
@@ -57,14 +59,12 @@ class BaseGridSearch(LoggingMixin):
 
         # Input tests
         if hasattr(model, "is_fitted") and model.is_fitted:
-            raise AssertionError("Model already fitted")
-        if isinstance(scoring, str):
-            self.scoring = SCORERS[scoring]
-        elif not issubclass(type(scoring), _BaseScorer):
-            raise ValueError(
-                "Parameter `scoring` must originate from sklearn.metrics.make_scorer() "
-                "or must be a valid string for sklearn.metrics.SCORERS."
+            warn(
+                "The model is already fitted but Amplo's grid search will re-fit.",
+                UserWarning,
             )
+        scoring = get_scorer(scoring)
+        check_dtypes("scoring", scoring, _BaseScorer)
 
         # Set class attributes
         self.model = model
@@ -72,7 +72,7 @@ class BaseGridSearch(LoggingMixin):
         self.n_trials = n_trials
         self.timeout = timeout
         self.cv = cv
-        self.scoring = SCORERS[scoring] if isinstance(scoring, str) else scoring
+        self.scoring = get_scorer(scoring)
 
         self.x, self.y = None, None
         self.binary = True
@@ -125,9 +125,8 @@ class BaseGridSearch(LoggingMixin):
         is_classification = bool(
             re.match(r".*(Classification|Classifier|SVC)", model_name)
         )
-        assert (
-            is_regression or is_classification
-        ), "Could not determine mode (regression or classification)"
+        if not (is_regression or is_classification):
+            raise ValueError("Could not determine mode (regression or classification).")
 
         # Define min-max-function
         def minimax(min_, value, max_):
@@ -417,16 +416,10 @@ class BaseGridSearch(LoggingMixin):
         # Filter for min and max in non-categorical parameters
         param_min_max = {}
         for p_name, value in param_values.items():
-            p_type = value[0]
-            p_args = value[1]
-            if p_type in ("int", "logint", "uniform", "loguniform"):
-                # Sanity check
-                assert (
-                    len(p_args) == 2
-                ), "A {} should have a min and a max value".format(p_type)
-                # Add item to dict
-                add_item = {p_name: {"min": p_args[0], "max": p_args[1]}}
-                param_min_max.update(add_item)
+            p_type, p_args = value[:2]
+            if p_type != "categorical":  # ("int", "logint", "uniform", "loguniform")
+                min_, max_ = p_args
+                param_min_max[p_name] = {"min": min_, "max": max_}
 
         # Combine all values to pd.DataFrame
         param_min_max = pd.DataFrame(param_min_max).T

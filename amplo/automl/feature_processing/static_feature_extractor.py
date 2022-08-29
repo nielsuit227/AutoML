@@ -39,11 +39,6 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
         "centers_",
         *BaseFeatureExtractor._add_to_settings,
     ]
-    _feature_translation = [
-        ("^((?!__).)*$", None, None),
-        ("__(mul|div|x|d)__", "__(.)+__", "left-and-right"),
-        ("^(dist|sin|cos|inv)__", "(dist|sin|cos|inv)__", "right"),
-    ]
 
     def __init__(self, mode="notset", verbose=0):
         super().__init__(mode=mode, verbose=verbose)

@@ -169,10 +169,13 @@ class TestFeatureProcessor:
 
         # Init feature processor
         fp = FeatureProcessor(mode="classification")
+        fp._is_fitted = True
+        fp.feature_extractor = NopFeatureExtractor()
+        fp.feature_extractor._is_fitted = True
         fp.numeric_cols_ = list(numeric.columns)
         fp.datetime_cols_ = list(date.columns)
         fp.collinear_cols_ = list(collinear.columns)
-        fp._is_fitted = True
+        fp.features_ = [*fp.numeric_cols_, *fp.datetime_cols_]
 
         # Check no imputation
         x = pd.concat([numeric, date], axis=1)

@@ -54,22 +54,14 @@ class DataSampler:
             Scikit-Learn metric
         """
         # Tests
-        assert method in [
-            "under",
-            "over",
-            "both",
-        ], "Type needs to be 'under', 'over' or 'both'"
-        assert 1e-6 < margin < 1, "Margin needs to be within [0, 1]."
+        if method not in ("under", "over", "both"):
+            raise ValueError("Method must be one of 'under', 'over' or 'both'.")
+        if not (1e-6 < margin < 1):
+            raise ValueError("Margin must be within [1e-6, 1].")
 
         # Objective
-        if objective is not None:
-            self.objective = objective
-        else:
-            self.objective = "neg_log_loss"
-        assert (
-            objective in metrics.SCORERS.keys()
-        ), "Metric not supported, look at sklearn.metrics.SCORERS.keys()"
-        self.scorer = metrics.SCORERS[self.objective]
+        self.objective = objective or "neg_log_loss"
+        self.scorer = metrics.get_scorer(self.objective)
 
         # Parse
         self.method = method

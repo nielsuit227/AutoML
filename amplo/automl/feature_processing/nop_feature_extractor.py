@@ -16,8 +16,6 @@ class NopFeatureExtractor(BaseFeatureExtractor):
     Each input column will be accepted as a feature.
     """
 
-    _feature_translation = [(".*", None, None)]
-
     def _fit_transform(self, x, y=None, **fit_params):
         self.add_features(x)
         return self._transform(x=x, y=y)
