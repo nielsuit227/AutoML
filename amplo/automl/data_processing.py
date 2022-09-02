@@ -131,7 +131,9 @@ class DataProcessor:
         self.imputedMissingValues = 0
         self.removedConstantColumns = 0
 
-    def _fit_transform(self, data: pd.DataFrame, fit=False) -> "DataProcessor":
+    def _fit_transform(
+        self, data: pd.DataFrame, fit=False, remove_constants=True
+    ) -> "DataProcessor":
         """
         Wraps behavior of both, fitting and transforming the DataProcessor.
         The function basically reduces duplicated code fragments of `self.fit_transform`
@@ -143,6 +145,8 @@ class DataProcessor:
             Input data
         fit : bool
             If True, it will fit the transformer, too
+        remove_constants : bool
+            If True, it will remove constants when fit
 
         Returns
         -------
@@ -167,6 +171,7 @@ class DataProcessor:
         if fit:
             # Remove Duplicates
             self.remove_duplicates()
+
             # Infer data-types
             self.infer_data_types()
 
@@ -180,7 +185,7 @@ class DataProcessor:
         self.remove_missing_values()
 
         # Remove Constants
-        if fit:
+        if fit and remove_constants:
             self.remove_constants()
 
         # Convert integer columns
