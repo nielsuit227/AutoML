@@ -196,7 +196,7 @@ class DataProcessor:
 
         return self
 
-    def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
+    def fit_transform(self, data: pd.DataFrame, remove_constants=True) -> pd.DataFrame:
         """
         Fits this data cleaning module and returns the transformed data.
 
@@ -204,6 +204,8 @@ class DataProcessor:
         ----------
         data : pd.DataFrame
             Input data
+        remove_constants : bool
+            If True, it will remove constants when fit
 
         Returns
         -------
@@ -215,7 +217,7 @@ class DataProcessor:
                 f"Data Cleaning Started, ({len(data)} x {len(data.keys())}) samples"
             )
 
-        self._fit_transform(data, fit=True)
+        self._fit_transform(data, fit=True, remove_constants=remove_constants)
 
         # Finish
         self.is_fitted = True
