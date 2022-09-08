@@ -1,4 +1,5 @@
 #  Copyright (c) 2022 by Amplo.
+
 import pytest
 
 from amplo import Pipeline
@@ -10,7 +11,8 @@ from tests import DelayedRandomPredictor
 class TestProductionObserver:
     @pytest.mark.parametrize("mode", ["classification", "regression"])
     def test_check_prediction_latency(self, mode, make_x_y):
-        return
+        pytest.skip()
+
         x, y = make_x_y
 
         # Make pipeline and simulate fit

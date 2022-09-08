@@ -46,7 +46,7 @@ class DelayedRandomPredictor(RandomPredictor):
 class TestModelObserver:
     @pytest.mark.parametrize("mode", ["classification", "regression"])
     def test_check_model_size(self, mode, make_x_y):
-        pipeline = Pipeline(grid_search_iterations=0)
+        pipeline = Pipeline(n_grid_searches=0)
         pipeline._read_data(*make_x_y)
         pipeline._mode_detector()
         pipeline.best_model = RandomPredictor(mode=mode)
@@ -119,7 +119,7 @@ class TestModelObserver:
         )
 
         # Make pipeline and fit
-        pipeline = Pipeline(n_grid_searches=0, document_results=False)
+        pipeline = Pipeline(n_grid_searches=0)
         pipeline._read_data(x, y)
         pipeline._mode_detector()
         pipeline._data_processing()

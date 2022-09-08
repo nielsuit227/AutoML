@@ -7,18 +7,18 @@ Enables connection to Databricks via API calls.
 
 from __future__ import annotations
 
-import json
 import os
-from copy import deepcopy
 
-import requests
+from amplo.api._base import BaseRequestAPI
 
-from amplo.utils import check_dtypes
-
-__all__ = ["DatabricksJobsAPI", "train_on_cloud"]
+__all__ = ["DatabricksJobsAPI"]
 
 
-class DatabricksJobsAPI:
+_DATABRICKS_HOST_OS = "DATABRICKS_HOST"
+_DATABRICKS_TOKEN_OS = "DATABRICKS_TOKEN"
+
+
+class DatabricksJobsAPI(BaseRequestAPI):
     """
     Helper class for working with Databricks' Job API.
 
@@ -35,39 +35,33 @@ class DatabricksJobsAPI:
     """
 
     def __init__(self, host: str, access_token: str):
-        check_dtypes(("host", host, str), ("access_token", access_token, str))
-        self.host = host
-        self.access_token = access_token
+        super().__init__(host, access_token)
+
+    def _authorization_header(self) -> dict:
+        return {"Authorization": f"Bearer {self.access_token}"}
 
     @classmethod
     def from_os_env(
-        cls, host: str = None, access_token: str = None
+        cls, host_os: str = None, access_token_os: str = None
     ) -> DatabricksJobsAPI:
         """
         Instantiate the class using os environment strings.
 
         Parameters
         ----------
-        host : str, default: "DATABRICKS_HOST"
+        host_os : str, default: _DATABRICKS_HOST_OS
             Key in the os environment for the Databricks host.
-        access_token : str, default: "DATABRICKS_TOKEN"
+        access_token_os : str, default: _DATABRICKS_TOKEN_OS
             Key in the os environment for the Databricks access token.
 
         Returns
         -------
         DatabricksJobsAPI
         """
-        host = host or "DATABRICKS_HOST"
-        access_token = access_token or "DATABRICKS_TOKEN"
-        check_dtypes(("host", host, str), ("access_token", access_token, str))
-        return cls(os.getenv(host), os.getenv(access_token))
 
-    def __repr__(self):
-        """
-        Readable string representation of the class.
-        """
-
-        return f"{self.__class__.__name__}: <{self.host}>"
+        host_os = host_os or _DATABRICKS_HOST_OS
+        access_token_os = access_token_os or _DATABRICKS_TOKEN_OS
+        return cls(os.getenv(host_os), os.getenv(access_token_os))
 
     def request(self, method: str, action: str, body: dict = None) -> dict:
         """
@@ -99,15 +93,7 @@ class DatabricksJobsAPI:
             When the request's response has another status code than 200.
         """
 
-        url = f"{self.host}/api/{action.lstrip('/')}"
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        body = body or {}
-
-        response = requests.request(method, url, headers=headers, json=body)
-        if not response.status_code == 200:
-            raise requests.HTTPError(f"{response} {response.text}")
-
-        return response.json()
+        return super().request(method, action, json=body).json()
 
     # --------------------------------------------------------------------------
     # Jobs API requests
@@ -165,91 +151,3 @@ class DatabricksJobsAPI:
 
     def cancel_run(self, run_id: int) -> dict:
         return self.request("post", "2.1/jobs/runs/cancel", {"run_id": run_id})
-
-
-def train_on_cloud(
-    job_id: int,
-    model_version: int = 1,
-    idempotency_token: str = None,
-    notebook_params: dict[str, dict | bool | int | str] = None,
-    *,
-    host_key: str = None,
-    access_token_key: str = None,
-) -> dict[str, int]:
-    """
-    Starts a job run via the DatabricksJobsAPI.
-
-    Notes
-    -----
-    Make sure to have set the following environment variables:
-        - ``DATABRICKS_INSTANCE``
-          (see https://docs.microsoft.com/en-us/azure/databricks/dev-tools/api/latest/authentication).
-        - ``DATABRICKS_ACCESS_TOKEN`` (see Databricks > User Settings > Access tokens).
-
-    Note two important differences to ``DatabricksJobsAPI.run_job``.
-    The "pipe_kwargs" key of ``notebook_params``:
-        - will be JSON dumped to a string for you.
-        - gets default values imputed if not given.
-
-    Parameters
-    ----------
-    job_id : int
-        Job ID in Databricks.
-    model_version : int, default: 1
-        Version of the model. Will overwrite the "version" key in the "pipe_kwargs" key
-        of ``notebook_params``.
-    idempotency_token : str, optional
-        Idempotency token to ensure uniqueness of job run.
-    notebook_params : dict of {str: bool or int or str}
-        Parameters for job run. See widgets in notebook of corresponding job.
-    *
-    host_key : str, default: "DATABRICKS_HOST"
-        Key in the os environment for the Databricks host.
-    access_token_key : str, default: "DATABRICKS_TOKEN"
-        Key in the os environment for the Databricks access token.
-
-    Returns
-    -------
-    dict of {str: int}
-        If response is success (200), ``run_id`` (globally unique key of newly triggered
-        run) is one of the present keys.
-
-    Raises
-    ------
-    ValueError
-        When one or more widget / keywords in ``notebook_params`` is missing.
-    """
-
-    check_dtypes(
-        ("job_id", job_id, int),
-        ("model_version", model_version, int),
-        ("idempotency_token", idempotency_token, (type(None), str)),
-        ("notebook_params", notebook_params, dict),
-    )
-    notebook_params = deepcopy(notebook_params)
-
-    # Define default keyword arguments and overwrite them when given by user input.
-    pipe_kwargs = {
-        "interval_analyse": False,
-        "standardize": False,
-        "missing_values": "zero",
-        "balance": False,
-        "stacking": False,
-        "grid_search_time_budget": 7200,
-        "n_grid_searches": 1,
-        "verbose": 1,
-    }
-    pipe_kwargs.update(notebook_params.get("pipe_kwargs", {}))
-    pipe_kwargs["version"] = model_version
-    notebook_params["pipe_kwargs"] = json.dumps(pipe_kwargs)
-
-    # Ensure presence of necessary keyword arguments / widgets
-    widgets = ("team", "machine", "service", "issue", "model_id", "pipe_kwargs")
-    missing = set(widgets) - set(notebook_params)
-    if missing:
-        msg = f"Missing keys for the parameter ``notebook_params``: {missing}"
-        raise ValueError(msg)
-
-    # Send request
-    api = DatabricksJobsAPI.from_os_env(host_key, access_token_key)
-    return api.run_job(job_id, idempotency_token, notebook_params)

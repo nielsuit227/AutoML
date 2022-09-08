@@ -11,10 +11,12 @@ from amplo.api.platform import PlatformSynchronizer
 from amplo.api.storage import AzureSynchronizer
 from amplo.base.objects import LoggingMixin
 from amplo.pipeline import Pipeline
+from amplo.utils import deprecated
 
 __all__ = ["API"]
 
 
+@deprecated("This class won't be updated anymore.")
 class API(LoggingMixin):
     def __init__(
         self,
@@ -198,8 +200,8 @@ class API(LoggingMixin):
                 target="labels",
                 extract_features=False,
                 balance=False,
-                grid_search_time_budget=7200,
-                grid_search_candidates=2,
+                grid_search_timeout=7200,
+                n_grid_searches=2,
             )
             preparing_pipeline_kwargs.update(kwargs)  # allow (optional) manipulation
             preparing_pipeline_kwargs["main_dir"] = f"{model_dir}/_Data_Preparation/"

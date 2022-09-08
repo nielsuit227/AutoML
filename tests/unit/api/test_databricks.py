@@ -1,16 +1,20 @@
 #  Copyright (c) 2022 by Amplo.
 
-import json
+from inspect import signature
 
 import pytest
 from requests import HTTPError
 
-from amplo.api.databricks import DatabricksJobsAPI, train_on_cloud
+from amplo.api.databricks import DatabricksJobsAPI
 
 DUMMY_JOB_ID = 749905062420360
 
 
 class TestDatabricksJobsAPI:
+    """
+    Tests for the class `DatabricksJobsAPI`.
+    """
+
     @classmethod
     def setup_class(cls):
         cls.api = DatabricksJobsAPI.from_os_env()
@@ -55,31 +59,40 @@ class TestDatabricksJobsAPI:
         assert self.api.cancel_run(run_id) == {}
 
 
-def test_train_on_cloud():
-    api = DatabricksJobsAPI.from_os_env()
+class TestDatabricksTrainOnCloudNotebook:
+    """
+    Test functionalities that are used for `train_on_cloud.py` notebook.
 
-    # Case 1: Missing keys
-    with pytest.raises(ValueError):
-        train_on_cloud(DUMMY_JOB_ID, notebook_params={})
+    References
+    ----------
+    - https://github.com/Amplo-AG/Databricks/blob/main/workflows/train_on_cloud.py
+    """
 
-    # Case 2: Key "pipe_kwargs" is not provided but shall be set by `train_on_cloud`
-    params = {"team": 0, "machine": 0, "service": 0, "issue": 0, "model_id": 0}
-    job = train_on_cloud(DUMMY_JOB_ID, notebook_params=params)
-    run = api.get_run(job["run_id"])
-    api.cancel_run(run["run_id"])
+    def test_pipeline_format(self):
+        # Assert that `Pipeline` is importable
+        from amplo import Pipeline
 
-    passed_params = run["overriding_parameters"]["notebook_params"]
-    assert set(params) | {"pipe_kwargs"} == set(passed_params)
+        # Assert that `__init__` accepts those keyword arguments and more
+        init_params = signature(Pipeline).parameters.keys()
+        expected_init_params = ["main_dir", "name"]
+        assert set(init_params).issuperset(expected_init_params)
+        assert len(init_params) > len(expected_init_params)  # want to pass more kwargs
 
-    # Case 3: Key "pipe_kwargs" is present but default parameters shall be set
-    params["pipe_kwargs"] = {"verbose": 2}
-    job = train_on_cloud(DUMMY_JOB_ID, notebook_params=params)
-    run = api.get_run(job["run_id"])
-    api.cancel_run(run["run_id"])
+    def test_upload_models_format(self):
+        # Assert that `upload_model` is importable
+        from amplo.api.platform import upload_model
 
-    passed_params = run["overriding_parameters"]["notebook_params"]
-    passed_params["pipe_kwargs"] = json.loads(passed_params["pipe_kwargs"])
-    assert params["pipe_kwargs"]["verbose"] == passed_params["pipe_kwargs"]["verbose"]
-    assert params.pop("pipe_kwargs") != passed_params.pop("pipe_kwargs")
-    params = {key: str(params[key]) for key in params}  # requests stringifies integers
-    assert params == passed_params
+        # Assert that `upload_models` is present and accepts those keyword arguments
+        func_params = signature(upload_model).parameters.keys()
+        expected_func_params = [
+            "model_id",
+            "model_dir",
+            "team",
+            "machine",
+            "service",
+            "issue",
+            "version",
+            "host",
+            "access_token_os",
+        ]
+        assert set(expected_func_params) == set(func_params)

@@ -1,5 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
+from __future__ import annotations
+
 import copy
 import itertools
 import json
@@ -7,6 +9,7 @@ import os
 import time
 import warnings
 from datetime import datetime
+from inspect import signature
 from pathlib import Path
 from typing import Tuple, Union
 
@@ -35,216 +38,282 @@ from amplo.observation import DataObserver, ModelObserver
 from amplo.regression.stacking import StackingRegressor
 from amplo.validation import ModelValidator
 
+__all__ = ["Pipeline"]
+
 
 class Pipeline(LoggingMixin):
-    def __init__(self, **kwargs):
-        """
-        Automated Machine Learning Pipeline for tabular data.
-        Designed for predictive maintenance applications, failure identification,
-        failure prediction, condition monitoring, etc.
+    """
+    Automated Machine Learning Pipeline for tabular data.
 
-        Parameters
-        ----------
-        Main Parameters:
-        main_dir : str, default: AutoML
-            Main directory of Pipeline (for documentation)
-        target : str
-            Column name of the output/dependent/regressand variable.
-        name : str, default: ''
-            Name of the project (for documentation)
-        version : str, default: detected
-            Pipeline version (set automatically)
-        mode : str, default: detected
-            'classification' or 'regression'
-        objective : str, default: neg_log_loss or mean_square_error
-            from sklearn metrics and scoring
+    The pipeline is designed for predictive maintenance application, failure
+    identification, failure prediction, condition monitoring, and more.
 
-        Data Processor:
-        int_cols : list of str, default: detected
-            Column names of integer columns
-        float_cols : list of str, default: detected
-            Column names of float columns
-        date_cols : list of str, default: detected
-            Column names of datetime columns
-        cat_cols : list of str, default: detected
-            Column names of categorical columns
-        missing_values : str, default: zero
-            [DataProcessing] - 'remove', 'interpolate', 'mean' or 'zero'
-        outlier_removal : str, default: clip
-            [DataProcessing] - 'clip', 'boxplot', 'z-score' or 'none'
-        z_score_threshold : int, default: 4
-            [DataProcessing] If outlier_removal = 'z-score', the threshold is adaptable
-        include_output : bool, default: False
-            Whether to include output in the training data (sensible only with
-            sequencing)
+    Parameters
+    ----------
+    # Main parameters
+    main_dir : str, default: "Auto_ML/"
+        Main directory of pipeline (for documentation).
+    target : str, optional
+        Column name of the output variable.
+    name : str, default: "AutoML"
+        Name of the project (for documentation).
+    version : int, default: 1
+        Pipeline version. Will automatically increment when a version exists.
+    mode : {None, "classification", "regression"}, default: None
+        Pipeline mode.
+    objective : str, optional
+        Objective for training.
+        Default for classification: "neg_log_loss".
+        Default for regression: "mean_square_error".
+    verbose : int, default: 1
+        Verbosity of logging.
 
-        Feature Processor:
-        extract_features : bool, default: True
-            Whether to use FeatureProcessing module
-        information_threshold : float, default: 0.999
-            [FeatureProcessing] Threshold for removing co-linear features
-        feature_timeout : int, default: 3600
-            [FeatureProcessing] Time budget for feature processing
-        max_lags : int, default: 0
-            [FeatureProcessing] Maximum lags for lagged features to analyse
-        max_diff : int, default: 0
-            [FeatureProcessing] Maximum differencing order for differencing features
+    # Data processing
+    int_cols : list of str, optional
+        Column names of integer columns (if None will detect automatically).
+    float_cols : list of str, optional
+        Column names of float columns (if None will detect automatically).
+    date_cols : list of str, optional
+        Column names of datetime column (if None will detect automatically).
+    cat_cols : list of str, optional
+        Column names of categorical columns (if None will detect automatically).
+    missing_values : {"remove", "interpolate", "mean", "zero"}, default: "zero"
+        How to treat missing values.
+    outlier_removal : {"clip", "boxplot", "z-score", "none"}, default: "clip"
+        How to treat outliers.
+    z_score_threshold : int, default: 4
+        When ``outlier_removal`` is "z-score", the threshold is adaptable.
+    include_output : bool, default: False
+        Whether to include output in the training data (sensible only with sequencing).
 
-        Interval Analyser:
-        interval_analyse : bool, default: True
-            Whether to use IntervalAnalyser module
-            Note that this has no effect when data from ``self._read_data`` is not
-            multi-indexed
+    # Balancing
+    balance : bool, default: False
+        Whether to balance data.
 
-        Sequencing:
-        sequence : bool, default: False
-            [Sequencing] Whether to use Sequence module
-        seq_back : int or list of int, default: 1
-            Input time indices
-            If list -> includes all integers within the list
-            If int -> includes that many samples back
-        seq_forward : int or list of int, default: 1
-            Output time indices
-            If list -> includes all integers within the list.
-            If int -> includes that many samples forward.
-        seq_shift : int, default: 0
-            Shift input / output samples in time
-        seq_diff : str, default: 'none'
-            Difference the input & output, 'none', 'diff' or 'log_diff'
-        seq_flat : bool, default: True
-            Whether to return a matrix (True) or Tensor (Flat)
+    # Feature processing
+    extract_features : bool, default: True
+        Whether to use the FeatureProcessing module to extract features.
+    information_threshold : float, default: 0.999
+        Threshold for removing collinear features.
+    feature_timeout : int, default: 3600
+        Time budget for feature processing.
 
-        Modelling:
-        standardize : bool, default: False
-            Whether to standardize input/output data
-        shuffle : bool, default: True
-            Whether to shuffle the samples during cross-validation
-        cv_splits : int, default: 10
-            How many cross-validation splits to make
-        store_models : bool, default: false
-            Whether to store all trained model files
+    # Interval analysis
+    interval_analyse : bool, default: False
+        Whether to use the IntervalAnalyser module.
 
-        Grid Search:
-        grid_search_type : str, default: 'optuna'
-            Grid search type to use. One of {'optuna', 'halving', 'exhaustive', None}.
-        grid_search_time_budget : int, default: 3600
-            Time budget for grid search (in seconds).
-        n_grid_searches : int, default: 3
-            Run grid search for the best `n_grid_searches` (model, feature set) pairs
-            from initial modelling.
-        n_trials_per_grid_search : int, default: 250
-            Maximal number of trials/candidates for each grid search.
+    # Sequencing
+    sequence : bool, default: False
+        Whether to use the Sequencer module.
+    seq_back : int or list of int, default: 1
+        Input time indices.
+        If int: includes that many samples backward.
+        If list of int: includes all integers within the list.
+    seq_forward : int or list of int, default: 1
+        Output time indices.
+        If int: includes that many samples forward.
+        If list of int: includes all integers within the list.
+    seq_shift : int, default: 0
+        Shift input / output samples in time.
+    seq_diff : {"none", "diff", "log_diff"}, default: "none"
+        Difference the input and output.
+    seq_flat : bool, default: True
+        Whether to return a matrix (True) or a tensor (False).
 
-        Stacking:
-        stacking : bool, default: False
-            Whether to create a stacking model at the end
+    # Modelling
+    standardize : bool, default: False
+        Whether to standardize the input/output data.
+    cv_shuffle : bool, default: True
+        Whether to shuffle the samples during cross-validation.
+    cv_splits : int, default: 10
+        How many cross-validation splits to make.
+    store_models : bool, default: False
+        Whether to store all trained model files.
 
-        Production:
-        preprocess_function : str, default: None
-            Add custom code for the prediction function, useful for production. Will
-            be executed with exec, can be multiline. Uses data as input.
+    # Grid search
+    grid_search_type : {"exhaustive", "halving", "optuna"}, default: "optuna"
+        Type of grid search to apply.
+    grid_search_timeout : int, default: 3600
+        Time budget for grid search (in seconds).
+    n_grid_searches : int, default: 3
+        Run grid search for the best `n_grid_searches` (model, feature set) pairs from
+        initial modelling.
+    n_trials_per_grid_search : int, default: 250
+        Maximal number of trials/candidates for each grid search.
 
-        Flags:
-        logging_level  : int or str, optional
-            Logging level for warnings, info, etc.
-        plot_eda : bool, default: False
-            Whether to run Exploratory Data Analysis
-        process_data : bool, default: True
-            Whether to force data processing
-        no_dirs : bool, default: False
-            Whether to create files or not
-        verbose : int, default: 1
-            Level of verbosity
-        """
+    # Stacking of models
+    stacking : bool, default: False
+        Whether to create a stacking model at the end.
 
-        # Set logger
-        super().__init__(verbose=kwargs.get("verbose", 1))
+    # Production
+    preprocess_function : str, optional, default: None
+        Add custom code for the prediction function - useful for production.
+        Will be executed with `exec`, can be multi-line, uses data as input.
 
-        # Copy arguments
-        ##################
-        # Main Settings
-        self.main_dir = kwargs.get("main_dir", "Auto_ML/")
-        self.target = kwargs.get("target", "")
-        self.name = kwargs.get("name", "AutoML")
-        self.version = kwargs.get("version", None)
-        self.mode = kwargs.get("mode", None)
-        self.objective = kwargs.get("objective", None)
+    # Flags
+    plot_eda : bool, default: False
+        Whether to run exploratory data analysis.
+    process_data : bool, default: True
+        Whether to force data processing.
+    no_dirs : bool, default: False
+        Whether to create files.
 
-        # Data Processor
-        self.int_cols = kwargs.get("int_cols", None)
-        self.float_cols = kwargs.get("float_cols", None)
-        self.date_cols = kwargs.get("date_cols", None)
-        self.cat_cols = kwargs.get("cat_cols", None)
-        self.missing_values = kwargs.get("missing_values", "zero")
-        self.outlier_removal = kwargs.get("outlier_removal", "clip")
-        self.z_score_threshold = kwargs.get("z_score_threshold", 4)
-        self.include_output = kwargs.get("include_output", False)
+    # Other
+    kwargs: Any
+        Swallows all arguments that are not accepted. Warnings are raised if not empty.
+    """
 
-        # Balancer
-        self.balance = kwargs.get("balance", True)
+    def __init__(
+        self,
+        # Main settings
+        main_dir: str = "Auto_ML/",
+        target: str = None,
+        name: str = "AutoML",
+        version: int = None,
+        mode: str = None,
+        objective: str = None,
+        verbose: int = 1,
+        *,
+        # Data processing
+        int_cols: list[str] = None,
+        float_cols: list[str] = None,
+        date_cols: list[str] = None,
+        cat_cols: list[str] = None,
+        missing_values: str = "zero",
+        outlier_removal: str = "clip",
+        z_score_threshold: int = 4,
+        include_output: bool = False,
+        # Balancing
+        balance: bool = False,
+        # Feature processing
+        extract_features: bool = True,
+        information_threshold: float = 0.999,
+        feature_timeout: int = 3600,
+        # Interval analysis
+        interval_analyse: bool = True,
+        # Sequencing
+        sequence: bool = False,
+        seq_back: int | list[int] = 1,
+        seq_forward: int | list[int] = 1,
+        seq_shift: int = 0,
+        seq_diff: str = "none",
+        seq_flat: bool = True,
+        # Modelling
+        standardize: bool = False,
+        cv_shuffle: bool = True,
+        cv_splits: int = 10,
+        store_models: bool = False,
+        # Grid search
+        grid_search_type: str = "optuna",
+        grid_search_timeout: int = 3600,
+        n_grid_searches: int = 3,
+        n_trials_per_grid_search: int = 250,
+        # Stacking
+        stacking: bool = False,
+        # Production
+        preprocess_function: str = None,
+        # Flags
+        plot_eda: bool = False,
+        process_data: bool = True,
+        no_dirs: bool = False,
+        # Other
+        **kwargs,
+    ):
+        # Get init parameters for `self.settings`
+        sig, init_locals = signature(self.__init__), locals()
+        init_params = {
+            param.name: init_locals[param.name] for param in sig.parameters.values()
+        }
+        del sig, init_locals
 
-        # Feature Processor
-        self.extract_features = kwargs.get("extract_features", True)
-        self.information_threshold = kwargs.get("information_threshold", 0.999)
-        self.feature_timeout = kwargs.get("feature_timeout", 3600)
-        self.maxLags = kwargs.get("max_lags", 0)
-        self.maxDiff = kwargs.get("max_diff", 0)
+        # super() calls
+        super().__init__(verbose=verbose)
 
-        # Interval Analyser
-        self.use_interval_analyser = kwargs.get("interval_analyse", True)
+        # Input checks: validity
+        if mode not in (None, "regression", "classification"):
+            raise ValueError("Supported models: {'regression', 'classification', None}")
+        if not 0 < information_threshold < 1:
+            raise ValueError("Information threshold must be within (0, 1) interval.")
+        valid_gs_types = {"exhaustive", "halving", "optuna"}
+        if (
+            grid_search_type is not None
+            and grid_search_type.lower() not in valid_gs_types
+        ):
+            raise ValueError(f"Grid search type must be one of: {valid_gs_types}")
 
-        # Sequencer
-        self.sequence = kwargs.get("sequence", False)
-        self.sequence_back = kwargs.get("seq_back", 1)
-        self.sequence_forward = kwargs.get("seq_forward", 1)
-        self.sequence_shift = kwargs.get("seq_shift", 0)
-        self.sequence_diff = kwargs.get("seq_diff", "none")
-        self.sequence_flat = kwargs.get("seq_flat", True)
+        # Warn unused parameters
+        if kwargs:
+            warnings.warn(
+                f"Got unexpected keyword arguments that are not handled: {set(kwargs)}"
+            )
+
+        # Input checks: advices
+        if include_output and not sequence:
+            warnings.warn(
+                "It is strongly advised NOT to include output without sequencing."
+            )
+
+        # Main settings
+        self.main_dir = f"{Path(main_dir)}/"  # assert backslash afterwards
+        self.target = target
+        self.name = name
+        self.version = version
+        self.mode = mode
+        self.objective = objective
+
+        # Data processing
+        self.int_cols = int_cols
+        self.float_cols = float_cols
+        self.date_cols = date_cols
+        self.cat_cols = cat_cols
+        self.missing_values = missing_values
+        self.outlier_removal = outlier_removal
+        self.z_score_threshold = z_score_threshold
+        self.include_output = include_output
+
+        # Balancing
+        self.balance = balance
+
+        # Feature processing
+        self.extract_features = extract_features
+        self.information_threshold = information_threshold
+        self.feature_timeout = feature_timeout
+
+        # Interval analysis
+        self.use_interval_analyser = interval_analyse
+
+        # Sequencing
+        self.sequence = sequence
+        self.sequence_back = seq_back
+        self.sequence_forward = seq_forward
+        self.sequence_shift = seq_shift
+        self.sequence_diff = seq_diff
+        self.sequence_flat = seq_flat
 
         # Modelling
-        self.standardize = kwargs.get("standardize", False)
-        self.cv_shuffle = kwargs.get("cv_shuffle", True)
-        self.cv_splits = kwargs.get("cv_splits", 10)
-        self.store_models = kwargs.get("store_models", False)
+        self.standardize = standardize
+        self.cv_shuffle = cv_shuffle
+        self.cv_splits = cv_splits
+        self.store_models = store_models
 
-        # Grid Search Parameters
-        self.grid_search_type = kwargs.get("grid_search_type", "optuna")
-        self.grid_search_timeout = kwargs.get("grid_search_time_budget", 3600)
-        self.n_grid_searches = kwargs.get("n_grid_searches", 3)
-        self.n_trials_per_grid_search = kwargs.get("n_trials_per_grid_search", 250)
+        # Grid search
+        self.grid_search_type = grid_search_type
+        self.grid_search_timeout = grid_search_timeout
+        self.n_grid_searches = n_grid_searches
+        self.n_trials_per_grid_search = n_trials_per_grid_search
 
         # Stacking
-        self.stacking = kwargs.get("stacking", False)
+        self.stacking = stacking
 
         # Production
-        self.preprocess_function = kwargs.get("preprocess_function", None)
+        self.preprocess_function = preprocess_function
 
         # Flags
-        self.plot_eda = kwargs.get("plot_eda", False)
-        self.process_data = kwargs.get("process_data", True)
-        self.no_dirs = kwargs.get("no_dirs", False)
+        self.plot_eda = plot_eda
+        self.process_data = process_data
+        self.no_dirs = no_dirs
 
-        # Checks
-        if self.mode not in [None, "regression", "classification"]:
-            raise ValueError("Supported modes: regression, classification.")
-        if not (0 < self.information_threshold < 1):
-            raise ValueError("Information threshold needs to be within [0, 1].")
-        if self.maxLags > 50:
-            raise ValueError("Max_lags too big. Max 50.")
-        if self.maxDiff > 5:
-            raise ValueError("Max diff too big. Max 5.")
-        self.grid_search_types = ["exhaustive", "halving", "optuna"]
-        if (
-            self.grid_search_type is not None
-            and self.grid_search_type.lower() not in self.grid_search_types
-        ):
-            raise ValueError(f"Grid Search Type must be in {self.grid_search_types}")
-
-        # Advices
-        if self.include_output and not self.sequence:
-            warnings.warn("Strongly advices to not include output without sequencing.")
-
-        # Create dirs
+        # Create directory
         if not self.no_dirs:
             self._create_dirs()
             self._load_version()
@@ -252,7 +321,7 @@ class Pipeline(LoggingMixin):
             self.version = 1
 
         # Store Pipeline Settings
-        self.settings = {"pipeline": kwargs}
+        self.settings = {"pipeline": init_params}
 
         # Objective & Scorer
         if self.objective is not None:
@@ -763,30 +832,30 @@ class Pipeline(LoggingMixin):
         Detects the mode (Regression / Classification)
         """
         # Only run if mode is not provided
-        if self.mode is None:
+        if self.mode is not None:
+            return
 
-            # Classification if string
-            if self.y.dtype == str or self.y.nunique() < 0.1 * len(self.data):
-                self.mode = "classification"
-                self.objective = self.objective or "neg_log_loss"
+        # Classification if string
+        if self.y.dtype == str or self.y.nunique() < 0.1 * len(self.data):
+            self.mode = "classification"
+            self.objective = self.objective or "neg_log_loss"
 
-            # Else regression
-            else:
-                self.mode = "regression"
-                self.objective = self.objective or "neg_mean_absolute_error"
+        # Else regression
+        else:
+            self.mode = "regression"
+            self.objective = self.objective or "neg_mean_absolute_error"
 
-            # Set scorer
-            self.scorer = metrics.get_scorer(self.objective)
+        # Set scorer
+        self.scorer = metrics.get_scorer(self.objective)
 
-            # Copy to settings
-            self.settings["pipeline"]["mode"] = self.mode
-            self.settings["pipeline"]["objective"] = self.objective
+        # Copy to settings
+        self.settings["pipeline"]["mode"] = self.mode
+        self.settings["pipeline"]["objective"] = self.objective
 
-            # Logging
-            self.logger.info(
-                f"Setting mode to {self.mode} & objective to {self.objective}."
-            )
-        return
+        # Logging
+        self.logger.info(
+            f"Setting mode to {self.mode} & objective to {self.objective}."
+        )
 
     def _data_processing(self):
         """
@@ -871,22 +940,27 @@ class Pipeline(LoggingMixin):
                 raise ValueError("Classes should be [0, 1, ...]")
 
     def _eda(self):
-        if self.plot_eda:
-            self.logger.info("Starting Exploratory Data Analysis")
-            eda = DataExplorer(
-                self.x,
-                y=self.y,
-                mode=self.mode,
-                folder=self.main_dir,
-                version=self.version,
-            )
-            eda.run()
+        if not self.plot_eda:
+            return
+
+        self.logger.info("Starting Exploratory Data Analysis")
+        eda = DataExplorer(
+            self.x,
+            y=self.y,
+            mode=self.mode,
+            folder=self.main_dir,
+            version=self.version,
+        )
+        eda.run()
 
     def _data_sampling(self):
         """
         Only run for classification problems. Balances the data using imblearn.
         Does not guarantee to return balanced classes. (Methods are data dependent)
         """
+        if not self.balance or not self.mode == "classification":
+            return
+
         self.data_sampler = DataSampler(
             method="both",
             margin=0.1,
@@ -895,61 +969,55 @@ class Pipeline(LoggingMixin):
             fast_run=False,
             objective=self.objective,
         )
-
-        # Set paths
         data_path = self.main_dir + f"Data/Balanced_v{self.version}.csv"
 
-        # Only necessary for classification
-        if self.mode == "classification" and self.balance:
+        if Path(data_path).exists():
+            # Load data
+            data = self._read_csv(data_path)
+            self._set_data(data)
 
-            if Path(data_path).exists():
-                # Load data
-                data = self._read_csv(data_path)
-                self._set_data(data)
+            self.logger.info("Loaded Balanced data")
 
-                self.logger.info("Loaded Balanced data")
+        else:
+            # Fit and resample
+            self.logger.info("Resampling data")
+            x, y = self.data_sampler.fit_resample(self.x, self.y)
 
-            else:
-                # Fit and resample
-                self.logger.info("Resampling data")
-                x, y = self.data_sampler.fit_resample(self.x, self.y)
-
-                # Store
-                self._set_xy(x, y)
-                self._write_csv(self.data, data_path)
+            # Store
+            self._set_xy(x, y)
+            self._write_csv(self.data, data_path)
 
     def _sequencing(self):
         """
         Sequences the data. Useful mostly for problems where older samples play a role
         in future values. The settings of this module are NOT AUTOMATIC
         """
+        if not self.sequence:
+            return
+
         self.data_sequencer = Sequencer(
             back=self.sequence_back,
             forward=self.sequence_forward,
             shift=self.sequence_shift,
             diff=self.sequence_diff,
         )
-
-        # Set paths
         data_path = self.main_dir + f"Data/Sequence_v{self.version}.csv"
 
-        if self.sequence:
+        if Path(data_path).exists():
+            # Load data
+            data = self._read_csv(data_path)
+            self._set_data(data)
 
-            if Path(data_path).exists():
-                # Load data
-                data = self._read_csv(data_path)
-                self._set_data(data)
+            self.logger.info("Loaded Extracted Features")
 
-                self.logger.info("Loaded Extracted Features")
+        else:
+            # Sequencing
+            self.logger.info("Sequencing data")
+            x, y = self.data_sequencer.convert(self.x, self.y)
 
-            else:
-                # Sequencing
-                self.logger.info("Sequencing data")
-                x, y = self.data_sequencer.convert(self.x, self.y)
-
-                # Store
-                self._set_xy(x, y)
-                self._write_csv(self.data, data_path)
+            # Store
+            self._set_xy(x, y)
+            self._write_csv(self.data, data_path)
 
     def _feature_processing(self):
         """
@@ -1272,91 +1340,92 @@ class Pipeline(LoggingMixin):
         --> classifiers need predict_proba
         --> level 1 needs to be ordinary least squares
         """
-        if self.stacking:
-            self.logger.info("Creating Stacking Ensemble")
+        if not self.stacking:
+            return
 
-            # Select feature set that has been picked most often for hyper parameter
-            # optimization
-            results = self._sort_results(
-                self.results[
-                    np.logical_and(
-                        self.results["type"] == "Hyper Parameter",
-                        self.results["version"] == self.version,
-                    )
-                ]
-            )
-            feature_set = results["dataset"].value_counts().index[0]
-            results = results[results["dataset"] == feature_set]
-            self.logger.info("Selected Stacking feature set: {}".format(feature_set))
+        self.logger.info("Creating Stacking Ensemble")
 
-            # Create Stacking Model Params
-            n_stacking_models = 3
-            stacking_models_str = results["model"].unique()[:n_stacking_models]
-            stacking_models_params = [
-                utils.io.parse_json(
-                    results.iloc[np.where(results["model"] == sms)[0][0]]["params"]
+        # Select most frequent feature set from hyperparameter optimization
+        results = self._sort_results(
+            self.results[
+                np.logical_and(
+                    self.results["type"] == "Hyper Parameter",
+                    self.results["version"] == self.version,
                 )
-                for sms in stacking_models_str
             ]
-            stacking_models = dict(
-                [
-                    (sms, stacking_models_params[i])
-                    for i, sms in enumerate(stacking_models_str)
-                ]
+        )
+        feature_set = results["dataset"].value_counts().index[0]
+        results = results[results["dataset"] == feature_set]
+        self.logger.info("Selected Stacking feature set: {}".format(feature_set))
+
+        # Create Stacking Model Params
+        n_stacking_models = 3
+        stacking_models_str = results["model"].unique()[:n_stacking_models]
+        stacking_models_params = [
+            utils.io.parse_json(
+                results.iloc[np.where(results["model"] == sms)[0][0]]["params"]
             )
-            self.logger.info("Stacked models: {}".format(list(stacking_models.keys())))
-            # Make the dict of dict flat
-            add_to_stack = list(stacking_models)
-            stacking_models = {
-                f"{model}__{param}": parameters[param]
-                for model, parameters in stacking_models.items()
-                for param in parameters
-            }
+            for sms in stacking_models_str
+        ]
+        stacking_models = dict(
+            [
+                (sms, stacking_models_params[i])
+                for i, sms in enumerate(stacking_models_str)
+            ]
+        )
+        self.logger.info("Stacked models: {}".format(list(stacking_models.keys())))
+        # Make the dict of dict flat
+        add_to_stack = list(stacking_models)
+        stacking_models = {
+            f"{model}__{param}": parameters[param]
+            for model, parameters in stacking_models.items()
+            for param in parameters
+        }
 
-            # Add samples & Features
-            stacking_models["n_samples"], stacking_models["n_features"] = self.x.shape
+        # Add samples & Features
+        stacking_models["n_samples"], stacking_models["n_features"] = self.x.shape
 
-            # Prepare Stack
-            if self.mode == "regression":
-                stack = StackingRegressor(add_to_stack, **stacking_models)
-            elif self.mode == "classification":
-                stack = StackingClassifier(add_to_stack, **stacking_models)
-            else:
-                raise NotImplementedError("Unknown mode")
+        # Prepare Stack
+        if self.mode == "regression":
+            stack = StackingRegressor(add_to_stack, **stacking_models)
+        elif self.mode == "classification":
+            stack = StackingClassifier(add_to_stack, **stacking_models)
+        else:
+            raise NotImplementedError("Unknown mode")
 
-            # Cross Validate
-            x, y = self.x[self.feature_sets[feature_set]].to_numpy(), self.y.to_numpy()
-            score = []
-            times = []
-            for (t, v) in tqdm(self.cv.split(x, y)):
-                start_time = time.time()
-                xt, xv, yt, yv = x[t], x[v], y[t].reshape((-1)), y[v].reshape((-1))
-                model = copy.deepcopy(stack)
-                model.fit(xt, yt)
-                score.append(self.scorer(model, xv, yv))
-                times.append(time.time() - start_time)
+        # Cross Validate
+        x, y = self.x[self.feature_sets[feature_set]].to_numpy(), self.y.to_numpy()
+        score = []
+        times = []
+        for (t, v) in tqdm(self.cv.split(x, y)):
+            start_time = time.time()
+            xt, xv, yt, yv = x[t], x[v], y[t].reshape((-1)), y[v].reshape((-1))
+            model = copy.deepcopy(stack)
+            model.fit(xt, yt)
+            score.append(self.scorer(model, xv, yv))
+            times.append(time.time() - start_time)
 
-            # Output Results
-            self.logger.info("Stacking result:")
-            self.logger.info(
-                f"{self.objective}:     {np.mean(score):.2f} \u00B1 {np.std(score):.2f}"
-            )
-            self.results = self.results.append(
-                {
-                    "date": datetime.today().strftime("%d %b %y"),
-                    "model": type(stack).__name__,
-                    "dataset": feature_set,
-                    "params": json.dumps(stack.get_params()),
-                    "mean_objective": np.mean(score),
-                    "std_objective": np.std(score),
-                    "mean_time": np.mean(times),
-                    "std_time": np.std(times),
-                    "version": self.version,
-                    "type": "Stacking",
-                },
-                ignore_index=True,
-            )
-            self.results.to_csv(self.main_dir + "Results.csv", index=False)
+        # Output Results
+        self.logger.info("Stacking result:")
+        self.logger.info(
+            f"{self.objective}:     {np.mean(score):.2f} \u00B1 {np.std(score):.2f}"
+        )
+        self.results = self.results.append(
+            {
+                "date": datetime.today().strftime("%d %b %y"),
+                "model": type(stack).__name__,
+                "dataset": feature_set,
+                "params": json.dumps(stack.get_params()),
+                "mean_objective": np.mean(score),
+                "std_objective": np.std(score),
+                "mean_time": np.mean(times),
+                "std_time": np.std(times),
+                "version": self.version,
+                "type": "Stacking",
+            },
+            ignore_index=True,
+        )
+        self.results.to_csv(self.main_dir + "Results.csv", index=False)
 
     def _parse_production_args(self, model=None, feature_set=None, params=None):
         """
@@ -1549,7 +1618,7 @@ class Pipeline(LoggingMixin):
 
         Returns
         -------
-        cv : sklearn.model_selection._search.BaseSearchCV
+        cv : KFold or StratifiedKFold
             The cross validator
         """
         # Regression
@@ -1895,7 +1964,6 @@ class Pipeline(LoggingMixin):
 
         def warn_when_too_close_to_edge(param: pd.Series, tol=0.01):
             # Min-max scaling
-            scaled = np.array(param["best"]) / (param["max"] - param["min"])
             min_, best, max_ = param["min"], param["best"], param["max"]
             scaled = (best - min_) / (max_ - min_)
             # Check if too close and warn if so

@@ -37,7 +37,7 @@ class DataExplorer:
         lags: int = 60,
         skip_completed: bool = True,
         folder: str = "",
-        version: str = "v0",
+        version: int = 0,
     ):
         """
         Automated Exploratory Data Analysis.
