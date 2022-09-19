@@ -102,7 +102,7 @@ def train_locally(
     ----------
     data_dir : str or Path
         Directory where data is stored. Note that it must contain subdirectories which
-        names depict the issues (e.g. healthy data).
+        names depict the issues (e.g. pipe error).
     target_dir : str or Path
         Directory where the trained model files will be copied to.
     team : str
@@ -141,7 +141,9 @@ def train_locally(
 
     # Read data
     target = pipe_kwargs["target"]
-    data, file_metadata = merge_logs(data_dir, target)
+    data, file_metadata = merge_logs(
+        data_dir, target, more_folders=[Path(data_dir).parent / "Healthy/Healthy"]
+    )
 
     # Set data labels
     mask = data.loc[:, target] == issue

@@ -1,9 +1,11 @@
 #  Copyright (c) 2022 by Amplo.
 
+from __future__ import annotations
+
 import json
 import os
 from pathlib import Path
-from typing import Union
+from typing import Iterable
 from warnings import warn
 
 import pandas as pd
@@ -12,8 +14,9 @@ __all__ = [
     "boolean_input",
     "parse_json",
     "read_pandas",
+    "get_file_metadata",
+    "merge_folders",
     "merge_logs",
-    "get_log_metadata",
 ]
 
 
@@ -39,7 +42,7 @@ def boolean_input(question: str) -> bool:
         return boolean_input(question)
 
 
-def parse_json(json_string: Union[str, dict]) -> Union[str, dict]:
+def parse_json(json_string: str | dict) -> str | dict:
     if isinstance(json_string, dict):
         return json_string
     else:
@@ -56,7 +59,7 @@ def parse_json(json_string: Union[str, dict]) -> Union[str, dict]:
             return json_string
 
 
-def read_pandas(path: Union[str, Path]) -> pd.DataFrame:
+def read_pandas(path: str | Path) -> pd.DataFrame:
     """
     Wrapper for various read functions
 
@@ -72,108 +75,159 @@ def read_pandas(path: Union[str, Path]) -> pd.DataFrame:
         return reader(path, low_memory=False)
 
 
-def merge_logs(path_to_folder, target="labels"):
-    r"""
-    Combine log files from given directory into a multi-indexed dataframe
-
-    Notes
-    -----
-    Make sure that each protocol is located in a sub folder whose name represents the
-    respective label.
-
-    A directory structure example:
-        |   ``path_to_folder``
-        |   ``├─ Label_1``
-        |   ``│   ├─ Log_1.*``
-        |   ``│   └─ Log_2.*``
-        |   ``├─ Label_2``
-        |   ``│   └─ Log_3.*``
-        |   ``└─ ...``
+def get_file_metadata(file_path: str | Path) -> dict[str, str | float]:
+    """
+    Get file metadata from given path.
 
     Parameters
     ----------
-    path_to_folder : str or Path
-        Parent directory
-    target : str
-        Column name for target
+    file_path : str or Path
+        File path.
+
+    Returns
+    -------
+    dict of {str: str or float}
+        File metadata.
+
+    Raises
+    ------
+    FileNotFoundError
+        When the path does not exist.
+    IsADirectoryError
+        When the path resolves a directory, not a file.
+    """
+
+    from amplo.utils import check_dtypes
+
+    check_dtypes("file_path", file_path, (str, Path))
+
+    file_path = Path(file_path)
+
+    if not file_path.exists():
+        raise FileNotFoundError(f"File does not exist: '{file_path}'")
+    if not file_path.is_file():
+        raise IsADirectoryError(f"Path is not a file: '{file_path}'")
+
+    return {
+        "folder": str(file_path.parent.name),
+        "file": str(file_path.name),
+        "full_path": str(file_path.resolve()),
+        "last_modified": os.path.getmtime(str(file_path)),
+    }
+
+
+def merge_folders(
+    folders: Iterable[str | Path], target_col: str = "labels"
+) -> tuple[pd.DataFrame, dict[int, dict[str, str | float]]]:
+    """
+    Combine log files from given directories into a multi-indexed DataFrame.
+
+    Parameters
+    ----------
+    folders : iterable of str or Path
+        Folder names.
+    target_col : str
+        Target column name. Values are depicted by the folder name.
 
     Returns
     -------
     data : pd.DataFrame
-        All logs concatenated into one multi-indexed dataframe.
-        Multi-index names are ``log`` and ``index``.
-        Target column depicts the folder name.
-    metadata : dict
-        File metadata
+        All files of the folders merged into one multi-indexed DataFrame.
+        Multi-index names are 'log' and 'index'.
+    metadata : dict of {int : dict of {str : str or float}}
+        Metadata of merged data.
 
-    Warns
-    --------
-    EmptyDataError
-        Whenever an empty file is found.
-    NotImplementedError
-        Whenever a file with an unknown format is found.
+    Raises
+    ------
+    FileNotFoundError
+        When any given folder path does not exist or is empty.
+    NotADirectoryError
+        When any given folder path is not a directory.
+    ValueError
+        When any file already has a column named after ``target_col``.
     """
-    # Tests
-    if not Path(path_to_folder).is_dir():
-        raise ValueError(f"The provided path is no directory: {path_to_folder}")
-    if not Path(path_to_folder).exists():
-        raise FileNotFoundError(f"Directory does not exist: {path_to_folder}")
-    if not isinstance(target, str) or target == "":
-        raise ValueError("Target name must be a non-empty string.")
 
-    # Result init
-    data = []
+    from amplo.utils import check_dtypes
 
-    # Get file names
-    metadata = get_log_metadata(path_to_folder)
+    if not hasattr(folders, "__iter__"):
+        raise ValueError(f"Parameter `folders` is not an iterable.")
+    check_dtypes("target_col", target_col, str)
 
-    # Loop through file paths in metadata
-    for file_id in metadata:
-        # Read data
-        try:
-            datum = read_pandas(metadata[file_id]["full_path"])
-        except pd.errors.EmptyDataError:
-            warn(f"Empty file: {metadata[file_id]}")
-            continue
-        except NotImplementedError:
-            warn(f"Unknown file format: {metadata[file_id]}")
+    # Initialize
+    data, metadata = [], {}
+    counter = 0
 
-        # Set labels
-        datum[target] = metadata[file_id]["folder"]
+    # Loop through folders
+    folders = sorted(Path(folder) for folder in folders)
+    for folder in folders:
 
-        # Set index
-        datum.set_index(
-            pd.MultiIndex.from_product(
-                [[file_id], datum.index.values], names=["log", "index"]
-            ),
-            inplace=True,
-        )
+        # Sanity checks
+        if not folder.exists():
+            raise FileNotFoundError(f"Directory does not exist: '{folder}'")
+        if not folder.is_dir():
+            raise NotADirectoryError(f"Path is not a directory: '{folder}'")
+        files = sorted(folder.glob("[!.]*.*"))  # ignore hidden files
+        if not files:
+            raise FileNotFoundError(f"Directory seem so be empty: {folder}")
 
-        # Add to list
-        data.append(datum)
+        # Read files in folder
+        for file in files:
 
-    if len(data) == 1:
-        # Omit concatenation when only one item
-        return data[0], metadata
-    else:
-        # Concatenate dataframes
-        return pd.concat(data), metadata
+            # Skip bad files
+            if file.suffix not in FILE_READERS:
+                warn(f"Skipped unsupported file format: '{file}'")
+                continue
+            if file.stat().st_size == 0:
+                warn(f"Skipped empty file: '{file}'")
+                continue
+
+            # Read data
+            datum = read_pandas(file)
+            metadatum = get_file_metadata(file)
+
+            # Set labels and index
+            if target_col in datum.columns:
+                raise ValueError(
+                    f"The target name '{target_col}' already exists in the data columns"
+                    f" of file '{file}'."
+                )
+            datum[target_col] = folder.name
+
+            # Set index
+            index = pd.MultiIndex.from_product(
+                [[counter], datum.index.values], names=["log", "index"]
+            )
+            datum.set_index(index, inplace=True)
+
+            # Add data and metadata, and increment
+            data.append(datum)
+            metadata[counter] = metadatum
+            counter += 1
+
+    # Finish: concatenate data
+    if len(data) == 0:
+        raise FileNotFoundError(f"Directories seem to be empty: {folders}")
+    data = pd.concat(data)
+
+    return data, metadata
 
 
-def get_log_metadata(path_to_folder):
-    """Get metadata of log files
-
-    Parameters
-    ----------
-    path_to_folder
+def merge_logs(
+    parent_folder: str | Path,
+    target_col: str = "labels",
+    *,
+    more_folders: list[str | Path] = None,
+) -> tuple[pd.DataFrame, dict[int, dict[str, str | float]]]:
+    """
+    Combine log files of all subdirectories into a multi-indexed DataFrame.
 
     Notes
     -----
-    Make sure that each protocol is located in a sub folder whose name represents the
+    Make sure that each protocol is located in a subdirectory whose name represents the
     respective label.
 
-    A directory structure example:
-        |   ``path_to_folder``
+    An exemplary directory structure of ``parent_folder``:
+        |   ``parent_folder``
         |   ``├─ Label_1``
         |   ``│   ├─ Log_1.*``
         |   ``│   └─ Log_2.*``
@@ -181,50 +235,46 @@ def get_log_metadata(path_to_folder):
         |   ``│   └─ Log_3.*``
         |   ``└─ ...``
 
+    Parameters
+    ----------
+    parent_folder : str or Path
+        Directory that contains subdirectories with tabular data files.
+    target_col : str
+        Target column name. Values are depicted by the folder name.
+    more_folders : list of str or Path, optional
+        Additional folder names with tabular data files to append.
+
     Returns
     -------
-    metadata : dict
-        Dictionary whose keys depict the file id (integer) and each value contains a
-        dictionary with ``folder``, ``file``, ``full_path`` and ``last_modified`` key.
+    data : pd.DataFrame
+        All files of the folders merged into one multi-indexed DataFrame.
+        Multi-index names are 'log' and 'index'.
+    metadata : dict of {int : dict of {str : str or float}}
+        Metadata of merged data.
+
+    Raises
+    ------
+    FileNotFoundError
+        When a folder does not exist.
+    NotADirectoryError
+        When a folder is not a directory.
     """
-    # Checks
-    if not Path(path_to_folder).is_dir():
-        raise ValueError(f"The provided path is no directory: {path_to_folder}")
-    if not Path(path_to_folder).exists():
-        raise FileNotFoundError(f"Directory does not exist: {path_to_folder}")
 
-    # Init
-    metadata = dict()
-    file_id = 0
+    from amplo.utils import check_dtypes
 
-    # Loop through folders
-    for folder in sorted(Path(path_to_folder).iterdir()):
+    check_dtypes("parent_folder", parent_folder, (str, Path))
+    check_dtypes("target_col", target_col, str)
+    check_dtypes("more_folders", more_folders, (type(None), list))
 
-        # Loop through files (ignore hidden files)
-        for file in sorted(folder.glob("[!.]*.*")):
+    parent_folder = Path(parent_folder)
 
-            # Check file
-            if file.suffix not in FILE_READERS:
-                warn(f"Skipped unsupported file format: {file}")
-                continue
-            elif file.stat().st_size == 0:
-                warn(f"Skipped empty file: {file}")
-                continue
+    if not parent_folder.exists():
+        raise FileNotFoundError(f"Directory does not exist: '{parent_folder}'")
+    if not parent_folder.is_dir():
+        raise NotADirectoryError(f"Path is not a directory: '{parent_folder}'")
 
-            # Add to metadata
-            metadata[file_id] = {
-                "folder": str(folder.name),
-                "file": str(file.name),
-                "full_path": str(file.resolve()),
-                "last_modified": os.path.getmtime(str(file)),
-            }
+    folders = [folder for folder in parent_folder.iterdir() if folder.is_dir()]
+    if more_folders:
+        folders.extend(more_folders)
 
-            # Increment
-            file_id += 1
-
-    if file_id == 0:
-        raise FileNotFoundError(
-            "Directory seems to be empty. Check whether you specified the correct path."
-        )
-
-    return metadata
+    return merge_folders(folders, target_col)

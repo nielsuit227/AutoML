@@ -1,6 +1,6 @@
 #  Copyright (c) 2022 by Amplo.
 
-import json
+import ast
 import re
 
 import numpy as np
@@ -47,8 +47,11 @@ class TestDataObserver:
         with pytest.warns(ProductionWarning) as record:
             obs.check_monotonic_columns()
         msg = str(find_first_warning_of_type(ProductionWarning, record).message)
-        monotonic_cols = json.loads(re.search(r"\[.*]", msg).group(0))
-        assert set(monotonic_cols) == {0, 1}, "Wrong monotonic columns identified."
+        monotonic_cols = ast.literal_eval(re.search(r"\[.*]", msg).group(0))
+        assert set(monotonic_cols) == {
+            "feature_0",
+            "feature_1",
+        }, "Wrong monotonic columns identified."
 
     def test_minority_sensitivity(self):
         # Setup
@@ -70,8 +73,10 @@ class TestDataObserver:
         with pytest.warns(ProductionWarning) as record:
             obs.check_minority_sensitivity()
         msg = str(find_first_warning_of_type(ProductionWarning, record).message)
-        sensitive_cols = json.loads(re.search(r"\[.*]", msg).group(0))
-        assert sensitive_cols == [1], "Wrong minority sensitive columns identified."
+        sensitive_cols = ast.literal_eval(re.search(r"\[.*]", msg).group(0))
+        assert sensitive_cols == [
+            "feature_1"
+        ], "Wrong minority sensitive columns identified."
 
     def test_categorical_mismatch(self):
         # Setup
@@ -94,7 +99,7 @@ class TestDataObserver:
         with pytest.warns(ProductionWarning) as record:
             obs.check_categorical_mismatch()
         msg = str(find_first_warning_of_type(ProductionWarning, record).message)
-        sensitive_cols = json.loads(re.search(r"\[.*]", msg).group(0))
+        sensitive_cols = ast.literal_eval(re.search(r"\[.*]", msg).group(0))
         assert sensitive_cols == [
             {"feature_1": ["something", "somethign"]}
         ], "Wrong categorical mismatch columns identified."
@@ -114,8 +119,10 @@ class TestDataObserver:
         with pytest.warns(ProductionWarning) as record:
             obs.check_extreme_values()
         msg = str(find_first_warning_of_type(ProductionWarning, record).message)
-        extreme_cols = json.loads(re.search(r"\[.*]", msg).group(0))
-        assert extreme_cols == [1], "Wrong minority sensitive columns identified."
+        extreme_cols = ast.literal_eval(re.search(r"\[.*]", msg).group(0))
+        assert extreme_cols == [
+            "feature_1"
+        ], "Wrong minority sensitive columns identified."
 
     def test_label_issues(self):
         # Setup
@@ -131,5 +138,5 @@ class TestDataObserver:
         with pytest.warns(ProductionWarning) as record:
             obs.check_label_issues()
         msg = str(find_first_warning_of_type(ProductionWarning, record).message)
-        label_issues = json.loads(re.search(r"\[.*]", msg).group(0))
+        label_issues = ast.literal_eval(re.search(r"\[.*]", msg).group(0))
         assert label_issues == [99], "Wrong label issues identified."

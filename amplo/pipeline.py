@@ -7,11 +7,11 @@ import itertools
 import json
 import os
 import time
-import warnings
 from datetime import datetime
 from inspect import signature
 from pathlib import Path
 from typing import Tuple, Union
+from warnings import warn
 
 import joblib
 import numpy as np
@@ -243,15 +243,11 @@ class Pipeline(LoggingMixin):
 
         # Warn unused parameters
         if kwargs:
-            warnings.warn(
-                f"Got unexpected keyword arguments that are not handled: {set(kwargs)}"
-            )
+            warn(f"Got unexpected keyword arguments that are not handled: {kwargs}")
 
         # Input checks: advices
         if include_output and not sequence:
-            warnings.warn(
-                "It is strongly advised NOT to include output without sequencing."
-            )
+            warn("It is strongly advised NOT to include output without sequencing.")
 
         # Main settings
         self.main_dir = f"{Path(main_dir)}/"  # assert backslash afterwards
@@ -404,7 +400,17 @@ class Pipeline(LoggingMixin):
         self.best_model = model
         self.is_fitted = True
 
-    def fit(self, *args, **kwargs):
+    def fit(
+        self,
+        data_or_path: np.ndarray | pd.DataFrame | str | Path,
+        target: np.ndarray | pd.Series | str = None,
+        *,
+        metadata: dict[int, dict[str, str | float]] = None,
+        model: str | list[str] = None,
+        feature_set: str | list[str] = None,
+        parameter_set: dict = None,
+        params: dict = None,
+    ):
         """
         Fit the full AutoML pipeline.
             1. Prepare data for training
@@ -414,25 +420,50 @@ class Pipeline(LoggingMixin):
 
         Parameters
         ----------
-        args
-            For data reading - Propagated to `self.data_preparation`
-        kwargs
-            For data reading (propagated to `self.data_preparation`) AND
-            for production filing (propagated to `self.conclude_fitting`)
+        data_or_path : np.ndarray or pd.DataFrame or str or Path
+            Data or path to data. Propagated to `self.data_preparation`.
+        target : np.ndarray or pd.Series or str
+            Target data or column name. Propagated to `self.data_preparation`.
+        *
+        metadata : dict of {int : dict of {str : str or float}}, optional
+            Metadata. Propagated to `self.data_preparation`.
+        model : str or list of str, optional
+            Constrain grid search and fitting conclusion to given model(s).
+            Propagated to `self.model_training` and `self.conclude_fitting`.
+        feature_set : str or list of str, optional
+            Constrain grid search and fitting conclusion to given feature set(s).
+            Propagated to `self.model_training` and `self.conclude_fitting`.
+            Options: {rf_threshold, rf_increment, shap_threshold, shap_increment}
+        parameter_set : dict, optional
+            Parameter grid to optimize over. Propagated to `self.model_training`.
+        params : dict, optional
+            Constrain parameters for fitting conclusion.
+            Propagated to `self.conclude_fitting`.
         """
+
         # Starting
         self.logger.info(f"\n\n*** Starting Amplo AutoML - {self.name} ***\n\n")
 
         # Prepare data for training
-        self.data_preparation(*args, **kwargs)
+        self.data_preparation(
+            data_or_path=data_or_path, target=target, metadata=metadata
+        )
 
         # Train / optimize models
-        self.model_training(**kwargs)
+        self.model_training(
+            model=model, feature_set=feature_set, parameter_set=parameter_set
+        )
 
         # Conclude fitting
-        self.conclude_fitting(**kwargs)
+        self.conclude_fitting(model=model, feature_set=feature_set, params=params)
 
-    def data_preparation(self, *args, **kwargs):
+    def data_preparation(
+        self,
+        data_or_path: np.ndarray | pd.DataFrame | str | Path,
+        target: np.ndarray | pd.Series | str = None,
+        *,
+        metadata: dict[int, dict[str, str | float]] = None,
+    ):
         """
         Prepare data for modelling
             1. Data Processing
@@ -444,13 +475,16 @@ class Pipeline(LoggingMixin):
 
         Parameters
         ----------
-        args
-            For data reading - Propagated to `self._read_data`
-        kwargs
-            For data reading - Propagated to `self._read_data`
+        data_or_path : np.ndarray or pd.DataFrame or str or Path
+            Data or path to data. Propagated to `self._read_data`.
+        target : np.ndarray or pd.Series or str
+            Target data or column name. Propagated to `self._read_data`.
+        *
+        metadata : dict of {int : dict of {str : str or float}}, optional
+            Metadata. Propagated to `self._read_data`.
         """
         # Reading data
-        self._read_data(*args, **kwargs)
+        self._read_data(data_or_path, target, metadata=metadata)
 
         # Detect mode (classification / regression)
         self._mode_detector()
@@ -518,7 +552,7 @@ class Pipeline(LoggingMixin):
         # Create stacking model
         self._create_stacking()
 
-    def conclude_fitting(self, *, model=None, feature_set=None, params=None):
+    def conclude_fitting(self, model=None, feature_set=None, params=None):
         """
         Prepare production files that are necessary to deploy a specific
         model / feature set combination
@@ -537,6 +571,7 @@ class Pipeline(LoggingMixin):
             Model parameters for which to prepare production files.
             Default: takes the best parameters
         """
+
         if not self.no_dirs:
 
             # Set up production path
@@ -706,101 +741,103 @@ class Pipeline(LoggingMixin):
         return prediction
 
     # Fit functions
-    def _read_data(self, x=None, y=None, *, data=None, **kwargs):
+    def _read_data(
+        self,
+        data_or_path: np.ndarray | pd.DataFrame | str | Path,
+        target: np.ndarray | pd.Series | str = None,
+        *,
+        metadata: dict[int, dict[str, str | float]] = None,
+    ) -> "Pipeline":
         """
-        Reads and loads data into desired format.
+        Read and validate data.
 
-        Expects to receive:
-            1. Both, ``x`` and ``y`` (-> features and target), or
-            2. Either ``x`` or ``data`` (-> dataframe or path to folder)
+        Notes
+        -----
+        The required parameters depend on the input parameter types.
+
+        When ``target`` is None, it is set to ``self.target`` or "target" otherwise.
+
+        When ``data_or_path`` is path-like, then the parameters ``target`` and
+        ``metadata`` are not required.
+        Otherwise, when ``data_or_path`` is array-like, it either must contain a column
+        name as the ``target`` parameter indicates or ``target`` must also be an
+        array-like object with the same length as ``data_or_path``.
 
         Parameters
         ----------
-        x : np.ndarray or pd.Series or pd.DataFrame or str or Path, optional
-            x-data (input) OR acts as ``data`` parameter when param ``y`` is empty
-        y : np.ndarray or pd.Series, optional
-            y-data (target)
-        data : pd.DataFrame or str or Path, optional
-            Contains both, x and y, OR provides a path to folder structure
-        kwargs : dict
-            Not used, but necessary as we don't split .fit() kwargs
+        data_or_path : np.ndarray or pd.DataFrame or str or Path
+            Data or path to data.
+        target : np.ndarray or pd.Series or str
+            Target data or column name.
+        *
+        metadata : dict of {int : dict of {str : str or float}}, optional
+            Metadata.
 
         Returns
         -------
         Pipeline
+            The same object but with injected data.
         """
-        assert x is not None or data is not None, "No data provided"
-        assert (x is not None) ^ (
-            data is not None
-        ), "Setting both, `x` and `data`, is ambiguous"
 
-        # Labels are provided separately
-        if y is not None:
-            # Check data
-            x = x if x is not None else data
-            assert x is not None, "Parameter ``x`` is not set"
-            assert isinstance(
-                x, (np.ndarray, pd.Series, pd.DataFrame)
-            ), "Unsupported data type for parameter ``x``"
-            assert isinstance(
-                y, (np.ndarray, pd.Series)
-            ), "Unsupported data type for parameter ``y``"
+        # Allow target name to be set via __init__
+        target_name = utils.clean_feature_name(
+            (target if isinstance(target, str) else None) or self.target or "target"
+        )
 
-            # Set target manually if not defined
-            if not self.target:
-                self.target = "target"
+        # Read / set data
+        if isinstance(data_or_path, (str, Path)):
+            if not isinstance(target, (type(None), str)):
+                raise ValueError(
+                    "Parameter `target` must be a string when `data_or_path` is a "
+                    "path-like object."
+                )
+            if metadata:
+                warn(
+                    "Parameter `metadata` is ignored when `data_or_path` is a "
+                    "path-like object."
+                )
 
-            # Parse x-data
-            if isinstance(x, np.ndarray):
-                x = pd.DataFrame(x)
-            elif isinstance(x, pd.Series):
-                x = pd.DataFrame(x)
-            # Parse y-data
-            if isinstance(y, np.ndarray):
-                y = pd.Series(y, index=x.index)
-            y.name = self.target
+            data, metadata = utils.io.merge_logs(data_or_path, target_name)
 
-            # Check data
-            assert all(x.index == y.index), "``x`` and ``y`` indices do not match"
-            if self.target in x.columns:
-                if any(x[self.target] != y):
-                    msg = (
-                        f"Target column coexists in both, x and y data, but have "
-                        f"unequal content. Rename the column ``{self.target}`` in x."
-                    )
-                    raise ValueError(msg)
-                data = x
-            else:
-                # Concatenate x and y
-                data = pd.concat([x, y], axis=1)
+        elif isinstance(data_or_path, (np.ndarray, pd.DataFrame)):
+            data = pd.DataFrame(data_or_path)
 
-        # Set data parameter in case it is provided through parameter ``x``
-        data = data if data is not None else x
-        metadata = None
+        else:
+            raise ValueError(f"Invalid type for `data_or_path`: {type(data_or_path)}")
 
-        # A path was provided to read out (multi-indexed) data
-        if isinstance(data, (str, Path)):
-            # Set target manually if not defined
-            if not self.target:
-                self.target = "target"
-            # Parse data
-            data, metadata = utils.io.merge_logs(data, self.target)
+        data = utils.data.clean_keys(data)
 
-        # Test data
-        assert self.target, "No target string provided"
-        assert self.target in data.columns, "Target column missing"
-        assert (
-            len(data.columns) == data.columns.nunique()
-        ), "Columns have no unique names"
+        # Validate target
+        if target is None or isinstance(target, str):
+            if target_name not in data:
+                raise ValueError(f"Target column '{target_name}' not found in data.")
 
-        # Save data
-        clean_target = utils.clean_feature_name(self.target)
-        data.rename(columns={self.target: clean_target}, inplace=True)
-        self.target = clean_target
+        elif isinstance(target, (np.ndarray, pd.Series)):
+
+            if len(data) != len(target):
+                raise ValueError("Length of target and data don't match.")
+            elif not isinstance(target, pd.Series):
+                target = pd.Series(target, index=data.index)
+            elif not all(data.index == target.index):
+                warn(
+                    "Indices of data and target don't match. Target index will be "
+                    "overwritten by data index."
+                )
+                target.index = data.index
+
+            if target_name in data:
+                raise ValueError(f"A '{target_name}' column already exists in `data`.")
+            data[target_name] = target
+
+        else:
+            raise ValueError("Invalid type for `target`.")
+
+        assert target_name in data, "Internal error: Target not in data."
+        self.target = target_name
+
+        # Finish
         self._set_data(data)
-
-        # Store metadata in settings
-        self.settings["file_metadata"] = metadata or dict()
+        self.settings["file_metadata"] = metadata or {}
 
         return self
 
@@ -932,8 +969,8 @@ class Pipeline(LoggingMixin):
         if self.mode == "classification":
             self.n_classes = self.y.nunique()
             if self.n_classes >= 50:
-                warnings.warn(
-                    "More than 20 classes, "
+                warn(
+                    "More than 50 classes, "
                     "you may want to reconsider classification mode"
                 )
             if set(self.y) != set([i for i in range(len(set(self.y)))]):
@@ -1442,6 +1479,7 @@ class Pipeline(LoggingMixin):
             be fitted.
         params : dict, optional
             Parameter constraint(s)
+
         Returns
         -------
         model : str
@@ -1692,7 +1730,7 @@ class Pipeline(LoggingMixin):
             if new_x.shape == old_x_shape:
                 new_x = pd.DataFrame(new_x, index=old_x_index, columns=old_x_columns)
             else:
-                warnings.warn(
+                warn(
                     "Old x-data has more/less columns than new x-data. "
                     "Setting dummy feature names..."
                 )
@@ -1903,7 +1941,7 @@ class Pipeline(LoggingMixin):
 
         # Warning for unoptimized results
         if "Hyper Parameter" not in results["type"].values:
-            warnings.warn("Hyper parameters not optimized for this combination")
+            warn("Hyper parameters not optimized for this combination")
 
         # Parse & return best parameters (regardless of if it's optimized)
         return utils.io.parse_json(results.iloc[0]["params"])
@@ -1973,7 +2011,7 @@ class Pipeline(LoggingMixin):
                     msg += f"{param.name}={best:.2e} (range: {min_:.2e}...{max_:.2e})"
                 else:
                     msg += f"{param.name}={best} (range: {min_}...{max_})"
-                warnings.warn(msg)
+                warn(msg)
 
         params.apply(warn_when_too_close_to_edge, axis=1)
 
