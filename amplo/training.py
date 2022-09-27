@@ -20,7 +20,7 @@ DEFAULT_PIPE_KWARGS = {
     "missing_values": "zero",
     "balance": False,
     "stacking": False,
-    "grid_search_time_budget": 7200,
+    "grid_search_timeout": 7200,
     "n_grid_searches": 1,
     "verbose": 1,
 }
@@ -32,7 +32,7 @@ def _set_default_pipe_kwargs(
     service: str,
     issue: str,
     model_version: int,
-    unhandled_pipe_kwargs: dict = None,
+    unhandled_pipe_kwargs: dict | None = None,
 ) -> dict:
     """
     Inserts default pipeline arguments if not set already.
@@ -90,11 +90,11 @@ def train_locally(
     machine: str,
     service: str,
     issue: str,
-    pipe_kwargs: dict = None,
+    pipe_kwargs: dict | None = None,
     model_version: int = 1,
     *,
     working_dir: str | Path = "./tmp",
-) -> True:
+) -> bool:
     """
     Locally train a model with given parameters.
 
@@ -140,7 +140,7 @@ def train_locally(
     # --- Data ---
 
     # Read data
-    target = pipe_kwargs["target"]
+    target: str = pipe_kwargs["target"]
     data, file_metadata = merge_logs(
         data_dir, target, more_folders=[Path(data_dir).parent / "Healthy/Healthy"]
     )
@@ -187,11 +187,11 @@ def train_on_cloud(
     machine: str,
     service: str,
     issue: str,
-    pipe_kwargs: dict = None,
+    pipe_kwargs: dict | None = None,
     model_version: int = 1,
     *,
-    host_os: str = None,
-    access_token_os: str = None,
+    host_os: str | None = None,
+    access_token_os: str | None = None,
 ) -> dict[str, int]:
     """
     Train a model with given parameters on the cloud (Databricks).

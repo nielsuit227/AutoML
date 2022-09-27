@@ -10,6 +10,8 @@ import pytest
 from amplo.automl.feature_processing.feature_processor import (
     FeatureProcessor,
     find_collinear_columns,
+    get_required_columns,
+    translate_features,
 )
 from amplo.automl.feature_processing.nop_feature_extractor import NopFeatureExtractor
 from amplo.automl.feature_processing.temporal_feature_extractor import (
@@ -26,6 +28,30 @@ class TestFunctions:
         )
         collinear_columns = find_collinear_columns(x, information_threshold=0.99)
         assert set(collinear_columns) == {"b", "c"}, "Collinear columns not found"
+
+    def test_get_required_columns(self):
+        feat_cols = ["inv__A", "A__mul__B"]
+        assert get_required_columns(feat_cols) == ["A", "B"]
+
+    def test_translate_features(self):
+        # Accept all possible feature names
+        translation = {
+            "A": ["A"],
+            "B__mul__C": ["B", "C"],
+            "D__div__E": ["D", "E"],
+            "F__x__G": ["F", "G"],
+            "H__d__I": ["H", "I"],
+            "sin__J": ["J"],
+            "cos__K": ["K"],
+            "inv__L": ["L"],
+            "M__pool=sum": ["M"],
+            "N__wav__cmor__pool=sum": ["N"],
+        }
+        assert translate_features(list(translation.keys())) == translation
+
+        # Don't accept bad feature names
+        with pytest.raises(ValueError):
+            translate_features(["unknown__feature__name"])
 
 
 @pytest.mark.usefixtures("make_rng")
@@ -108,11 +134,11 @@ class TestFeatureProcessor:
         fp = FeatureProcessor(extract_features=False)
         fp._find_columns_of_interest(x)
         fp.feature_extractor = NopFeatureExtractor()
-        fp.features_ = ["A__mul__B", "inv__A", "...__C__..."]
+        fp.features_ = ["A__mul__B", "inv__A"]
         assert set(fp.numeric_cols_) == set(list("ABD"))
         assert set(fp.datetime_cols_) == {"C"}
         assert set(fp.collinear_cols_) == {"collinear"}
-        assert set(fp.get_required_columns()) == set(list("ABC"))
+        assert set(get_required_columns(fp.features_)) == set(list("AB"))
 
     @pytest.mark.parametrize("mode", ["classification", "regression"])
     @pytest.mark.parametrize("analyse_fs", [None, "auto", "all", "gini", "shap"])

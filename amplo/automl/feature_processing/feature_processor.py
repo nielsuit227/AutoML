@@ -3,9 +3,11 @@
 """
 Feature processor for extracting and selecting features.
 """
+
 from __future__ import annotations
 
 import re
+from warnings import warn
 
 import numpy as np
 import pandas as pd
@@ -30,10 +32,17 @@ from amplo.classification import CatBoostClassifier
 from amplo.regression import CatBoostRegressor
 from amplo.utils import check_dtypes
 
-__all__ = ["find_collinear_columns", "FeatureProcessor"]
+__all__ = [
+    "find_collinear_columns",
+    "translate_features",
+    "get_required_columns",
+    "FeatureProcessor",
+]
 
 
-def find_collinear_columns(data, information_threshold=0.9):
+def find_collinear_columns(
+    data: pd.DataFrame, information_threshold: float = 0.9
+) -> list[str]:
     """
     Finds collinear features and returns them.
 
@@ -115,6 +124,94 @@ def find_collinear_columns(data, information_threshold=0.9):
     mask = np.sum(corr_mat > information_threshold, axis=0) > 0
     collinear_columns = np.array(data.columns)[mask].astype(str).tolist()
     return collinear_columns
+
+
+def translate_features(
+    feature_cols: list[str], numeric_cols: list[str] | None = None
+) -> dict[str, list[str]]:
+    """
+    Translates (extracted) features and tells its underlying original feature.
+
+    Parameters
+    ----------
+    feature_cols : list of str
+        Feature columns to be translated.
+    numeric_cols : list of str, optional
+        All original, numeric features that were used for feature extraction.
+        This parameter is only needed when k-Means features appear in `feature_cols`.
+
+    Returns
+    -------
+    dict of {str: list of str}
+        Dictionary with `feature_cols` as keys and their underlying original features
+        as values.
+    """
+
+    check_dtypes(("feature_cols__item", item, str) for item in feature_cols)
+    check_dtypes("numeric_cols", numeric_cols, (type(None), list))
+    if isinstance(numeric_cols, list):
+        check_dtypes(("numeric_cols__item", item, str) for item in numeric_cols)
+
+    translation = {}
+    need_numeric_cols = False
+    for feature in feature_cols:
+        # Raw features
+        if "__" not in feature:
+            t = [feature]
+        # From StaticFeatureExtractor
+        elif re.search("__(mul|div|x|d)__", feature):
+            f1, _, f2 = feature.split("__")
+            t = [f1, f2]
+        elif re.search("^(sin|cos|inv)__", feature):
+            _, f = feature.split("__")
+            t = [f]
+        elif re.search("^dist__", feature):
+            # k-Means clusters need all numeric columns
+            need_numeric_cols = True
+            t = numeric_cols or []
+        # From TemporalFeatureExtractor
+        elif re.search("^((?!__).)*__pool=.+", feature):  # `__` appears only once
+            f, _ = feature.split("__")
+            t = [f]
+        elif re.search(".+__wav__.+__pool=.+", feature):
+            f, _ = feature.split("__", maxsplit=1)
+            t = [f]
+        else:
+            raise ValueError(f"Could not translate feature: {feature}")
+
+        translation[feature] = t
+
+    if need_numeric_cols and numeric_cols is None:
+        warn("Incomplete feature translation. Please provide the full list.")
+
+    return translation
+
+
+def get_required_columns(
+    feature_cols: list[str], numeric_cols: list[str] | None = None
+) -> list[str]:
+    """
+    Returns all required columns that are required for the given features.
+
+    Parameters
+    ----------
+    feature_cols : list of str
+        Feature columns to be translated.
+    numeric_cols : list of str, optional
+        All original, numeric features that were used for feature extraction.
+        This parameter is only needed when k-Means features appear in `feature_cols`.
+
+    Returns
+    -------
+    list[str]
+        All required data columns for the given features.
+    """
+
+    required_cols = []
+    for translation in translate_features(feature_cols, numeric_cols).values():
+        required_cols.extend(translation)
+
+    return sorted(set(required_cols))
 
 
 class FeatureProcessor(BaseFeatureProcessor):
@@ -301,94 +398,6 @@ class FeatureProcessor(BaseFeatureProcessor):
         return y
 
     # ----------------------------------------------------------------------
-    # Feature name translation
-
-    def translate_features(self, feature_columns: list[str]) -> dict[str, list[str]]:
-        """
-        Translates (extracted) features and tells its underlying original feature.
-
-        Parameters
-        ----------
-        feature_columns : list of str
-            Feature columns to be translated.
-
-        Returns
-        -------
-        dict of {str: list of str}
-            Dictionary with `feature_columns` as keys and their underlying original
-            features as values.
-        """
-        check_dtypes(("item", item, str) for item in feature_columns)
-
-        translation = {}
-        for feature in feature_columns:
-            # Raw features
-            if "__" not in feature:
-                t = [feature]
-            # From StaticFeatureExtractor
-            elif re.search("__(mul|div|x|d)__", feature):
-                f1, _, f2 = feature.split("__")
-                t = [f1, f2]
-            elif re.search("^(sin|cos|inv)__", feature):
-                _, f = feature.split("__")
-                t = [f]
-            elif re.search("^dist__", feature):
-                # k-Means clusters need all numeric columns
-                t = self.numeric_cols_
-            # From TemporalFeatureExtractor
-            elif re.search("^((?!__).)*__pool=.+", feature):  # `__` appears only once
-                f, _ = feature.split("__")
-                t = [f]
-            elif re.search(".+__wav__.+__pool=.+", feature):
-                f, _ = feature.split("__", maxsplit=1)
-                t = [f]
-            else:
-                raise ValueError(f"Could not translate feature: {feature}")
-
-            translation[feature] = t
-
-        return translation
-
-    def get_required_columns(self, feature_set=None):
-        """
-        Returns all required data columns that are required.
-
-        Parameters
-        ----------
-        feature_set : str, optional
-            Desired feature set.
-            When no feature_set is `None` all features will be returned.
-
-        Returns
-        -------
-        list of str
-            All required feature columns for given feature set.
-        """
-        # Set features for transformation
-        if feature_set is None:
-            features = self.features_
-        elif feature_set in self.feature_sets_:
-            features = self.feature_sets_[feature_set]
-        else:
-            raise ValueError(f"Feature set does not exist: {feature_set}")
-
-        # A feature name always contains before and/or after two underscores.
-        # Based on this assumption we use RegEx to find all features that are
-        # required for the given feature set (of feature names).
-        all_cols = set(self.datetime_cols_ + self.numeric_cols_)
-        required_cols = sorted(
-            set(
-                [
-                    col
-                    for col in all_cols
-                    if any(re.search(f"(__{col}|{col}__)", f) for f in features)
-                ]
-            )
-        )
-
-        return required_cols
-
-    # ----------------------------------------------------------------------
     # Feature processing
 
     def _check_is_temporal_attribute(self, x):
@@ -457,7 +466,7 @@ class FeatureProcessor(BaseFeatureProcessor):
         # Find missing columns
         required_cols = [
             col
-            for columns in self.translate_features(self.features_).values()
+            for columns in translate_features(self.features_).values()
             for col in columns
         ]
         required_cols = list(set(required_cols))

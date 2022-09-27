@@ -10,7 +10,7 @@ import time
 from datetime import datetime
 from inspect import signature
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Any, Tuple, Union
 from warnings import warn
 
 import joblib
@@ -28,6 +28,10 @@ from amplo.automl.data_processing import DataProcessor
 from amplo.automl.data_sampling import DataSampler
 from amplo.automl.drift_detection import DriftDetector
 from amplo.automl.feature_processing import FeatureProcessor
+from amplo.automl.feature_processing.feature_processor import (
+    get_required_columns,
+    translate_features,
+)
 from amplo.automl.interval_analysis import IntervalAnalyser
 from amplo.automl.modelling import Modeller
 from amplo.automl.sequencing import Sequencer
@@ -167,18 +171,18 @@ class Pipeline(LoggingMixin):
         self,
         # Main settings
         main_dir: str = "Auto_ML/",
-        target: str = None,
+        target: str | None = None,
         name: str = "AutoML",
-        version: int = None,
-        mode: str = None,
-        objective: str = None,
+        version: int | None = None,
+        mode: str | None = None,
+        objective: str | None = None,
         verbose: int = 1,
         *,
         # Data processing
-        int_cols: list[str] = None,
-        float_cols: list[str] = None,
-        date_cols: list[str] = None,
-        cat_cols: list[str] = None,
+        int_cols: list[str] | None = None,
+        float_cols: list[str] | None = None,
+        date_cols: list[str] | None = None,
+        cat_cols: list[str] | None = None,
         missing_values: str = "zero",
         outlier_removal: str = "clip",
         z_score_threshold: int = 4,
@@ -211,7 +215,7 @@ class Pipeline(LoggingMixin):
         # Stacking
         stacking: bool = False,
         # Production
-        preprocess_function: str = None,
+        preprocess_function: str | None = None,
         # Flags
         plot_eda: bool = False,
         process_data: bool = True,
@@ -317,7 +321,7 @@ class Pipeline(LoggingMixin):
             self.version = 1
 
         # Store Pipeline Settings
-        self.settings = {"pipeline": init_params}
+        self.settings: dict[str, Any] = {"pipeline": init_params}
 
         # Objective & Scorer
         if self.objective is not None:
@@ -351,7 +355,7 @@ class Pipeline(LoggingMixin):
         self._main_predictors = None
 
     # User Pointing Functions
-    def get_settings(self, version: int = None) -> dict:
+    def get_settings(self, version: int | None = None) -> dict:
         """
         Get settings to recreate fitted object.
 
@@ -403,13 +407,13 @@ class Pipeline(LoggingMixin):
     def fit(
         self,
         data_or_path: np.ndarray | pd.DataFrame | str | Path,
-        target: np.ndarray | pd.Series | str = None,
+        target: np.ndarray | pd.Series | str | None = None,
         *,
-        metadata: dict[int, dict[str, str | float]] = None,
-        model: str | list[str] = None,
-        feature_set: str | list[str] = None,
-        parameter_set: dict = None,
-        params: dict = None,
+        metadata: dict[int, dict[str, str | float]] | None = None,
+        model: str | list[str] | None = None,
+        feature_set: str | list[str] | None = None,
+        parameter_set: dict | None = None,
+        params: dict | None = None,
     ):
         """
         Fit the full AutoML pipeline.
@@ -460,9 +464,9 @@ class Pipeline(LoggingMixin):
     def data_preparation(
         self,
         data_or_path: np.ndarray | pd.DataFrame | str | Path,
-        target: np.ndarray | pd.Series | str = None,
+        target: np.ndarray | pd.Series | str | None = None,
         *,
-        metadata: dict[int, dict[str, str | float]] = None,
+        metadata: dict[int, dict[str, str | float]] | None = None,
     ):
         """
         Prepare data for modelling
@@ -744,9 +748,9 @@ class Pipeline(LoggingMixin):
     def _read_data(
         self,
         data_or_path: np.ndarray | pd.DataFrame | str | Path,
-        target: np.ndarray | pd.Series | str = None,
+        target: np.ndarray | pd.Series | str | None = None,
         *,
-        metadata: dict[int, dict[str, str | float]] = None,
+        metadata: dict[int, dict[str, str | float]] | None = None,
     ) -> "Pipeline":
         """
         Read and validate data.
@@ -1633,8 +1637,9 @@ class Pipeline(LoggingMixin):
         )
 
         # Prune Data Processor
-        required_features = self.feature_processor.get_required_columns(
-            self.best_feature_set
+        required_features = get_required_columns(
+            self.feature_processor.feature_sets_[self.best_feature_set],
+            self.feature_processor.numeric_cols_,
         )
         self.data_processor.prune_features(required_features)
         self.settings["data_processing"] = self.data_processor.get_settings()
@@ -2029,7 +2034,7 @@ class Pipeline(LoggingMixin):
             # Get shap values
             best_model = self.best_model
             if type(best_model).__module__.startswith("amplo"):
-                best_model = self.best_model.model
+                best_model = best_model.model
             # Note: The error would be raised at this point.
             #  So we have not much overhead.
             shap_values = np.array(TreeExplainer(best_model).shap_values(data))
@@ -2070,7 +2075,7 @@ class Pipeline(LoggingMixin):
 
         # Some feature names are obscure since they come from the feature processing
         # module. Here, we relate the feature importance back to the original features.
-        translation = self.feature_processor.translate_features(list(main_predictors))
+        translation = translate_features(list(main_predictors))
         scores = {}
         for key, features in translation.items():
             for feat in features:
@@ -2080,6 +2085,12 @@ class Pipeline(LoggingMixin):
         for key in scores:
             scores[key] /= total_score
 
-        # Set attribute and return
+        # Set attribute
         self._main_predictors = scores
+
+        # Add to settings: [{"feature": "feature_name", "score": 1}, ...]
+        scores_df = pd.DataFrame({"feature": scores.keys(), "score": scores.values()})
+        scores_df.sort_values("score", ascending=False, inplace=True)
+        self.settings["main_predictors"] = scores_df.to_dict("records")
+
         return scores

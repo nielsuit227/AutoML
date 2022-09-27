@@ -730,8 +730,12 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
 
             # Somehow the groupby-apply function doesn't always duplicate the first
             # index level. Therefore, using `.droplevel(0)` isn't safe enough.
-            index_df = datum.index.to_frame()[pd.unique(datum.index.names)]
-            index_df = index_df[datum_index_names]  # preserve order
+            idx_names, idx_levels = np.unique(datum.index.names, return_index=True)
+            index_df = []
+            for name, level in zip(list(idx_names), list(idx_levels)):
+                idx_series = pd.Series(datum.index.get_level_values(level), name=name)
+                index_df.append(idx_series)
+            index_df = pd.concat(index_df, axis=1)[datum_index_names]  # preserve order
             datum.index = pd.MultiIndex.from_frame(index_df)
             data[i] = datum
 
