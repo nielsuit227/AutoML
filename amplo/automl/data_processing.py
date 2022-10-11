@@ -10,9 +10,12 @@ from sklearn.preprocessing import LabelEncoder
 
 from amplo.utils import clean_feature_name
 from amplo.utils.data import clean_keys
-from amplo.utils.logging import logger
+from amplo.utils.logging import get_root_logger
 
 __all__ = ["DataProcessor"]
+
+
+logger = get_root_logger().getChild("DataProcessor")
 
 
 class DataProcessor:

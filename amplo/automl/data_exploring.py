@@ -12,7 +12,9 @@ from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from statsmodels.tsa.seasonal import STL
 from tqdm import tqdm
 
-from amplo.utils.logging import logger
+from amplo.utils.logging import get_root_logger
+
+logger = get_root_logger().getChild("DataExplorer")
 
 
 class DataExplorer:

@@ -20,10 +20,13 @@ from cleanlab.filter import find_label_issues
 from sklearn.model_selection import cross_val_predict
 
 from amplo.observation._base import PipelineObserver, _report_obs
-from amplo.utils.logging import logger
+from amplo.utils.logging import get_root_logger
 from amplo.utils.metrics import levenshtein_distance
 
 __all__ = ["DataObserver"]
+
+
+logger = get_root_logger().getChild("DataObserver")
 
 
 class DataObserver(PipelineObserver):

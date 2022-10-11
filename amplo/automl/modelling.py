@@ -14,9 +14,12 @@ from sklearn import ensemble, linear_model, metrics, model_selection, svm
 from amplo.classification import CatBoostClassifier, LGBMClassifier, XGBClassifier
 from amplo.regression import CatBoostRegressor, LGBMRegressor, XGBRegressor
 from amplo.utils import check_dtypes
-from amplo.utils.logging import logger
+from amplo.utils.logging import get_root_logger
 
 __all__ = ["ClassificationType", "Modeller", "ModelType", "RegressionType"]
+
+
+logger = get_root_logger().getChild("Modeller")
 
 
 ClassificationType = TypeVar(

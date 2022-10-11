@@ -11,7 +11,7 @@ from collections import defaultdict
 from warnings import warn
 
 from amplo.base.exceptions import NotFittedError
-from amplo.utils.logging import logger
+from amplo.utils.logging import get_root_logger
 
 __all__ = [
     "BaseObject",
@@ -540,5 +540,5 @@ class LoggingMixin:
         # Notice: Without creating a new logger (through `getChild`), setting the
         # logging level will influence all logging. Setting logging levels individually
         # per class is therefore not possible.
-        self.logger = logger.getChild(type(self).__name__)
+        self.logger = get_root_logger().getChild(type(self).__name__)
         self.logger.setLevel(logging_level)

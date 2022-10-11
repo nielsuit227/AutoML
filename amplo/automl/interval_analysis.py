@@ -12,7 +12,9 @@ from amplo.automl import DataProcessor
 from amplo.automl.feature_processing import FeatureProcessor
 from amplo.utils.data import check_dataframe_quality, check_pearson_correlation
 from amplo.utils.io import merge_logs
-from amplo.utils.logging import logger
+from amplo.utils.logging import get_root_logger
+
+logger = get_root_logger().getChild("IntervalAnalyser")
 
 
 class IntervalAnalyser:

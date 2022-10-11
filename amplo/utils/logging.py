@@ -1,56 +1,23 @@
 #  Copyright (c) 2022 by Amplo.
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime
+from pathlib import Path
 
 import colorlog
 
-__all__ = ["logger"]
+__all__ = [
+    "add_file_handler",
+    "del_file_handlers",
+    "get_root_logger",
+    "del_root_logger",
+]
 
 
-_nameToLevel = {
-    "CRITICAL": logging.CRITICAL,
-    "FATAL": logging.FATAL,
-    "ERROR": logging.ERROR,
-    "WARN": logging.WARNING,
-    "WARNING": logging.WARNING,
-    "INFO": logging.INFO,
-    "DEBUG": logging.DEBUG,
-    "NOTSET": logging.NOTSET,
-}
-
-
-def _check_logging_level(level):
-    """
-    Check input whether it is a valid logging level
-
-    Parameters
-    ----------
-    level : int or str
-        Logging level
-
-    Returns
-    -------
-    int
-        (valid) logging level
-
-    Raises
-    ------
-    ValueError
-        If the given logging level is not valid
-    """
-    # Inspired by logging/__init__.py
-    if isinstance(level, int):
-        if level not in set(_nameToLevel.values()):
-            raise ValueError("Unknown level: %r" % level)
-        rv = level
-    elif str(level) == level:
-        if level not in _nameToLevel:
-            raise ValueError("Unknown level: %r" % level)
-        rv = _nameToLevel[level]
-    else:
-        raise TypeError("Level not an integer or a valid string: %r" % level)
-    return rv
+# ------------------------------------------------------------------------------
+# Filters
 
 
 class TimeFilter(logging.Filter):
@@ -83,49 +50,138 @@ class NameFilter(logging.Filter):
         return True
 
 
-# Get custom logger
-logger = logging.getLogger("AmploML")
-logger.setLevel("INFO")
-
-# Set console handler
-console_formatter = colorlog.ColoredFormatter(
-    "%(white)s%(asctime)s %(blue)s[%(name)s]%(log_color)s[%(levelname)s] "
-    "%(white)s%(message)s %(light_black)s<%(filename)s:%(lineno)d> (%(relative)ss)",
-    datefmt="%H:%M",
-)
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.NOTSET)
-console_handler.setFormatter(console_formatter)
-logger.addHandler(console_handler)
-
-# Set file handler
-file_formatter = logging.Formatter(
-    "%(asctime)s [%(name)s][%(levelname)s] %(message)s  "
-    "<%(filename)s:%(lineno)d> (%(relative)ss)",
-    datefmt="%H:%M",
-)
-file_handler = logging.FileHandler("AutoML.log", mode="a")
-file_handler.setLevel(logging.NOTSET)
-file_handler.setFormatter(file_formatter)
-logger.addHandler(file_handler)
-
-# Add filters
-[handler.addFilter(TimeFilter()) for handler in logger.handlers]
-[handler.addFilter(NameFilter()) for handler in logger.handlers]
-
-# Capture warnings from `warnings.warn(...)`
-logging.captureWarnings(True)
-py_warnings_logger = logging.getLogger("py.warnings")
-warnings_formatter = colorlog.ColoredFormatter(
-    "%(white)s%(asctime)s %(log_color)s[%(levelname)s] %(white)s%(message)s",
-    datefmt="%H:%M",
-)
-warnings_handler = logging.StreamHandler()
-warnings_handler.setLevel("WARNING")
-warnings_handler.setFormatter(warnings_formatter)
-warnings_handler.terminator = ""  # suppress unnecessary newline
-py_warnings_logger.addHandler(warnings_handler)
+def _add_filters(handler: logging.Handler):
+    handler.addFilter(TimeFilter())
+    handler.addFilter(NameFilter())
 
 
-def remove_file_handler():
-    logger.removeHandler(file_handler)
+# ------------------------------------------------------------------------------
+# Loggers
+
+_ROOT_LOGGER: logging.Logger | None = None
+
+
+def _create_logger() -> logging.Logger:
+    """
+    Creates a new logger that also captures warnings from `warnings.warn()`.
+
+    Returns
+    -------
+    logging.Logger
+        New logger instance.
+    """
+
+    # Get custom logger
+    logger = logging.getLogger("AmploML")
+    logger.setLevel("INFO")
+
+    # Set console handler
+    console_formatter = colorlog.ColoredFormatter(
+        "%(white)s%(asctime)s %(blue)s[%(name)s]%(log_color)s[%(levelname)s] "
+        "%(white)s%(message)s %(light_black)s<%(filename)s:%(lineno)d> (%(relative)ss)",
+        datefmt="%H:%M",
+    )
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.NOTSET)
+    console_handler.setFormatter(console_formatter)
+    _add_filters(console_handler)
+    logger.addHandler(console_handler)
+
+    # Capture warnings from `warnings.warn(...)`
+    logging.captureWarnings(True)
+    py_warnings_logger = logging.getLogger("py.warnings")
+    warnings_formatter = colorlog.ColoredFormatter(
+        "%(white)s%(asctime)s %(log_color)s[%(levelname)s] %(white)s%(message)s",
+        datefmt="%H:%M",
+    )
+    warnings_handler = logging.StreamHandler()
+    warnings_handler.setLevel("WARNING")
+    warnings_handler.setFormatter(warnings_formatter)
+    warnings_handler.terminator = ""  # suppress unnecessary newline
+    _add_filters(warnings_handler)
+    py_warnings_logger.addHandler(warnings_handler)
+
+    return logger
+
+
+def add_file_handler(file_path: str | Path):
+    """
+    Add a file handler to the root logger.
+
+    Parameters
+    ----------
+    file_path : str or Path
+        Path where the logger should write to.
+
+    Raises
+    ------
+    AttributeError
+        When the root logger is not properly initialized (None).
+    """
+
+    global _ROOT_LOGGER
+
+    if not isinstance(_ROOT_LOGGER, logging.Logger):
+        raise AttributeError(
+            "The root logger is not initialized properly. "
+            "Did you call `get_root_logger()`? "
+            f"Root logger: {_ROOT_LOGGER}"
+        )
+
+    # Set file handler
+    file_formatter = logging.Formatter(
+        "%(asctime)s [%(name)s][%(levelname)s] %(message)s  "
+        "<%(filename)s:%(lineno)d> (%(relative)ss)",
+        datefmt="%H:%M",
+    )
+    file_handler = logging.FileHandler(file_path, mode="a")
+    file_handler.setLevel(logging.NOTSET)
+    file_handler.setFormatter(file_formatter)
+    _add_filters(file_handler)
+    _ROOT_LOGGER.addHandler(file_handler)
+
+
+def del_file_handlers():
+    """
+    Delete all file handlers in the root logger.
+
+    Raises
+    ------
+    AttributeError
+        When the root logger is not properly initialized (None).
+    """
+    global _ROOT_LOGGER
+
+    if not isinstance(_ROOT_LOGGER, logging.Logger):
+        raise AttributeError(
+            "The root logger is not initialized properly. "
+            "Did you call `get_root_logger()`? "
+            f"Root logger: {_ROOT_LOGGER}"
+        )
+
+    for handler in _ROOT_LOGGER.handlers:
+        if isinstance(handler, logging.FileHandler):
+            _ROOT_LOGGER.removeHandler(handler)
+
+
+def get_root_logger():
+    """
+    Get the root logger. If not yet done the logger will be initialized.
+    """
+
+    global _ROOT_LOGGER
+
+    # Do not initialize the same logger multiple times
+    if isinstance(_ROOT_LOGGER, logging.Logger):
+        return _ROOT_LOGGER
+    # First time called -> initialize logger
+    _ROOT_LOGGER = _create_logger()
+
+    return _ROOT_LOGGER
+
+
+def del_root_logger():
+    """Reset the root logger and set it to None."""
+
+    global _ROOT_LOGGER
+    _ROOT_LOGGER = None

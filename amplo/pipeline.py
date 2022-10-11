@@ -71,6 +71,10 @@ class Pipeline(LoggingMixin):
         Default for regression: "mean_square_error".
     verbose : int, default: 1
         Verbosity of logging.
+    logging_to_file : bool, default: False
+        Whether to write logging to a file
+    logging_path : str, default: "AutoML.log"
+        Write to logging to given path if ``logs_to_file`` is True.
 
     # Data processing
     int_cols : list of str, optional
@@ -177,6 +181,8 @@ class Pipeline(LoggingMixin):
         mode: str | None = None,
         objective: str | None = None,
         verbose: int = 1,
+        logging_to_file: bool = False,
+        logging_path: str = "AutoML.log",
         *,
         # Data processing
         int_cols: list[str] | None = None,
@@ -230,8 +236,10 @@ class Pipeline(LoggingMixin):
         }
         del sig, init_locals
 
-        # super() calls
+        # Initialize Logger
         super().__init__(verbose=verbose)
+        if logging_to_file:
+            utils.logging.add_file_handler(logging_path)
 
         # Input checks: validity
         if mode not in (None, "regression", "classification"):
@@ -610,7 +618,7 @@ class Pipeline(LoggingMixin):
         # Finish
         self.is_fitted = True
         self.logger.info("All done :)")
-        utils.logging.remove_file_handler()
+        utils.logging.del_file_handlers()
 
     def convert_data(
         self, x: pd.DataFrame, preprocess: bool = True

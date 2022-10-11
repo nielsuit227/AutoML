@@ -16,7 +16,9 @@ from sklearn import metrics
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold
 
-from amplo.utils.logging import logger
+from amplo.utils.logging import get_root_logger
+
+logger = get_root_logger().getChild("DataSampler")
 
 
 class DataSampler:

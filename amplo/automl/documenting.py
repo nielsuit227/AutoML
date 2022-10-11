@@ -13,7 +13,9 @@ from sklearn.metrics import auc, plot_roc_curve
 from sklearn.model_selection import StratifiedKFold
 
 from amplo.utils import deprecated
-from amplo.utils.logging import logger
+from amplo.utils.logging import get_root_logger
+
+logger = get_root_logger().getChild("Documenter")
 
 
 @deprecated
