@@ -10,13 +10,27 @@ __all__ = [
 ]
 
 
+# --------------------------------------------------------------------------
+# Warnings
+
+
 class ExperimentalWarning(UserWarning):
     """
     Warning for experimental features.
     """
 
 
-class NotFittedError(ValueError, AttributeError):
+# --------------------------------------------------------------------------
+# Errors
+
+
+class EmptyFileError(Exception):
     """
-    Exception class to raise if estimator is used before fitting.
+    File contains no data.
+    """
+
+
+class NotFittedError(Exception):
+    """
+    Object is not fitted.
     """

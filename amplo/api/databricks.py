@@ -42,7 +42,7 @@ class DatabricksJobsAPI(BaseRequestAPI):
 
     @classmethod
     def from_os_env(
-        cls, host_os: str = None, access_token_os: str = None
+        cls, host_os: str | None = None, access_token_os: str | None = None
     ) -> DatabricksJobsAPI:
         """
         Instantiate the class using os environment strings.
@@ -57,13 +57,21 @@ class DatabricksJobsAPI(BaseRequestAPI):
         Returns
         -------
         DatabricksJobsAPI
+
+        Raises
+        ------
+        KeyError
+            When a os variable is not set.
         """
 
         host_os = host_os or _DATABRICKS_HOST_OS
         access_token_os = access_token_os or _DATABRICKS_TOKEN_OS
-        return cls(os.getenv(host_os), os.getenv(access_token_os))
 
-    def request(self, method: str, action: str, body: dict = None) -> dict:
+        host = os.environ[host_os]
+        access_token = os.environ[access_token_os]
+        return cls(host, access_token)
+
+    def request(self, method: str, action: str, body: dict | None = None) -> dict:
         """
         Send a request to Databricks.
 
@@ -99,22 +107,25 @@ class DatabricksJobsAPI(BaseRequestAPI):
     # Jobs API requests
 
     def list_jobs(
-        self, limit: int = None, offset: int = None, expand_tasks: bool = None
+        self,
+        limit: int | None = None,
+        offset: int | None = None,
+        expand_tasks: bool | None = None,
     ) -> dict:
         body = {"limit": limit, "offset": offset, "expand_tasks": expand_tasks}
         return self.request("get", "2.1/jobs/list", body)
 
     def list_runs(
         self,
-        limit: int = None,
-        offset: int = None,
-        expand_tasks: bool = None,
+        limit: int | None = None,
+        offset: int | None = None,
+        expand_tasks: bool | None = None,
         *,
-        active_only: bool = None,
-        completed_only: bool = None,
-        job_id: int = None,
-        start_time_from: int = None,
-        start_time_to: int = None,
+        active_only: bool | None = None,
+        completed_only: bool | None = None,
+        job_id: int | None = None,
+        start_time_from: int | None = None,
+        start_time_to: int | None = None,
     ) -> dict:
         body = {
             "limit": limit,
@@ -131,15 +142,15 @@ class DatabricksJobsAPI(BaseRequestAPI):
     def get_job(self, job_id: int) -> dict:
         return self.request("get", "2.1/jobs/get", {"job_id": job_id})
 
-    def get_run(self, run_id: int, include_history: bool = None) -> dict:
+    def get_run(self, run_id: int, include_history: bool | None = None) -> dict:
         body = {"run_id": run_id, include_history: include_history}
         return self.request("get", "2.1/jobs/runs/get", body)
 
     def run_job(
         self,
         job_id: int,
-        idempotency_token: str = None,
-        notebook_params: dict[str, int | str] = None,
+        idempotency_token: str | None = None,
+        notebook_params: dict[str, int | str] | None = None,
         # Note: more parameters are available
     ) -> dict:
         body = {

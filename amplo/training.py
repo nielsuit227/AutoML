@@ -6,9 +6,14 @@ import json
 import shutil
 from copy import deepcopy
 from pathlib import Path
+from typing import cast
+
+from azure.core.exceptions import ResourceNotFoundError
 
 from amplo import Pipeline
 from amplo.api.databricks import DatabricksJobsAPI
+from amplo.api.platform import AmploPlatformAPI
+from amplo.api.storage import AzureBlobDataAPI
 from amplo.utils import check_dtypes
 from amplo.utils.io import merge_logs
 
@@ -83,6 +88,49 @@ def _set_default_pipe_kwargs(
     return pipe_kwargs
 
 
+def _get_file_delta(
+    metadata: dict[int, dict],
+    team: str,
+    machine: str,
+    service: str,
+    issue: str,
+    version: int,
+    azure: tuple[str, str] | bool,
+    platform: tuple[str, str] | bool,
+) -> dict[str, list[str]]:
+
+    # Initialize
+    platform_api = AmploPlatformAPI.from_os_env(
+        *(platform if not isinstance(platform, bool) else tuple())
+    )
+    blob_api = AzureBlobDataAPI.from_os_env(
+        *(azure if not isinstance(azure, bool) else tuple())
+    )
+
+    # Get file_metadata of previous training
+    trainings = platform_api.list_trainings(team, machine, service, issue, version - 1)
+    settings_path = (
+        f"{team}/{machine}/models/{service}/{issue}/"
+        + trainings[0].get("version", "-")
+        + "/Settings.json"
+    )
+    try:
+        settings = blob_api.read_json(settings_path)
+        settings = cast(dict, settings)  # type hint
+    except ResourceNotFoundError:
+        settings = {}
+    prev_metadata = settings.get("file_metadata", {})
+
+    # Compare files from previous to current version
+    curr_files = [meta["full_path"] for meta in metadata.values()]
+    prev_files = [meta["full_path"] for meta in prev_metadata.values()]
+
+    return {
+        "new_files": sorted(set(curr_files) - set(prev_files)),
+        "removed_files": sorted(set(prev_files) - set(curr_files)),
+    }
+
+
 def train_locally(
     data_dir: str | Path,
     target_dir: str | Path,
@@ -94,6 +142,8 @@ def train_locally(
     model_version: int = 1,
     *,
     working_dir: str | Path = "./tmp",
+    azure: tuple[str, str] | bool = False,
+    platform: tuple[str, str] | bool | None = None,
 ) -> bool:
     """
     Locally train a model with given parameters.
@@ -117,10 +167,20 @@ def train_locally(
         Keyword arguments for pipeline. Note that defaults will be set.
     model_version : int, default: 1
         Model version.
-    *
     working_dir : str or Path, default: "./tmp"
         Directory where temporary training files will be stored.
         Note that this directory will be deleted again.
+    azure : (str, str) or bool, default: False
+        Use this parameter to indicate that data is in Azure blob storage.
+        If False, it is assumed that data origins from local directory.
+        If True, the AzureBlobDataAPI is initialized with default OS env variables.
+        Otherwise, it will use the tuple to initialize the api.
+    platform : (str, str) or bool or None, default: None
+        Use this parameter for selecting data according to Amplo's datalogs.
+        If None, its value is set to bool(azure).
+        If False, no AmploPlatformAPI will be initialized.
+        If True, the AmploPlatformAPI is initialized with default OS env variables.
+        Otherwise, it will use the tuple to initialize the api.
 
     Returns
     -------
@@ -142,7 +202,11 @@ def train_locally(
     # Read data
     target: str = pipe_kwargs["target"]
     data, file_metadata = merge_logs(
-        data_dir, target, more_folders=[Path(data_dir).parent / "Healthy/Healthy"]
+        data_dir,
+        target,
+        more_folders=[Path(data_dir).parent / "Healthy/Healthy"],
+        azure=azure,
+        platform=platform,
     )
 
     # Set data labels
@@ -162,12 +226,20 @@ def train_locally(
     )
     working_dir.mkdir(parents=True, exist_ok=False)
 
-    # Set up pipeline and train
+    # Set up pipeline
     pipeline = Pipeline(main_dir=f"{working_dir.as_posix()}/", **pipe_kwargs)
-    pipeline.fit(data)
 
-    # Insert file metadata
-    pipeline.settings["file_metadata"] = file_metadata
+    # Mirror azure parameter when platform is not set
+    if platform is None:
+        platform = bool(azure)
+    # Indicate new files compared to previous model version
+    if azure and platform:
+        pipeline.settings["file_delta"] = _get_file_delta(
+            file_metadata, team, machine, service, issue, model_version, azure, platform
+        )
+
+    # Train
+    pipeline.fit(data, metadata=file_metadata)
 
     # --- Post training ---
 
@@ -226,7 +298,6 @@ def train_on_cloud(
         Keyword arguments for pipeline. Note that defaults will be set.
     model_version : int, default: 1
         Model version.
-    *
     host_os : str, optional, default: None
         Key in the os environment for the Databricks host.
     access_token_os : str, optional, default: None

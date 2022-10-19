@@ -68,7 +68,7 @@ class BaseRequestAPI:
         response = requests.request(method, url, headers=headers, **kwargs)
 
         # Verify response
-        if not response.status_code == 200:
+        if response.status_code != 200:
             raise requests.HTTPError(f"{response} {response.text}")
 
         return response

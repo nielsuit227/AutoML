@@ -1,22 +1,183 @@
 #  Copyright (c) 2022 by Amplo.
 
+from __future__ import annotations
+
+import io
 import json
 import os
 import warnings
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
+import pandas as pd
 import pytz
 from azure.storage.blob import BlobServiceClient
+
+from amplo.base.exceptions import EmptyFileError
+from amplo.utils.util import check_dtypes, deprecated
+
+if TYPE_CHECKING:
+    from azure.storage.blob import BlobClient, ContainerClient
 
 __all__ = ["AzureSynchronizer"]
 
 
+_AZURE_CLIENT_NAME = "amploplatform"
+_AZURE_CONNECTION_STR_OS = "AZURE_STORAGE_STRING"
+
+
+class AzureBlobDataAPI:
+    """
+    Helper class for handling data from an Azure blob storage.
+
+    Parameters
+    ----------
+    client : str
+        Container client name.
+    connection_str : str
+        Connection string for given container client.
+    """
+
+    def __init__(self, client: str, connection_str: str):
+        check_dtypes(("client", client, str), ("connection_str", connection_str, str))
+        self.client = client
+        self.connection_str = connection_str
+        bsc = BlobServiceClient.from_connection_string(connection_str)
+        self._container: ContainerClient = bsc.get_container_client(client)
+
+    def __repr__(self):
+        """
+        Readable string representation of the class.
+        """
+
+        return f"{self.__class__.__name__}({self.client})"
+
+    @classmethod
+    def from_os_env(
+        cls, client: str | None = None, connection_str_os: str | None = None
+    ) -> AzureBlobDataAPI:
+        """
+        Instantiate the class using os environment strings.
+
+        Parameters
+        ----------
+        client : str, optional, default: _AZURE_CLIENT_NAME
+            Container client name.
+        connection_str_os : str, optional, default: _AZURE_CONNECTION_STR_OS
+            Key in the os environment for the Azure connection string.
+
+        Returns
+        -------
+        AzureBlobDataHandler
+
+        Raises
+        ------
+        KeyError
+            When a os variable is not set.
+        """
+
+        connection_str_os = connection_str_os or _AZURE_CONNECTION_STR_OS
+
+        client = client or _AZURE_CLIENT_NAME
+        connection_str = os.environ[connection_str_os]
+        return cls(client, connection_str)
+
+    # --------------------------------------------------------------------------
+    # Blob inspection
+
+    def ls(self, path: str | Path | None = None) -> list[str]:
+
+        # Provide slash from right
+        if path is not None:
+            path = f"{Path(path).as_posix()}/"
+
+        # List all files and folders
+        return [f.name for f in self._container.walk_blobs(path)]  # type: ignore
+
+    def ls_files(self, path: str | Path | None = None) -> list[str]:
+
+        return [f for f in self.ls(path) if not f.endswith("/")]
+
+    def ls_folders(self, path: str | Path | None = None) -> list[str]:
+
+        return [f for f in self.ls(path) if f.endswith("/")]
+
+    # --------------------------------------------------------------------------
+    # File handling
+
+    def get_blob_client(self, path: str | Path) -> BlobClient:
+        # Check input
+        if isinstance(path, Path):
+            path = str(path.as_posix())
+
+        # Get blob client
+        return self._container.get_blob_client(path)
+
+    def get_metadata(self, path: str | Path) -> dict[str, str | float | int]:
+
+        props = self.get_blob_client(path).get_blob_properties()
+        return {  # type: ignore
+            "file_name": Path(props.name).name,  # type: ignore
+            "full_path": props.name,
+            "container": props.container,
+            # "creation_time": props.creation_time.timestamp(),
+            "last_modified": props.last_modified.timestamp(),
+        }
+
+    def get_size(self, path: str | Path) -> int:
+
+        return self.get_blob_client(path).get_blob_properties().size  # type: ignore
+
+    def download_file(
+        self, path: str | Path, local_path: str | Path, match_timestamps: bool = True
+    ) -> None:
+
+        blob = self.get_blob_client(path)
+
+        # Ensure that local_path's parent exists
+        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(local_path, Path):
+            local_path = str(local_path.as_posix())
+
+        # Write blob data to local_path
+        with open(local_path, "wb") as f:
+            f.write(blob.download_blob().readall())
+
+        # Manipulate file properties
+        if match_timestamps:
+            properties = blob.get_blob_properties()
+            created: float = properties.creation_time.timestamp()
+            last_modified: float = properties.last_modified.timestamp()
+            os.utime(local_path, (created, last_modified))
+
+    def read_json(self, path: str | Path) -> list | dict:
+
+        blob = self.get_blob_client(path)
+        return json.loads(blob.download_blob().readall())
+
+    def read_pandas(self, path: str | Path, **kwargs) -> pd.Series | pd.DataFrame:
+
+        from amplo.utils.io import FILE_READERS
+
+        # Check whether a proper file reader exists for the file
+        file_extension = Path(path).suffix
+        pandas_reader = FILE_READERS.get(file_extension)
+        if pandas_reader is None:
+            raise NotImplementedError(f"File format {file_extension} not supported.")
+
+        # Read buffered data into pandas
+        blob = self.get_blob_client(path)
+        file_buffer = io.BytesIO(blob.download_blob().readall())
+        return pandas_reader(file_buffer, **kwargs)
+
+
+@deprecated("This class won't be updated anymore.")
 class AzureSynchronizer:
     def __init__(
         self,
-        connection_string_name="AZURE_STORAGE_STRING",
-        container_client_name="amploplatform",
+        connection_string_name: str = "AZURE_STORAGE_STRING",
+        container_client_name: str = "amploplatform",
         verbose=0,
     ):
         """
@@ -30,7 +191,7 @@ class AzureSynchronizer:
         verbose : int
         """
         client = BlobServiceClient.from_connection_string(
-            os.getenv(connection_string_name)
+            os.getenv(connection_string_name, "unkown_azure_connection_string")
         )
         self.container = client.get_container_client(container_client_name)
         self.verbose = int(verbose)
@@ -147,12 +308,14 @@ class AzureSynchronizer:
         blob_dir_properties = self.container.get_blob_client(
             str(blob_dir)
         ).get_blob_properties()
-        metadata = dict(
+        metadata: dict[str, str | list[str] | datetime] = dict(
             blob_dir=str(blob_dir),
             container=blob_dir_properties.container,
             last_modified=blob_dir_properties.last_modified,
             new_files=[],
         )
+        metadata["last_modified"] = cast(datetime, metadata["last_modified"])
+        metadata["new_files"] = cast(list[str], metadata["new_files"])
 
         # Load local metadata from previous synchronization
         local_metadata = self.load_local_metadata(metadata_dir, not_exist_ok=True)
@@ -183,7 +346,7 @@ class AzureSynchronizer:
                     (file_created.timestamp(), file_last_modified.timestamp()),
                 )
                 # Increment
-                metadata["new_files"] += [str(file)]
+                metadata["new_files"].append(str(file))
 
         # Check whether found new data
         found_new_data = metadata["last_modified"] > last_updated

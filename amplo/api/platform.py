@@ -8,11 +8,12 @@ import re
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
+from warnings import warn
 
 import requests
 
 from amplo.api._base import BaseRequestAPI
-from amplo.utils import check_dtypes, deprecated
+from amplo.utils.util import check_dtypes, deprecated
 
 if TYPE_CHECKING:
     from requests import Response
@@ -29,7 +30,7 @@ _PLATFORM_HOST = "https://platform.amplo.ch"
 _PLATFORM_TOKEN_OS = "AMPLO_PLATFORM_STRING"
 
 
-def _format_version(version: int | str) -> str | None:
+def _format_version(version: int | str | None) -> str | None:
     """
     If provided, validates and formats a model version.
 
@@ -84,7 +85,7 @@ class AmploPlatformAPI(BaseRequestAPI):
 
     @classmethod
     def from_os_env(
-        cls, host: str = None, access_token_os: str = None
+        cls, host: str | None = None, access_token_os: str | None = None
     ) -> AmploPlatformAPI:
         """
         Instantiate the class using os environment strings.
@@ -99,18 +100,25 @@ class AmploPlatformAPI(BaseRequestAPI):
         Returns
         -------
         AmploPlatformAPI
+
+        Raises
+        ------
+        KeyError
+            When a os variable is not set.
         """
 
-        host = host or _PLATFORM_HOST
         access_token_os = access_token_os or _PLATFORM_TOKEN_OS
-        return cls(host, os.getenv(access_token_os))
+
+        host = host or _PLATFORM_HOST
+        access_token = os.environ[access_token_os]
+        return cls(host, access_token)
 
     def list_models(
         self,
-        team: str = None,
-        machine: str = None,
-        service: str = None,
-        issue: str = None,
+        team: str | None = None,
+        machine: str | None = None,
+        service: str | None = None,
+        issue: str | None = None,
         **more_params,
     ) -> list[dict]:
         params = {
@@ -124,11 +132,11 @@ class AmploPlatformAPI(BaseRequestAPI):
 
     def list_trainings(
         self,
-        team: str = None,
-        machine: str = None,
-        service: str = None,
-        issue: str = None,
-        version: str | int = None,
+        team: str | None = None,
+        machine: str | None = None,
+        service: str | None = None,
+        issue: str | None = None,
+        version: str | int | None = None,
         **more_params,
     ) -> list[dict]:
         version = _format_version(version)
@@ -136,7 +144,7 @@ class AmploPlatformAPI(BaseRequestAPI):
             "team": team,
             "machine": machine,
             "category": service,
-            "name": issue,
+            "model": issue,
             "version": version,
             **more_params,
         }
@@ -147,8 +155,8 @@ class AmploPlatformAPI(BaseRequestAPI):
         team: str,
         machine: str,
         training_id: int,
-        files: list[TextIO] = None,
-        status: int = None,
+        files: list[TextIO] | None = None,
+        status: int | None = None,
     ) -> Response:
         data = {
             "team": team,
@@ -158,6 +166,30 @@ class AmploPlatformAPI(BaseRequestAPI):
             "new_status": status,
         }
         return super().request("put", "trainings", data=data)
+
+    def get_datalogs(
+        self,
+        team: str,
+        machine: str,
+        category: str | None = None,
+        **more_params,
+    ) -> list[dict]:
+        if more_params.get("filename", False):
+            warn(
+                "Found 'filename' key in 'more_params'. "
+                "Consider using the method 'get_datalog' instead."
+            )
+        params = {"team": team, "machine": machine, "category": category, **more_params}
+        return self.request("get", "datalogs", params=params).json()
+
+    def get_datalog(
+        self,
+        team: str,
+        machine: str,
+        filename: str,
+    ) -> dict:
+        params = {"team": team, "machine": machine, "filename": filename}
+        return self.request("get", "datalogs", params=params).json()
 
 
 def upload_model(
@@ -169,8 +201,8 @@ def upload_model(
     issue: str,
     version: str | int,
     *,
-    host: str = None,
-    access_token_os: str = None,
+    host: str | None = None,
+    access_token_os: str | None = None,
 ) -> Response:
     """
     Uploads a trained model to the Amplo platform.
@@ -197,7 +229,6 @@ def upload_model(
         Name of the issue (a.k.a. model).
     version : str or int
         Model version ID, e.g. "v1".
-    *
     host : str, default: _PLATFORM_HOST
         Amplo platform host. Not from os environment!
     access_token_os : str, default: _PLATFORM_TOKEN_OS
@@ -224,7 +255,7 @@ def upload_model(
     )
 
     # Set model directory to the requested version
-    model_dir = Path(model_dir) / "Production" / _format_version(version)
+    model_dir = Path(model_dir) / "Production" / str(_format_version(version))
 
     # Check directory
     model_dir = Path(model_dir)
@@ -253,8 +284,8 @@ def report_training_fail(
     machine: str,
     training_id: int,
     *,
-    host: str = None,
-    access_token_os: str = None,
+    host: str | None = None,
+    access_token_os: str | None = None,
 ):
     """
     Report training status "Failed" to the platform.
@@ -267,7 +298,6 @@ def report_training_fail(
         Name of the machine.
     training_id : int, optional
         Model training ID.
-    *
     host : str, default: _PLATFORM_HOST
         Amplo platform host. Not from os environment!
     access_token_os : str, default: _PLATFORM_TOKEN_OS
@@ -277,7 +307,7 @@ def report_training_fail(
     api = AmploPlatformAPI.from_os_env(host, access_token_os)
     api.upload_training(team, machine, training_id, status=4)  # 4 == "Failed"
 
-    return
+    return None
 
 
 @deprecated("Use `upload_model` (or directly `AmploPlatformAPI`) instead.")

@@ -93,7 +93,7 @@ def clean_feature_name(feature_name):
     """
     # Remove non-numeric and non-alphabetic characters.
     # Assert single underscores and remove underscores in prefix and suffix.
-    return re.sub("([^a-z0-9]|_)+", "_", str(feature_name).lower()).strip("_")
+    return re.sub("[^a-z0-9]+", "_", str(feature_name).lower()).strip("_")
 
 
 def deprecated(reason):
@@ -216,5 +216,5 @@ def check_dtypes(*dtype_tuples):
     # Check dtypes
     for name, value, typ in dtype_tuples:
         if not isinstance(value, typ):
-            msg = f"Invalid dtype for argument `{name}`: " f"{type(value).__name__}"
+            msg = f"Invalid dtype for argument `{name}`: {type(value).__name__}"
             raise TypeError(msg)
