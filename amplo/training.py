@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import cast
 
 from azure.core.exceptions import ResourceNotFoundError
+from requests import HTTPError
 
 from amplo import Pipeline
 from amplo.api.databricks import DatabricksJobsAPI
@@ -108,7 +109,13 @@ def _get_file_delta(
     )
 
     # Get file_metadata of previous training
-    trainings = platform_api.list_trainings(team, machine, service, issue, version - 1)
+    try:
+        trainings = platform_api.list_trainings(
+            team, machine, service, issue, version - 1
+        )
+    except HTTPError:  # group matching query does not exist
+        trainings = [{}]
+
     settings_path = (
         f"{team}/{machine}/models/{service}/{issue}/"
         + trainings[0].get("version", "-")
@@ -119,6 +126,7 @@ def _get_file_delta(
         settings = cast(dict, settings)  # type hint
     except ResourceNotFoundError:
         settings = {}
+
     prev_metadata = settings.get("file_metadata", {})
 
     # Compare files from previous to current version

@@ -290,12 +290,12 @@ def _mask_intervals(
         ts_col = datalog.get("datetime_col", "")
 
         # If no interval is to be selected, append the whole datum
-        if not intervals:
+        if not intervals or not ts_col:
             data_out.append(datum)
             metadata_out.append(metadatum)
 
         # Prevent a KeyError when ts_col column is not present
-        if ts_col not in datum.columns:
+        elif ts_col not in datum.columns:
             warn(f"Cannot select intervals as the column '{ts_col}' is not present.")
             data_out.append(datum)
             metadata_out.append(metadatum)
@@ -367,16 +367,16 @@ def _make_multiindex(
     for datum, metadatum in zip(data, metadata):
 
         # Get file and folder name
-        file_name = metadatum["file_name"]
-        folder_name = Path(str(metadatum["full_path"])).parent.name
+        full_path = str(metadatum["full_path"])
+        folder_name = Path(full_path).parent.name
 
         # Set label column
         if target_col in datum.columns:
             raise ValueError(
-                f"The target name '{target_col}' already exists in the data columns"
-                f" of file '{file_name}'."
+                f"The column '{target_col}' already exists in the file '{full_path}'."
             )
-        datum[target_col] = folder_name
+        else:
+            datum[target_col] = folder_name
 
         # Set multiindex
         index = pd.MultiIndex.from_product(
