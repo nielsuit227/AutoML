@@ -6,6 +6,7 @@ import json
 import os
 import re
 from pathlib import Path
+from time import time
 from typing import TYPE_CHECKING, Iterable, cast
 from warnings import warn
 
@@ -13,8 +14,11 @@ import pandas as pd
 from requests import HTTPError
 
 from amplo.api.storage import AzureBlobDataAPI
+from amplo.utils.logging import get_root_logger
 
 if TYPE_CHECKING:
+    from logging import Logger
+
     from amplo.api.platform import AmploPlatformAPI
 
 __all__ = [
@@ -126,6 +130,7 @@ def get_file_metadata(file_path: str | Path) -> dict[str, str | float]:
 def _read_files_in_folders(
     folders: Iterable[str | Path],
     blob_api: AzureBlobDataAPI | None = None,
+    logger: Logger | None = None,
 ) -> tuple[list[str], list[pd.DataFrame], list[dict[str, str | float]]]:
     """
     Use pandas to read all non-hidden and non-empty files into a DataFrame.
@@ -134,8 +139,10 @@ def _read_files_in_folders(
     ----------
     folders : iterable of (str or Path)
         Directory names.
-    blob_api : AzureBlobDataAPI or None, optional
-        If None, tries to read data from local folder, else from Azure, by default None
+    blob_api : AzureBlobDataAPI or None, optional, default: None
+        If None, tries to read data from local folder, else from Azure
+    logger : Logger or None, optional, default: None
+        When provided, will log progress every 90 seconds.
 
     Returns
     -------
@@ -144,9 +151,9 @@ def _read_files_in_folders(
     metadata : list of dict of {str : str or float}
         Metadata of data.
 
-    Raises
-    ------
-    FileNotFoundError
+    Warnings
+    --------
+    UserWarning
         When any directory is empty, or has no supported file type.
     """
 
@@ -156,8 +163,8 @@ def _read_files_in_folders(
 
     # Initialize
     file_names, data, metadata = [], [], []
-
-    for folder in sorted(folders):
+    last_time_logged = time()
+    for folder_count, folder in enumerate(sorted(folders)):
 
         # List all files
         if blob_api:
@@ -182,7 +189,8 @@ def _read_files_in_folders(
 
         # Sanity check
         if not files:
-            raise FileNotFoundError(f"Directory is empty: '{folder}'")
+            warn(f"Directory is empty and thus skipped: '{folder}'")
+            continue
 
         # Read files
         for file in sorted(files):
@@ -201,11 +209,17 @@ def _read_files_in_folders(
             data.append(datum)
             metadata.append(metadatum)
 
+        if logger and time() - last_time_logged > 90:
+            last_time_logged = time()
+            logger.info(f".. progress: {folder_count / len(folders) * 100:.1f} %")
+
     return file_names, data, metadata
 
 
 def _map_datalogs_to_file_names(
-    file_names: list[str], platform_api: AmploPlatformAPI | None = None
+    file_names: list[str],
+    platform_api: AmploPlatformAPI | None = None,
+    logger: Logger | None = None,
 ) -> list[dict]:
     """
     Get datalogs for every filename.
@@ -214,8 +228,10 @@ def _map_datalogs_to_file_names(
     ----------
     file_names : list of str
         Files names to get datalogs from - if available.
-    platform_api : AmploPlatformAPI or None, optional
-        API to get datlogs from, by default None
+    platform_api : AmploPlatformAPI or None, optional, default: None
+        API to get datlogs from.
+    logger : Logger or None, optional, default: None
+        When provided, will log progress every 90 seconds.
 
     Returns
     -------
@@ -229,15 +245,20 @@ def _map_datalogs_to_file_names(
     # It is assumed that the 6th and 5th path position of the (first) filename contains
     # the team and machine name, respectively, if you count from right to left.
     # E.g., "Team/Machine/data/Category/Issue/log_file.csv"
+
+    # Remove path prefixes, otherwise datalogs will not be found
+    file_names = ["/".join(str(fname).split("/")[-6:]) for fname in file_names]
+    # Extract team and machine
     try:
         team, machine = file_names[0].split("/")[-6:-4]
     except IndexError:
-        warn(f"Couldn't resolve Team and Machine name from filename: '{file_names[0]}'")
+        warn(f"Got an empty list of file names")
         return []
 
     # Get datalog for each filename
     datalogs = []
-    for fname in file_names:
+    last_time_logged = time()
+    for file_count, fname in enumerate(file_names):
         try:
             datalog = platform_api.get_datalog(team, machine, fname)
         except HTTPError:
@@ -245,6 +266,10 @@ def _map_datalogs_to_file_names(
             datalog = {}
 
         datalogs.append(datalog)
+
+        if logger and time() - last_time_logged > 90:
+            last_time_logged = time()
+            logger.info(f".. progress: {file_count / len(file_names) * 100:.1f} %")
 
     return datalogs
 
@@ -273,9 +298,9 @@ def _mask_intervals(
     metadata_out : list of dict of {str : str or float}
         Same metadata but duplicated for every split.
 
-    Raises
-    ------
-    ValueError
+    Warnings
+    --------
+    UserWarning
         When no valid match for the start or stop time of the data interval was found,
         i.e. when the time difference is more than 1 second.
     """
@@ -315,11 +340,19 @@ def _mask_intervals(
                 first = (ts - ts_first).abs().argmin()
                 last = (ts - ts_last).abs().argmin()
 
-                # Except when time difference is too large
-                if abs(ts.iloc[first] - ts_first) > 1:
-                    raise ValueError(f"Could not find a timestamp close to {ts_first}")
-                if abs(ts.iloc[last] - ts_last) > 1:
-                    raise ValueError(f"Could not find a timestamp close to {ts_last}")
+                # Ignore when time difference is too large
+                if (
+                    abs(ts.iloc[first] - ts_first) > 1
+                    or abs(ts.iloc[last] - ts_last) > 1
+                ):
+                    warn(
+                        f"Could not find a timestamp close enough to {ts_first=} or "
+                        f"{ts_last=}. Using the whole datum for the file "
+                        f"'{metadatum.get('file_name', 'unknown')}' instead."
+                    )
+                    data_out.append(datum)
+                    metadata_out.append(metadatum)
+                    continue
 
                 # Select interval
                 data_out.append(datum.iloc[first : last + 1])
@@ -356,7 +389,8 @@ def _make_multiindex(
     Raises
     ------
     ValueError
-        When any file already has a column named after target_col.
+        When any file already has a column named after target_col and its values are not
+        equal to the folder name.
     """
 
     # Initialize
@@ -371,7 +405,7 @@ def _make_multiindex(
         folder_name = Path(full_path).parent.name
 
         # Set label column
-        if target_col in datum.columns:
+        if target_col in datum.columns and any(datum[target_col] != folder_name):
             raise ValueError(
                 f"The column '{target_col}' already exists in the file '{full_path}'."
             )
@@ -398,6 +432,7 @@ def merge_folders(
     target_col: str = "labels",
     blob_api: AzureBlobDataAPI | None = None,
     platform_api: AmploPlatformAPI | None = None,
+    logging: bool = False,
 ) -> tuple[pd.DataFrame, dict[int, dict[str, str | float]]]:
     """
     Combine log files from given directories into a multiindexed DataFrame.
@@ -406,12 +441,14 @@ def merge_folders(
     ----------
     folders : iterable of (str or Path)
         Directory paths to read data from.
-    target_col : str, optional
-        Target column name. Values are depicted by the folder name, by default "labels"
-    blob_api : AzureBlobDataAPI or None, optional
-        Azure api when not reading from local, by default None
-    platform_api : AmploPlatformAPI or None, optional
-        Platform api for selecting intervals, by default None
+    target_col : str, optional, default: "labels"
+        Target column name. Values are depicted by the folder name
+    blob_api : AzureBlobDataAPI or None, optional, default: None
+        Azure api when not reading from local
+    platform_api : AmploPlatformAPI or None, optional default: None
+        Platform api for selecting intervals
+    logging : bool, default: False
+        Whether to show logging info.
 
     Returns
     -------
@@ -422,15 +459,21 @@ def merge_folders(
         The first index level values of the data correspond to the keys in the metadata.
     """
 
+    logger = get_root_logger() if logging else None
+
     # Pandas read files
-    fnames, data, metadata = _read_files_in_folders(folders, blob_api)
+    logger.info("Reading files") if logger else None
+    fnames, data, metadata = _read_files_in_folders(folders, blob_api, logger)
 
     # Select intervals when datalogs are available
-    datalogs = _map_datalogs_to_file_names(fnames, platform_api)
+    logger.info("Reading datalogs from platform") if logger else None
+    datalogs = _map_datalogs_to_file_names(fnames, platform_api, logger)
     if datalogs:
+        logger.info("Masking intervals from datalogs") if logger else None
         data, metadata = _mask_intervals(datalogs, data, metadata)
 
     # Concatenate data and make it multiindexed
+    logger.info("Making multiindexed data") if logger else None
     data, metadata = _make_multiindex(data, metadata, target_col)
 
     return data, metadata
@@ -443,6 +486,7 @@ def merge_logs(
     more_folders: list[str | Path] | None = None,
     azure: tuple[str, str] | bool = False,
     platform: tuple[str, str] | bool | None = None,
+    logging: bool = False,
 ) -> tuple[pd.DataFrame, dict[int, dict[str, str | float]]]:
     """
     Combine log files of all subdirectories into a multi-indexed DataFrame.
@@ -486,6 +530,8 @@ def merge_logs(
         If False, no datalogs information will be used.
         If True, the AmploPlatformAPI is initialized with default OS env variables.
         Otherwise, it will use the tuple to initialize the api.
+    logging : bool, default: False
+        Whether to show logging info.
 
     Returns
     -------
@@ -522,7 +568,9 @@ def merge_logs(
 
     # Get child folders
     if not blob_api:
-        folders = [folder for folder in Path(parent_folder).iterdir()]
+        folders = [
+            folder for folder in Path(parent_folder).iterdir() if folder.is_dir()
+        ]
     else:
         folders = blob_api.ls_folders(parent_folder)
 
@@ -530,4 +578,4 @@ def merge_logs(
     if more_folders:
         folders += more_folders
 
-    return merge_folders(folders, target_col, blob_api, platform_api)
+    return merge_folders(folders, target_col, blob_api, platform_api, logging)

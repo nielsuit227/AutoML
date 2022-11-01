@@ -114,17 +114,20 @@ def _get_file_delta(
             team, machine, service, issue, version - 1
         )
     except HTTPError:  # group matching query does not exist
-        trainings = [{}]
+        trainings = []
 
-    settings_path = (
-        f"{team}/{machine}/models/{service}/{issue}/"
-        + trainings[0].get("version", "-")
-        + "/Settings.json"
-    )
-    try:
-        settings = blob_api.read_json(settings_path)
-        settings = cast(dict, settings)  # type hint
-    except ResourceNotFoundError:
+    if trainings:
+        settings_path = (
+            f"{team}/{machine}/models/{service}/{issue}/"
+            + trainings[0].get("version", "-")
+            + "/Settings.json"
+        )
+        try:
+            settings = blob_api.read_json(settings_path)
+            settings = cast(dict, settings)  # type hint
+        except ResourceNotFoundError:
+            settings = {}
+    else:
         settings = {}
 
     prev_metadata = settings.get("file_metadata", {})
@@ -149,9 +152,11 @@ def train_locally(
     pipe_kwargs: dict | None = None,
     model_version: int = 1,
     *,
+    healthy_data_dir: str | Path | bool = True,
     working_dir: str | Path = "./tmp",
     azure: tuple[str, str] | bool = False,
     platform: tuple[str, str] | bool | None = None,
+    logging: bool = True,
 ) -> bool:
     """
     Locally train a model with given parameters.
@@ -175,6 +180,11 @@ def train_locally(
         Keyword arguments for pipeline. Note that defaults will be set.
     model_version : int, default: 1
         Model version.
+    healthy_data_dir : str or Path or bool, default: True
+        Directory where healthy data is stored.
+        If False, no healthy data will be used.
+        If True, data will be assumed to be in "../Healthy/Healthy" of `data_dir`.
+        Otherwise, will try to read from given path.
     working_dir : str or Path, default: "./tmp"
         Directory where temporary training files will be stored.
         Note that this directory will be deleted again.
@@ -189,6 +199,8 @@ def train_locally(
         If False, no AmploPlatformAPI will be initialized.
         If True, the AmploPlatformAPI is initialized with default OS env variables.
         Otherwise, it will use the tuple to initialize the api.
+    logging : bool, default: True
+        Whether to show logging info. Currently only applies to `merge_logs`.
 
     Returns
     -------
@@ -209,12 +221,20 @@ def train_locally(
 
     # Read data
     target: str = pipe_kwargs["target"]
+    more_folders: list[str | Path]
+    if not healthy_data_dir:
+        more_folders = []
+    elif isinstance(healthy_data_dir, (str, Path)):
+        more_folders = [healthy_data_dir]
+    else:
+        more_folders = [Path(data_dir).parent / "Healthy/Healthy"]
     data, file_metadata = merge_logs(
         data_dir,
         target,
-        more_folders=[Path(data_dir).parent / "Healthy/Healthy"],
+        more_folders=more_folders,
         azure=azure,
         platform=platform,
+        logging=logging,
     )
 
     # Set data labels

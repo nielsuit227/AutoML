@@ -12,9 +12,9 @@ from typing import TYPE_CHECKING, cast
 
 import pandas as pd
 import pytz
+import requests.exceptions
 from azure.storage.blob import BlobServiceClient
 
-from amplo.base.exceptions import EmptyFileError
 from amplo.utils.util import check_dtypes, deprecated
 
 if TYPE_CHECKING:
@@ -156,7 +156,9 @@ class AzureBlobDataAPI:
         blob = self.get_blob_client(path)
         return json.loads(blob.download_blob().readall())
 
-    def read_pandas(self, path: str | Path, **kwargs) -> pd.Series | pd.DataFrame:
+    def read_pandas(
+        self, path: str | Path, n_retries: int = 1, **kwargs
+    ) -> pd.Series | pd.DataFrame:
 
         from amplo.utils.io import FILE_READERS
 
@@ -168,7 +170,12 @@ class AzureBlobDataAPI:
 
         # Read buffered data into pandas
         blob = self.get_blob_client(path)
-        file_buffer = io.BytesIO(blob.download_blob().readall())
+        try:
+            file_buffer = io.BytesIO(blob.download_blob().readall())
+        except requests.exceptions.ConnectionError as err:
+            if n_retries > 0:
+                return self.read_pandas(path, n_retries - 1, **kwargs)
+            raise err
         return pandas_reader(file_buffer, **kwargs)
 
 
