@@ -48,10 +48,7 @@ class TestDataObserver:
             obs.check_monotonic_columns()
         msg = str(find_first_warning_of_type(ProductionWarning, record).message)
         monotonic_cols = ast.literal_eval(re.search(r"\[.*]", msg).group(0))
-        assert set(monotonic_cols) == {
-            "feature_0",
-            "feature_1",
-        }, "Wrong monotonic columns identified."
+        assert set(monotonic_cols) == {0, 1}, "Wrong monotonic columns identified."
 
     def test_minority_sensitivity(self):
         # Setup
@@ -74,9 +71,7 @@ class TestDataObserver:
             obs.check_minority_sensitivity()
         msg = str(find_first_warning_of_type(ProductionWarning, record).message)
         sensitive_cols = ast.literal_eval(re.search(r"\[.*]", msg).group(0))
-        assert sensitive_cols == [
-            "feature_1"
-        ], "Wrong minority sensitive columns identified."
+        assert sensitive_cols == [1], "Wrong minority sensitive columns identified."
 
     def test_categorical_mismatch(self):
         # Setup
@@ -120,9 +115,7 @@ class TestDataObserver:
             obs.check_extreme_values()
         msg = str(find_first_warning_of_type(ProductionWarning, record).message)
         extreme_cols = ast.literal_eval(re.search(r"\[.*]", msg).group(0))
-        assert extreme_cols == [
-            "feature_1"
-        ], "Wrong minority sensitive columns identified."
+        assert extreme_cols == [1], "Wrong minority sensitive columns identified."
 
     def test_label_issues(self):
         # Setup

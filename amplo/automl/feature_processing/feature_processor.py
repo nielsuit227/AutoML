@@ -98,7 +98,8 @@ def find_collinear_columns(
                 if i >= j:
                     continue
                 sum_ = np.sum(norm_data[:, i] * norm_data[:, j])
-                corr_mat[i, j] = abs(sum_ / (ss[i] * ss[j]))
+                with np.errstate(invalid="ignore"):  # ignore division by zero (out=nan)
+                    corr_mat[i, j] = abs(sum_ / (ss[i] * ss[j]))
 
     except MemoryError:
         # More redundant calculations but more memory efficient
@@ -118,7 +119,8 @@ def find_collinear_columns(
                 ss_j = np.sqrt(np.sum(norm_col_j**2))
 
                 sum_ = np.sum(norm_col_i * norm_col_j)
-                corr_mat[i, j] = abs(sum_ / (ss_i * ss_j))
+                with np.errstate(invalid="ignore"):  # ignore division by zero (out=nan)
+                    corr_mat[i, j] = abs(sum_ / (ss_i * ss_j))
 
     # Set collinear columns
     mask = np.sum(corr_mat > information_threshold, axis=0) > 0
@@ -260,6 +262,7 @@ class FeatureProcessor(BaseFeatureProcessor):
     def __init__(
         self,
         mode="notset",
+        use_wavelets=True,
         is_temporal=None,
         extract_features=True,
         collinear_threshold=0.99,
@@ -289,6 +292,7 @@ class FeatureProcessor(BaseFeatureProcessor):
 
         # Set attributes
         self.is_temporal = is_temporal
+        self.use_wavelets = use_wavelets
         self.extract_features = extract_features
         self.collinear_threshold = collinear_threshold
         self.analyse_feature_sets = analyse_feature_sets
@@ -512,7 +516,10 @@ class FeatureProcessor(BaseFeatureProcessor):
             self.feature_extractor = NopFeatureExtractor(mode=None)
         elif self.is_temporal:
             self.feature_extractor = TemporalFeatureExtractor(
-                mode=self.mode, verbose=self.verbose, **self.extractor_kwargs
+                mode=self.mode,
+                fit_wavelets=self.use_wavelets,
+                verbose=self.verbose,
+                **self.extractor_kwargs,
             )
         else:
             self.feature_extractor = StaticFeatureExtractor(

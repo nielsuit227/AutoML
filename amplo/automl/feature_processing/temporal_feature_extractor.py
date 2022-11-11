@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Any, List, TypeVar
+from typing import Any, TypeVar
 from warnings import warn
 
 import numpy as np
@@ -158,11 +158,11 @@ class ScoreWatcher:
     def __init__(self, keys: list[str]):
         check_dtypes("keys", keys, list)
         check_dtypes(("key__item", item, str) for item in keys)
-        self.watch: dict[str, (int, int, np.ndarray)] = {
+        self.watch: dict[str, tuple[int, int, np.ndarray]] = {
             key: (0, 0, np.array(0)) for key in keys
         }
 
-    def __getitem__(self, key: str) -> (int, np.ndarray):
+    def __getitem__(self, key: str) -> tuple[int, np.ndarray]:
         """
         Get the counter and score for the given key.
 
@@ -175,7 +175,7 @@ class ScoreWatcher:
         -------
         typing.Tuple[int, np.ndarray]
         """
-        count, weight, score = self.watch.get(key)
+        count, weight, score = self.watch[key]
         return count, score
 
     def __repr__(self):
@@ -184,7 +184,7 @@ class ScoreWatcher:
         """
         return f"{self.__class__.__name__}({sorted(self.watch)})"
 
-    def update(self, key: str, score: np.typing.ArrayLike, weight: int = 1) -> None:
+    def update(self, key: str, score: numpy.typing.ArrayLike, weight: int = 1) -> None:
         """
         Update a key of the watcher.
 
@@ -206,7 +206,8 @@ class ScoreWatcher:
         count, prev_weight, prev_score = self.watch[key]
         new_weight = prev_weight + weight
         new_score = prev_weight * prev_score + weight * np.asarray(score, float)
-        new_score /= new_weight
+        if abs(new_weight) > 0:
+            new_score /= new_weight  # type: ignore
         self.watch[key] = (count + 1, new_weight, np.asarray(new_score, float))
 
     def mean(self) -> np.ndarray:
@@ -276,13 +277,13 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
 
     def __init__(
         self,
-        mode="notset",
-        fit_raw=True,
-        fit_wavelets=True,
-        pooling=None,
-        strategy="smart",
-        timeout=1800,
-        verbose=0,
+        mode: str = "notset",
+        fit_raw: bool = True,
+        fit_wavelets: bool | list[str] = True,
+        pooling: list[str] | None = None,
+        strategy: str = "smart",
+        timeout: int = 1800,
+        verbose: int = 0,
     ):
         super().__init__(mode=mode, verbose=verbose)
 
@@ -442,7 +443,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         # Pooling
         pool_info = [tuple(c.split("__pool=")) for c in self.raw_features_]
         pool_info = pd.DataFrame(pool_info).groupby(0).agg(list)[1].to_dict()
-        x_pooled = self._pool_features(x, pool_info)
+        x_pooled = self._pool_features(x, pool_info)  # type: ignore
 
         assert set(self.raw_features_) == set(
             x_pooled
@@ -560,7 +561,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             # Extract features, pool and score
             feats = (
                 x[col]
-                .groupby(level=0, sort=False)
+                .groupby(level=0, sort=False, group_keys=False)
                 .apply(_extract_wavelets, scales=scales, wavelet=wav, name=col)
             )
             feats_pooled = self._pool_features(feats, pooling_instructions, True)
@@ -672,25 +673,18 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         counts = pd.Series(index=index, dtype=int).fillna(0).groupby(level=0).count()
 
         if self.mode == "classification":
-            # We set the window size such that it fits the smallest indices count.
-            # However, we want that at least 100 data rows will be present after pool.
-            ws = max(1, int(counts.min()))
-            if len(index) // ws < 100:
-                ws = len(index) // 100
-
-            # We don't want window sizes < 3. Pooling wouldn't make sense.
-            if ws < 3:
-                warn(
-                    "The given data proposed using a window size smaller than 3 which "
-                    "would be problematic. Setting it to 3 anyhow.",
-                    UserWarning,
-                )
-                ws = 3
-
-            self.window_size_ = ws
+            # We'll make the window size such that on average there's 100 samples
+            # or that we have at least 1 window per log
+            ws = int(min(counts.min(), counts.mean() // 100))
 
         elif self.mode == "regression":
-            self.window_size_ = 1
+            ws = 1
+
+        else:
+            raise AttributeError(f"Invalid mode '{self.mode}'.")
+
+        # Ensure that window size is an integer and at least 1
+        self.window_size_ = max(1, int(ws))
 
         self.logger.debug(f"Set window size to {self.window_size_}.")
 
@@ -723,21 +717,11 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             if pd.unique(datum.index.names).size == 1:
                 warn("Index names are not unique. Setting them to ['log', 'index'].")
                 datum.index.names = ["log", "index"]
-            datum_index_names = list(datum.index.names)
 
             # Add or remove tail
-            datum = datum.groupby(level=0).apply(self._add_or_remove_tail)
-
-            # Somehow the groupby-apply function doesn't always duplicate the first
-            # index level. Therefore, using `.droplevel(0)` isn't safe enough.
-            idx_names, idx_levels = np.unique(datum.index.names, return_index=True)
-            index_df = []
-            for name, level in zip(list(idx_names), list(idx_levels)):
-                idx_series = pd.Series(datum.index.get_level_values(level), name=name)
-                index_df.append(idx_series)
-            index_df = pd.concat(index_df, axis=1)[datum_index_names]  # preserve order
-            datum.index = pd.MultiIndex.from_frame(index_df)
-            data[i] = datum
+            data[i] = datum.groupby(level=0, group_keys=False).apply(
+                self._add_or_remove_tail
+            )
 
         if len(data) == 1:
             return data[0]
@@ -760,6 +744,10 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         pd.DataFrame
             Parsed data.
         """
+
+        if self.window_size_ == 1:
+            return data
+
         tail = data.shape[0] % self.window_size_
         n_missing_in_tail = self.window_size_ - tail
         if 0 < n_missing_in_tail < self.window_size_ / 2:
@@ -777,7 +765,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         data,
         instruction: dict[str, list[str]] | list[str] | None = None,
         drop_nan_columns=False,
-    ):
+    ) -> pd.DataFrame:
         """
         Pools data with given window size.
 

@@ -151,7 +151,7 @@ class TestPipeline:
 
         # Check data handling
         assert Path(
-            "Auto_ML/Data/Interval_Analyzed_v1.csv"
+            "Auto_ML/Data/Interval_Analyzed_v1.parquet"
         ).exists(), "Interval-analyzed data was not properly stored"
         assert list(pipeline.data.index.names) == ["log", "index"], "Index is incorrect"
         # TODO: add checks for settings
@@ -161,7 +161,7 @@ class TestPipeline:
 
     def test_with_time(self):
         x = np.vstack(
-            (
+            (  # type: ignore
                 [datetime(2020, 1, 1) + timedelta(days=i) for i in range(12)],
                 np.linspace(0, 10, 12),
             )
@@ -177,3 +177,22 @@ class TestPipeline:
         df = pd.DataFrame(x, index=multi_index)
         pipeline = Pipeline(n_grid_searches=0)
         pipeline.fit(df, y)
+
+    def test_backwards_compatibility(self):
+        # Set up pipeline
+        model = joblib.load("tests/files/Model.joblib")
+        settings = json.load(open("tests/files/Settings.json", "r"))
+        pipeline = Pipeline()
+        pipeline.load_settings(settings)
+        pipeline.load_model(model)
+
+        # Predict
+        np.random.seed(100)
+        df = pd.DataFrame(
+            {
+                "output_current": np.random.normal(0, 1, size=100),
+                "radiator_temp": np.random.normal(0, 1, size=100),
+            }
+        )
+        yp = pipeline.predict_proba(df)
+        assert np.allclose(yp, [[0.16389499, 0.83610501]])

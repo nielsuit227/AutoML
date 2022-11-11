@@ -15,8 +15,7 @@ import pandas as pd
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 from amplo.base import BaseTransformer, LoggingMixin
-from amplo.utils import check_dtypes
-from amplo.utils.data import clean_keys
+from amplo.utils import check_dtypes, clean_column_names
 
 __all__ = [
     "sanitize_series",
@@ -131,7 +130,7 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin, metaclass=ABCMeta):
         x = deepcopy(x) if copy else x  # make copy
 
         # Stringify names
-        x = clean_keys(x)
+        x, _ = clean_column_names(x)
         assert not [  # important for `raw_features_` attribute to work properly
             col for col in x.columns if "__" in col
         ], "Cleaned column names should not have double underscores in it."

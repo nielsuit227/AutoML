@@ -1,6 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
-import re
+from __future__ import annotations
+
 import warnings
 
 import numpy as np
@@ -8,24 +9,21 @@ import pandas as pd
 from sklearn.exceptions import NotFittedError
 from sklearn.preprocessing import LabelEncoder
 
-from amplo.utils import clean_feature_name
-from amplo.utils.data import clean_keys
-from amplo.utils.logging import get_root_logger
+from amplo.utils.util import check_dtypes, clean_column_names, clean_feature_name
 
-__all__ = ["DataProcessor"]
-
-
-logger = get_root_logger().getChild("DataProcessor")
+__all__ = ["clean_feature_name", "DataProcessor"]
 
 
 class DataProcessor:
     def __init__(
         self,
-        target: str = None,
-        float_cols: list = None,
-        int_cols: list = None,
-        date_cols: list = None,
-        cat_cols: list = None,
+        target: str | None = None,
+        num_cols: list[str] | None = None,
+        bool_cols: list[str] | None = None,
+        date_cols: list[str] | None = None,
+        cat_cols: list[str] | None = None,
+        int_cols: list[str] | None = None,  # deprecated
+        float_cols: list[str] | None = None,  # deprecated
         include_output: bool = True,
         missing_values: str = "interpolate",
         outlier_removal: str = "clip",
@@ -43,22 +41,26 @@ class DataProcessor:
         ----------
         target : str
             Column name of target variable
-        float_cols : list
+        num_cols : list
             Float columns
-        int_cols : list
-            Integer columns
+        bool_cols : list
+            Boolean columns
         date_cols : list
             Date columns, all parsed to pd.datetime format
         cat_cols : list
             Categorical Columns. Currently, all one-hot encoded.
+        int_cols : list[str]
+            Deprecated
+        float_cols : list[str]
+            Deprecated
         include_output : bool
             Whether to include output in the data
-        missing_values : str
-            How to deal with missing values ("remove", "interpolate"or "mean")
-        outlier_removal : str
-            How to deal with outliers ("clip", "quantiles", "z-score"or "none")
+        missing_values : {"remove_rows", "remove_cols", "interpolate", "mean", "zero"}
+            How to deal with missing values.
+        outlier_removal : {"quantiles", "z-score", "clip", "none"}
+            How to deal with outliers.
         z_score_threshold : int
-            If outlierRemoval="z-score", the threshold is adaptable
+            If outlier_removal="z-score", the threshold is adaptable
         remove_constants : bool
             If False, does not remove constant columns
         version : int
@@ -66,49 +68,49 @@ class DataProcessor:
         verbosity : int
             How much to print
         """
-        # Tests
+
+        # Type checks
+        check_dtypes(
+            ("target", target, (type(None), str)),
+            ("num_cols", num_cols, (type(None), list)),
+            ("bool_cols", bool_cols, (type(None), list)),
+            ("date_cols", date_cols, (type(None), list)),
+            ("cat_cols", cat_cols, (type(None), list)),
+            # ignore "int_cols" and "float_cols" as they're deprecated and unused
+            ("include_output", include_output, bool),
+            # ignore "missing_values" and "outlier_removal" as they're checked below
+            ("z_score_threshold", z_score_threshold, int),
+            ("remove_constants", remove_constants, bool),
+            ("version", version, int),
+            ("verbosity", verbosity, int),
+        )
+
+        # Integrity checks
         mis_values_algo = ["remove_rows", "remove_cols", "interpolate", "mean", "zero"]
         if missing_values not in mis_values_algo:
             raise ValueError(
-                "Missing values algorithm not implemented, pick from"
-                f" {mis_values_algo}"
+                f"Missing values algorithm not implemented, pick from {mis_values_algo}"
             )
         out_rem_algo = ["quantiles", "z-score", "clip", "none"]
         if outlier_removal not in out_rem_algo:
             raise ValueError(
-                "Outlier Removal algorithm not implemented, pick from"
-                f" {out_rem_algo}"
+                f"Outlier Removal algorithm not implemented, pick from {out_rem_algo}"
             )
 
         # Arguments
         self.version = version
-        self.includeOutput = include_output
-        self.target = (
-            target if target is None else re.sub("[^a-z0-9]", "_", target.lower())
-        )
-        self.float_cols = (
-            []
-            if float_cols is None
-            else [re.sub("[^a-z0-9]", "_", fc.lower()) for fc in float_cols]
-        )
-        self.int_cols = (
-            []
-            if int_cols is None
-            else [re.sub("[^a-z0-9]", "_", ic.lower()) for ic in int_cols]
-        )
-        self.num_cols = self.float_cols + self.int_cols
-        self.cat_cols = (
-            []
-            if cat_cols is None
-            else [re.sub("[^a-z0-9]", "_", cc.lower()) for cc in cat_cols]
-        )
-        self.date_cols = (
-            []
-            if date_cols is None
-            else [re.sub("[^a-z0-9]", "_", dc.lower()) for dc in date_cols]
-        )
-        if self.target in self.num_cols:
-            self.num_cols.remove(self.target)
+        self.include_output = include_output
+        self.target = target or None
+        self.num_cols = num_cols or []
+        self.bool_cols = bool_cols or []
+        self.cat_cols = cat_cols or []
+        self.date_cols = date_cols or []
+
+        # Deprecation warnings
+        if int_cols is not None:
+            raise DeprecationWarning("int_cols is deprecated.")
+        if float_cols is not None:
+            raise DeprecationWarning("float_cols is deprecated.")
 
         # Algorithms
         self.missing_values = missing_values
@@ -128,11 +130,11 @@ class DataProcessor:
         # Info for Documenting
         self.is_fitted = False
         self.verbosity = verbosity
-        self.removedDuplicateRows = 0
-        self.removedDuplicateColumns = 0
-        self.removedOutliers = 0
-        self.imputedMissingValues = 0
-        self.removedConstantColumns = 0
+        self.removed_duplicate_rows = 0
+        self.removed_duplicate_columns = 0
+        self.removed_outliers = 0
+        self.imputed_missing_values = 0
+        self.removed_constant_columns = 0
 
     def _fit_transform(
         self, data: pd.DataFrame, fit=False, remove_constants=True
@@ -156,8 +158,17 @@ class DataProcessor:
         DataProcessor
         """
 
-        # Clean Keys
-        self.data = clean_keys(data)
+        # Clean column names and apply renaming
+        if fit:
+            self.data, self.rename_dict_ = clean_column_names(data)
+            if self.target is not None:
+                self.target = self.rename_dict_.get(self.target, None)
+            self.num_cols = [self.rename_dict_[col] for col in self.num_cols]
+            self.bool_cols = [self.rename_dict_[col] for col in self.bool_cols]
+            self.cat_cols = [self.rename_dict_[col] for col in self.cat_cols]
+            self.date_cols = [self.rename_dict_[col] for col in self.date_cols]
+        else:
+            self.data = data.rename(columns=self.rename_dict_)
 
         # Impute columns
         self._impute_columns()
@@ -165,18 +176,18 @@ class DataProcessor:
         # Remove target
         if (
             fit
-            and not self.includeOutput
+            and not self.include_output
             and self.target is not None
             and self.target in self.data
         ):
             self.data = self.data.drop(self.target, axis=1)
 
         if fit:
-            # Remove Duplicates
-            self.remove_duplicates()
-
             # Infer data-types
             self.infer_data_types()
+
+            # Remove Duplicates
+            self.remove_duplicates(rows=not isinstance(self.data.index, pd.MultiIndex))
 
         # Convert data types
         self.convert_data_types(fit_categorical=fit)
@@ -215,20 +226,12 @@ class DataProcessor:
         pd.DataFrame
             Cleaned input data
         """
-        if self.verbosity > 0:
-            logger.info(
-                f"Data Cleaning Started, ({len(data)} x {len(data.keys())}) samples"
-            )
 
         self._fit_transform(data, fit=True, remove_constants=remove_constants)
+        assert isinstance(self.data, pd.DataFrame)
 
         # Finish
         self.is_fitted = True
-        if self.verbosity > 0:
-            logger.info(
-                f"Processing completed, ({len(self.data)} x {len(self.data.keys())})"
-                " samples returned"
-            )
 
         return self.data
 
@@ -251,6 +254,7 @@ class DataProcessor:
             raise ValueError("Transform only available for fitted objects.")
 
         self._fit_transform(data, fit=False)
+        assert isinstance(self.data, pd.DataFrame)
 
         return self.data
 
@@ -260,26 +264,30 @@ class DataProcessor:
         """
         assert self.is_fitted, "Object not yet fitted."
         settings = {
+            "rename_dict_": self.rename_dict_,
             "num_cols": self.num_cols,
-            "float_cols": self.float_cols,
-            "int_cols": self.int_cols,
+            "bool_cols": self.bool_cols,
             "date_cols": self.date_cols,
             "cat_cols": self.cat_cols,
             "_label_encodings": self._label_encodings,
             "missing_values": self.missing_values,
             "outlier_removal": self.outlier_removal,
             "z_score_threshold": self.z_score_threshold,
-            "_means": None if self._means is None else self._means.to_json(),
-            "_stds": None if self._stds is None else self._stds.to_json(),
-            "_q1": None if self._q1 is None else self._q1.to_json(),
-            "_q3": None if self._q3 is None else self._q3.to_json(),
+            "_means": (
+                self._means.to_json() if isinstance(self._means, pd.Series) else None
+            ),
+            "_stds": (
+                self._stds.to_json() if isinstance(self._stds, pd.Series) else None
+            ),
+            "_q1": self._q1.to_json() if isinstance(self._q1, pd.Series) else None,
+            "_q3": self._q3.to_json() if isinstance(self._q3, pd.Series) else None,
             "dummies": self.dummies,
             "fit": {
-                "imputed_missing_values": self.imputedMissingValues,
-                "removed_outliers": self.removedOutliers,
-                "removed_constant_columns": self.removedConstantColumns,
-                "removed_duplicate_rows": self.removedDuplicateRows,
-                "removed_duplicate_columns": self.removedDuplicateColumns,
+                "imputed_missing_values": self.imputed_missing_values,
+                "removed_outliers": self.removed_outliers,
+                "removed_constant_columns": self.removed_constant_columns,
+                "removed_duplicate_rows": self.removed_duplicate_rows,
+                "removed_duplicate_columns": self.removed_duplicate_columns,
             },
         }
         return settings
@@ -288,9 +296,9 @@ class DataProcessor:
         """
         Loads settings from dictionary and recreates a fitted object
         """
+        self.rename_dict_ = settings.get("rename_dict_", {})
         self.num_cols = settings.get("num_cols", [])
-        self.float_cols = settings.get("float_cols", [])
-        self.int_cols = settings.get("int_cols", [])
+        self.bool_cols = settings.get("bool_cols", [])
         self.date_cols = settings.get("date_cols", [])
         self.cat_cols = settings.get("cat_cols", [])
         self._label_encodings = settings.get("_label_encodings", [])
@@ -320,76 +328,47 @@ class DataProcessor:
         self.dummies = settings.get("dummies", {})
         self.is_fitted = True
 
-    def infer_data_types(self, data=None):
+    def infer_data_types(self):
         """
         In case no data types are provided, this function infers the most likely data
         types
         """
         if len(self.cat_cols) == len(self.num_cols) == len(self.date_cols) == 0:
-            # First cleanup
-            self.data = (
-                self.data.infer_objects() if data is None else data.infer_objects()
-            )
+            assert isinstance(self.data, pd.DataFrame)
 
             # Iterate through keys
             for key in self.data.keys():
+
                 # Skip target
                 if key == self.target:
                     continue
 
-                # Integer
-                elif pd.api.types.is_integer_dtype(self.data[key]):
-                    self.int_cols.append(key)
+                # Remove NaN for feature identification
+                f = self.data[key]
+                f = f[~f.isna()].infer_objects()
 
-                    if self.verbosity > 1:
-                        logger.info(f"Found integer dtype: {key}")
-                    continue
-
-                # Float
-                elif pd.api.types.is_float_dtype(self.data[key]):
-                    self.float_cols.append(key)
-
-                    if self.verbosity > 1:
-                        logger.info(f"Found float dtype: {key}")
+                # Integer and Float
+                if pd.api.types.is_integer_dtype(f) or pd.api.types.is_float_dtype(f):
+                    self.num_cols.append(key)
                     continue
 
                 # Datetime
-                elif pd.api.types.is_datetime64_any_dtype(self.data[key]):
+                elif pd.api.types.is_datetime64_any_dtype(f):
                     self.date_cols.append(key)
-
-                    if self.verbosity > 1:
-                        logger.info(f"Found datetime dtype: {key}")
                     continue
 
                 # Booleans
-                elif pd.api.types.is_bool_dtype(self.data[key]):
-                    self.int_cols.append(key)
-
-                    if self.verbosity > 1:
-                        logger.info(f"Found boolean dtype: {key}")
+                elif pd.api.types.is_bool_dtype(f):
+                    self.bool_cols.append(key)
                     continue
 
                 # Strings / Objects
-                elif pd.api.types.is_object_dtype(self.data[key]):
+                elif pd.api.types.is_object_dtype(f):
 
                     # Check numerical
-                    numeric = pd.to_numeric(
-                        self.data[key], errors="coerce", downcast="integer"
-                    )
-                    if numeric.isna().sum() < len(self.data) * 0.3:
-                        # Float
-                        if pd.api.types.is_float_dtype(numeric):
-                            self.float_cols.append(key)
-
-                            if self.verbosity > 1:
-                                logger.info(f"Found float dtype: {key}")
-
-                        # Integer
-                        if pd.api.types.is_integer_dtype(numeric):
-                            self.int_cols.append(key)
-
-                            if self.verbosity > 1:
-                                logger.info(f"Found integer dtype: {key}")
+                    numeric = pd.to_numeric(f, errors="coerce", downcast="integer")
+                    if numeric.isna().sum() < 0.3 * len(f):
+                        self.num_cols.append(key)
 
                         # Update data and continue
                         self.data[key] = numeric
@@ -401,40 +380,21 @@ class DataProcessor:
                         errors="coerce",
                         infer_datetime_format=True,
                     )
-                    if date.isna().sum() < 0.3 * len(self.data):
+                    if date.isna().sum() < 0.3 * len(f):
                         self.date_cols.append(key)
                         self.data[key] = date
-
-                        if self.verbosity > 1:
-                            logger.info(f"Found datetime dtype: {key}")
                         continue
 
                     # Check categorical variable
                     if self.data[key].nunique() < max(10, len(self.data) // 4):
                         self.cat_cols.append(key)
-
-                        if self.verbosity > 1:
-                            logger.info(f"Found categorical dtype: {key}")
                         continue
 
                 # Else not found
                 warnings.warn(f"Couldn't identify feature: {key}")
 
-            # Set num cols for reverse compatibility
-            self.num_cols = self.int_cols + self.float_cols
-
-            # Print
-            if self.verbosity > 0:
-                logger.info(
-                    f"Found {len(self.int_cols)} integer, {len(self.float_cols)} float,"
-                    f" {len(self.cat_cols)} "
-                    f"categorical and {len(self.date_cols)} datetime columns"
-                )
-
-        return
-
     def convert_data_types(
-        self, data: pd.DataFrame = None, fit_categorical: bool = True
+        self, data=None, fit_categorical: bool = True
     ) -> pd.DataFrame:
         """
         Cleans up the data types of all columns.
@@ -453,23 +413,25 @@ class DataProcessor:
         """
         # Set data
         if data is not None:
+            assert isinstance(data, pd.DataFrame)
             self.data = data
+        assert isinstance(self.data, pd.DataFrame)
 
-        # Datetime columns
-        for key in self.date_cols:
-            self.data.loc[:, key] = pd.to_datetime(
-                self.data[key], errors="coerce", infer_datetime_format=True, utc=True
+        # Drop Datetime columns, we don't use them.
+        if self.date_cols:
+            warnings.warn(
+                f"Data contains datetime columns but are removed: '{self.date_cols}'",
+                UserWarning,
             )
+            self.data = self.data.drop(self.date_cols, axis=1)
 
         # Integer columns
-        for key in self.int_cols:
-            self.data.loc[:, key] = pd.to_numeric(
-                self.data[key], errors="coerce", downcast="integer"
-            )
+        for key in self.bool_cols:
+            self.data[key] = self.data[key].astype(np.int64)
 
         # Float columns
-        for key in self.float_cols:
-            self.data.loc[:, key] = pd.to_numeric(
+        for key in self.num_cols:
+            self.data[key] = pd.to_numeric(
                 self.data[key], errors="coerce", downcast="float"
             )
 
@@ -485,44 +447,48 @@ class DataProcessor:
 
         # We need everything to become numeric, so all that is not mentioned will be
         # handled as numeric
-        all_cols = (
-            self.float_cols
-            + self.int_cols
-            + self.date_cols
-            + self.cat_cols
-            + [self.target]
-        )
+        all_cols = [
+            *self.num_cols,
+            *self.bool_cols,
+            # *self.date_cols,  # ignore datetime: we don't use them
+            *self.cat_cols,
+            self.target,
+        ]
         for key in self.data.keys():
             if key not in all_cols:
-                self.data.loc[:, key] = pd.to_numeric(self.data[key], errors="coerce")
+                self.data[key] = pd.to_numeric(self.data[key], errors="coerce")
 
         return self.data
 
-    def _fit_cat_cols(self, data: pd.DataFrame = None) -> pd.DataFrame:
+    def _fit_cat_cols(self, data=None) -> pd.DataFrame:
         """
         Encoding categorical variables always needs a scheme. This fits the scheme.
         """
         if data is not None:
+            assert isinstance(data, pd.DataFrame)
             self.data = data
+        assert isinstance(self.data, pd.DataFrame)
 
         for key in self.cat_cols:
             # Clean the categorical variables
+            is_nan = self.data[key].isna()
             self.data[key] = self.data[key].apply(clean_feature_name)
+            self.data[key][is_nan] = None  # reset NaN value in order not to encode them
 
             # Get dummies, convert & store
-            dummies = pd.get_dummies(
-                self.data[key], prefix=key, dummy_na=self.data[key].isna().sum() > 0
-            )
+            dummies = pd.get_dummies(self.data[key], prefix=key)
             self.data = pd.concat([self.data.drop(key, axis=1), dummies], axis=1)
             self.dummies[key] = dummies.keys().tolist()
         return self.data
 
-    def _transform_cat_cols(self, data: pd.DataFrame = None) -> pd.DataFrame:
+    def _transform_cat_cols(self, data=None) -> pd.DataFrame:
         """
         Converts categorical variables according to fitted scheme.
         """
         if data is not None:
+            assert isinstance(data, pd.DataFrame)
             self.data = data
+        assert isinstance(self.data, pd.DataFrame)
 
         for key in self.cat_cols:
             # Clean column
@@ -531,15 +497,12 @@ class DataProcessor:
             # Transform
             value = self.dummies[key]
             dummies = [i[len(key) + 1 :] for i in value]
-            self.data[value] = (
-                np.equal.outer(self.data[key].astype("str").values, dummies) * 1
-            )
+            str_values = self.data[key].astype("str").values
+            self.data[value] = np.equal.outer(str_values, dummies).astype(np.int64)  # type: ignore
             self.data = self.data.drop(key, axis=1)
         return self.data
 
-    def remove_duplicates(
-        self, data: pd.DataFrame = None, rows: bool = True
-    ) -> pd.DataFrame:
+    def remove_duplicates(self, data=None, rows: bool = True) -> pd.DataFrame:
         """
         Removes duplicate columns and rows.
 
@@ -556,7 +519,9 @@ class DataProcessor:
             Cleaned input data
         """
         if data is not None:
+            assert isinstance(data, pd.DataFrame)
             self.data = data
+        assert isinstance(self.data, pd.DataFrame)
 
         # Note down
         n_rows, n_columns = len(self.data), len(self.data.keys())
@@ -564,27 +529,23 @@ class DataProcessor:
         # Remove Duplicates
         if rows:
             self.data = self.data.drop_duplicates()
-        self.data = self.data.loc[:, ~self.data.columns.duplicated()]
+        self.data = self.data.loc[:, ~self.data.columns.duplicated()]  # type: ignore
 
         # Note
-        self.removedDuplicateColumns = n_columns - len(self.data.keys())
-        self.removedDuplicateRows = n_rows - len(self.data)
-        if self.verbosity > 0 or (
-            self.removedDuplicateColumns != 0 or self.removedDuplicateRows != 0
-        ):
-            logger.info(
-                f"Removed {self.removedDuplicateColumns} duplicate columns and"
-                f" {self.removedDuplicateRows} duplicate rows"
-            )
+        self.removed_duplicate_columns = n_columns - len(self.data.keys())
+        self.removed_duplicate_rows = n_rows - len(self.data)
 
+        assert isinstance(self.data, pd.DataFrame)
         return self.data
 
-    def remove_constants(self, data: pd.DataFrame = None) -> pd.DataFrame:
+    def remove_constants(self, data=None) -> pd.DataFrame:
         """
         Removes constant columns
         """
         if data is not None:
+            assert isinstance(data, pd.DataFrame)
             self.data = data
+        assert isinstance(self.data, pd.DataFrame)
         columns = len(self.data.keys())
 
         # Remove Constants
@@ -597,18 +558,18 @@ class DataProcessor:
             self.data = self.data.drop(columns=const_cols)
 
         # Note
-        self.removedConstantColumns = columns - len(self.data.keys())
-        if self.verbosity > 0 or self.removedConstantColumns != 0:
-            logger.info(f"Removed {self.removedConstantColumns} constant columns.")
+        self.removed_constant_columns = columns - len(self.data.keys())
 
         return self.data
 
-    def fit_outliers(self, data: pd.DataFrame = None):
+    def fit_outliers(self, data: pd.DataFrame | None = None):
         """
         Checks outliers
         """
         if data is not None:
+            assert isinstance(data, pd.DataFrame)
             self.data = data
+        assert isinstance(self.data, pd.DataFrame)
 
         # With quantiles
         if self.outlier_removal == "quantiles":
@@ -622,13 +583,15 @@ class DataProcessor:
             self._stds[self._stds == 0] = 1
 
     def remove_outliers(
-        self, data: pd.DataFrame = None, fit: bool = True
+        self, data: pd.DataFrame | None = None, fit: bool = True
     ) -> pd.DataFrame:
         """
         Removes outliers
         """
         if data is not None:
+            assert isinstance(data, pd.DataFrame)
             self.data = data
+        assert isinstance(self.data, pd.DataFrame)
 
         # Check if needs fitting
         if fit:
@@ -642,7 +605,7 @@ class DataProcessor:
 
         # With Quantiles
         if self.outlier_removal == "quantiles":
-            self.removedOutliers = (
+            self.removed_outliers = (
                 (self.data[self.num_cols] > self._q3).sum().sum()
                 + (self.data[self.num_cols] < self._q1).sum().sum()
             ).tolist()
@@ -656,16 +619,16 @@ class DataProcessor:
         # With z-score
         elif self.outlier_removal == "z-score":
             z_score = abs((self.data[self.num_cols] - self._means) / self._stds)
-            self.removedOutliers = (
-                (z_score > self.z_score_threshold).sum().sum().tolist()
+            self.removed_outliers = (
+                (z_score > self.z_score_threshold).sum().sum().tolist()  # type: ignore
             )
             self.data[self.num_cols] = self.data[self.num_cols].mask(
-                z_score > self.z_score_threshold
+                z_score > self.z_score_threshold  # type: ignore
             )
 
         # With clipping
         elif self.outlier_removal == "clip":
-            self.removedOutliers = (
+            self.removed_outliers = (
                 (self.data[self.num_cols] > 1e12).sum().sum()
                 + (self.data[self.num_cols] < -1e12).sum().sum()
             ).tolist()
@@ -674,28 +637,30 @@ class DataProcessor:
             )
         return self.data
 
-    def remove_missing_values(self, data: pd.DataFrame = None) -> pd.DataFrame:
+    def remove_missing_values(self, data: pd.DataFrame | None = None) -> pd.DataFrame:
         """
         Fills missing values (infinities and "not a number"s)
         """
         if data is not None:
+            assert isinstance(data, pd.DataFrame)
             self.data = data
+        assert isinstance(self.data, pd.DataFrame)
 
         # Replace infinities
         self.data = self.data.replace([np.inf, -np.inf], np.nan)
 
         # Note
-        self.imputedMissingValues = self.data[self.num_cols].isna().sum().sum().tolist()
-        if self.verbosity > 0 or self.imputedMissingValues != 0:
-            logger.info(f"Imputed {self.imputedMissingValues} missing values.")
+        self.imputed_missing_values = (
+            self.data[self.num_cols].isna().sum().sum().tolist()
+        )
 
         # Removes all rows with missing values
         if self.missing_values == "remove_rows":
-            self.data = self.data[self.data.isna().sum(axis=1) == 0]
+            self.data.dropna(axis=0, inplace=True)
 
         # Removes all columns with missing values
         elif self.missing_values == "remove_cols":
-            self.data = self.data.loc[:, self.data.isna().sum(axis=0) == 0]
+            self.data.dropna(axis=1, inplace=True)
 
         # Fills all missing values with zero
         elif self.missing_values == "zero":
@@ -704,22 +669,9 @@ class DataProcessor:
         # Linearly interpolates missing values
         elif self.missing_values == "interpolate":
 
-            # Columns which are present with >10% missing values are not interpolated
-            zero_keys = self.data.keys()[
-                self.data.isna().sum() / len(self.data) > 0.1
-            ].tolist()
-
             # Get all non-date_cols & interpolate
-            ik = np.setdiff1d(self.data.keys().to_list(), self.date_cols + zero_keys)
+            ik = np.setdiff1d(self.data.keys().to_list(), self.date_cols)
             self.data[ik] = self.data[ik].interpolate(limit_direction="both")
-
-            # Fill date columns
-            for key in self.date_cols:
-                if self.data[key].isna().sum() != 0:
-                    # Interpolate
-                    ints = pd.Series(self.data[key].values.astype("int64"))
-                    ints[ints < 0] = np.nan
-                    self.data[key] = pd.to_datetime(ints.interpolate(), unit="ns")
 
             # Fill rest (date & more missing values cols)
             if self.data.isna().sum().sum() != 0:
@@ -729,13 +681,10 @@ class DataProcessor:
         elif self.missing_values == "mean":
             self.data = self.data.fillna(self.data.mean())
 
-            # Need to be individual for some reason
-            for key in self.date_cols:
-                self.data[key] = self.data[key].fillna(self.data[key].mean())
-
+        assert isinstance(self.data, pd.DataFrame)
         return self.data
 
-    def convert_float_int(self, data: pd.DataFrame = None) -> pd.DataFrame:
+    def convert_float_int(self, data=None) -> pd.DataFrame:
         """
         Integer columns with NaN in them are interpreted as floats.
         In the beginning we check whether some columns should be integers,
@@ -743,9 +692,11 @@ class DataProcessor:
         Therefore, we only convert floats to integers at the very end
         """
         if data is not None:
+            assert isinstance(data, pd.DataFrame)
             self.data = data
+        assert isinstance(self.data, pd.DataFrame)
 
-        for key in self.int_cols:
+        for key in self.bool_cols:
             if key in self.data:
                 self.data[key] = pd.to_numeric(
                     self.data[key], errors="coerce", downcast="integer"
@@ -760,15 +711,16 @@ class DataProcessor:
         fit : bool
             Whether to fit the encoder
         """
-
-        if self.target not in self.data:
+        if not isinstance(self.data, pd.DataFrame):
+            raise ValueError(f"Expected DataFrame but got '{type(self.data)}'.")
+        if not self.target or self.target not in self.data:
             return
 
         # Get labels and encode / decode
-        labels = self.data.loc[:, self.target]
+        labels = self.data[self.target]  # type: ignore
 
         # Encode
-        self.data.loc[:, self.target] = self.encode_labels(
+        self.data[self.target] = self.encode_labels(
             labels, fit=fit, warn_unencodable=False
         )
 
@@ -798,7 +750,7 @@ class DataProcessor:
         # Convert to pd.Series for convenience
         labels = pd.Series(labels)
 
-        # It"s probably a classification task
+        # It's probably a classification task
         if labels.dtype == object or labels.nunique() <= labels.size / 2:
             # Create encoding
             encoder = LabelEncoder()
@@ -813,7 +765,7 @@ class DataProcessor:
             # Encode
             return encoder.transform(labels)
 
-        # It"s probably a regression task, thus no encoding needed
+        # It's probably a regression task, thus no encoding needed
         if warn_unencodable:
             warnings.warn(
                 UserWarning(
@@ -858,7 +810,7 @@ class DataProcessor:
             else:
                 return labels.to_numpy() if isinstance(labels, pd.Series) else labels
 
-    def _impute_columns(self, data: pd.DataFrame = None) -> pd.DataFrame:
+    def _impute_columns(self, data: pd.DataFrame | None = None) -> pd.DataFrame:
         """
         *** For production ***
         If a dataset is missing certain columns, this function looks at all registered
@@ -866,10 +818,12 @@ class DataProcessor:
         zeros.
         """
         if data is not None:
+            assert isinstance(data, pd.DataFrame)
             self.data = data
+        assert isinstance(self.data, pd.DataFrame)
 
         imputed = []
-        for keys in [self.num_cols, self.date_cols, self.cat_cols]:
+        for keys in [self.num_cols, self.cat_cols]:  # ignoring `self.date_cols`
             for key in [k for k in keys if k not in self.data]:
                 self.data[key] = np.zeros(len(self.data))
                 imputed.append(key)
@@ -891,6 +845,5 @@ class DataProcessor:
         hash_features = dict([(k, 0) for k in features])
         self.date_cols = [f for f in self.date_cols if f in hash_features]
         self.num_cols = [f for f in self.num_cols if f in hash_features]
-        self.int_cols = [f for f in self.int_cols if f in hash_features]
-        self.float_cols = [f for f in self.float_cols if f in hash_features]
+        self.bool_cols = [f for f in self.bool_cols if f in hash_features]
         self.cat_cols = [f for f in self.cat_cols if f in hash_features]

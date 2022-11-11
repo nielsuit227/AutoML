@@ -33,7 +33,7 @@ class BaseRegressor(BasePredictor, LoggingMixin, metaclass=ABCMeta):
         params = super().get_params(deep=deep)
         model_params = self._get_model_params(deep=deep)
 
-        return {**params, **model_params}
+        return {**model_params, **params}
 
     def set_params(self, **params):
         # Set class params

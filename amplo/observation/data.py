@@ -84,12 +84,12 @@ class DataObserver(PipelineObserver):
         for col in numeric_data.columns:
             grouped_series = (
                 numeric_data[col]
-                .groupby(level=0)
+                .groupby(level=0, group_keys=True)
                 .apply(lambda group: group.interpolate(limit_directions="both"))
-                .groupby(level=0)
+                .groupby(level=0, group_keys=True)
             )
             is_monotonic = (
-                grouped_series.apply(lambda group: group.is_monotonic)
+                grouped_series.apply(lambda group: group.is_monotonic_increasing)
                 | grouped_series.apply(lambda group: group.is_monotonic_decreasing)
             ).any()
             is_constant = grouped_series.apply(lambda group: group.nunique() == 1).any()

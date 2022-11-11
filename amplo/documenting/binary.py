@@ -749,13 +749,13 @@ class BinaryDocumenting(FPDF):
             "  2.  Removed {} outliers with {}\n"
             "  3.  Imputed {} missing values with {}\n"
             "  4.  Removed {} columns with constant values\n".format(
-                self.p.data_processor.removedDuplicateColumns,
-                self.p.data_processor.removedDuplicateRows,
-                self.p.data_processor.removedOutliers,
+                self.p.data_processor.removed_duplicate_columns,
+                self.p.data_processor.removed_duplicate_rows,
+                self.p.data_processor.removed_outliers,
                 self.p.data_processor.outlier_removal,
-                self.p.data_processor.imputedMissingValues,
+                self.p.data_processor.imputed_missing_values,
                 self.p.data_processor.missing_values,
-                self.p.data_processor.removedConstantColumns,
+                self.p.data_processor.removed_constant_columns,
             )
         )
 

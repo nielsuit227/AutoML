@@ -10,7 +10,6 @@ from amplo.utils.util import clean_feature_name
 
 __all__ = [
     "influx_query_to_df",
-    "clean_keys",
     "check_dataframe_quality",
     "check_pearson_correlation",
 ]
@@ -24,18 +23,6 @@ def influx_query_to_df(result):
             parsed_records.append((record.get_time(), record.get_value()))
         df.append(pd.DataFrame(parsed_records, columns=["ts", record.get_field()]))
     return pd.concat(df).set_index("ts").groupby(level=0).sum()
-
-
-def clean_keys(data: pd.DataFrame) -> pd.DataFrame:
-    # Clean Keys
-    new_keys = {}
-    for key in data.keys():
-        if isinstance(key, int):
-            new_keys[key] = "feature_{}".format(key)
-        else:
-            new_keys[key] = clean_feature_name(key)
-    data = data.rename(columns=new_keys)
-    return data
 
 
 def check_dataframe_quality(data: pd.DataFrame) -> bool:

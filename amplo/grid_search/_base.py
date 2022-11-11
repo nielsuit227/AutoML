@@ -1,9 +1,11 @@
 #  Copyright (c) 2022 by Amplo.
 
+from __future__ import annotations
+
 import multiprocessing as mp
 import re
 from abc import abstractmethod
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 from warnings import warn
 
 import numpy as np
@@ -83,15 +85,12 @@ class BaseGridSearch(LoggingMixin):
             self.n_trials = 1
 
     @property
-    def _hyper_parameter_values(
-        self,
-    ) -> Dict[str, Tuple[str, List[Union[str, float]], Optional[int]]]:
+    def _hyper_parameter_values(self) -> dict[str, tuple]:
         """Get model specific hyper parameter values, indicating predefined
         search areas to optimize.
 
         Notes
         -----
-
         Each item of the output dictionary consists of:
             - parameter name (str), and
             - parameter specifications (tuple)
@@ -138,9 +137,7 @@ class BaseGridSearch(LoggingMixin):
             return {}
 
         elif model_name == "Lasso" or "Ridge" in model_name:
-            return dict(
-                alpha=("uniform", [0, 10], 25),
-            )
+            return dict(alpha=("uniform", [0, 10], 25))
 
         elif model_name in ("SVR", "SVC"):
             return dict(
@@ -280,8 +277,8 @@ class BaseGridSearch(LoggingMixin):
             params = dict(
                 n_estimators=("int", [50, 1000], 5),
                 criterion=("categorical", ["squared_error", "absolute_error"]),
-                max_depth=("int", [3, minimax(3, int(np.log2(self.samples)), 15)], 4),
-                max_features=("categorical", ["auto", "sqrt"]),
+                max_depth=("int", [2, minimax(3, int(np.log2(self.samples)), 15)], 4),
+                max_features=("categorical", ["log2", "sqrt"]),
                 min_samples_split=("int", [2, 50], 4),
                 min_samples_leaf=("int", [1, minimax(1, self.samples // 10, 1000)], 5),
                 bootstrap=("categorical", [True, False]),
@@ -426,7 +423,7 @@ class BaseGridSearch(LoggingMixin):
         return param_min_max
 
     @abstractmethod
-    def _get_hyper_params(self, *args, **kwargs) -> Dict[str, Any]:
+    def _get_hyper_params(self, *args, **kwargs) -> dict[str, Any]:
         """
         Get grid search specific distributions or samples.
 

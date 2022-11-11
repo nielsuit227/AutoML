@@ -1,21 +1,13 @@
 #  Copyright (c) 2022 by Amplo.
 
-import lightgbm
+from __future__ import annotations
+
 from lightgbm import LGBMRegressor as _LGBMRegressor
 from sklearn.model_selection import train_test_split
 
+from amplo.classification.lgbm import _validate_lightgbm_callbacks
 from amplo.regression._base import BaseRegressor
 from amplo.utils import check_dtypes
-
-
-def _validate_lightgbm_callbacks(callbacks):
-    if not callbacks:
-        return []
-
-    for cb in callbacks:
-        raise NotImplementedError
-
-    return callbacks
 
 
 class LGBMRegressor(BaseRegressor):
@@ -25,7 +17,8 @@ class LGBMRegressor(BaseRegressor):
     Parameters
     ----------
     callbacks : list of str, optional
-        ...
+        The following callbacks are currently supported:
+            - early stopping, "early_stopping_rounds=100"
     test_size : float, default: 0.1
         Test size for train-test-split in fitting the model.
     random_state : int, default: None
@@ -40,10 +33,10 @@ class LGBMRegressor(BaseRegressor):
 
     def __init__(
         self,
-        callbacks=None,
-        test_size=0.1,
-        random_state=None,
-        verbose=0,
+        callbacks: list[str] | None = None,
+        test_size: float = 0.1,
+        random_state: int | None = None,
+        verbose: int = 0,
         **model_params,
     ):
         # Verify input dtypes and integrity
@@ -56,12 +49,20 @@ class LGBMRegressor(BaseRegressor):
         if not 0 <= test_size < 1:
             raise ValueError(f"Invalid attribute for test_size: {test_size}")
 
+        # Set up callbacks
+        callbacks = callbacks or []
+        for cb_name, cb_default_value in [("early_stopping_rounds", 100)]:
+            # Skip if already present in callbacks
+            if any(callback.startswith(cb_name) for callback in callbacks):
+                continue
+            # Pop model parameters into callbacks
+            callbacks.append(f"{cb_name}={model_params.pop(cb_name, cb_default_value)}")
+
         # Set up model parameters
         default_model_params = {
-            "num_iterations": 1000,  # number of boosting rounds
+            "n_estimators": 1000,  # number of boosting rounds
             "force_col_wise": True,  # reduce memory cost
-            "early_stopping_rounds": 100,
-            "verbose": verbose,
+            "verbosity": verbose - 1,  # don't use "verbose" due to self.reset()
         }
         for k, v in default_model_params.items():
             if k not in model_params:
@@ -78,12 +79,6 @@ class LGBMRegressor(BaseRegressor):
     def _fit(self, x, y=None, **fit_params):
         # Set up fitting callbacks
         callbacks = _validate_lightgbm_callbacks(self.callbacks)
-        callbacks.append(
-            lightgbm.early_stopping(
-                self.model.get_params().get("early_stopping_rounds", 100),
-                verbose=False,
-            )
-        )
 
         # Split data and fit model
         xt, xv, yt, yv = train_test_split(

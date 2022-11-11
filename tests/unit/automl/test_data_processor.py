@@ -41,52 +41,43 @@ class TestMode:
 class TestDataProcessor:
     def test_interpolation(self):
         dp = DataProcessor()
+        assert dp.missing_values == "interpolate", "Unexpected default value"
         data = pd.DataFrame({"a": [1, np.nan, np.nan, np.nan, 5], "b": [1, 2, 3, 4, 5]})
         cleaned = dp.fit_transform(data)
-        assert cleaned["a"].tolist() == [1, 0, 0, 0, 5]
+        assert cleaned["a"].astype(int).tolist() == [1, 2, 3, 4, 5]
 
     def test_type_detector(self):
         dp = DataProcessor()
         data = pd.DataFrame(
             {
-                "a": ["a", "b", "c", "d", "a"],
+                "a": ["a", "b", "c", "b", "a"],
                 "b": [1, 2, 3, 4, 5],
-                "c": [
-                    "2020-01-01",
-                    "2020-01-02",
-                    "2020-01-03",
-                    "2020-01-04",
-                    "2020-01-05",
-                ],
+                "c": [f"2020-01-{i:02}" for i in range(1, 6)],
             }
         )
         cleaned = dp.fit_transform(data)
-        assert pd.api.types.is_integer_dtype(cleaned["b"])
-        assert pd.api.types.is_datetime64_any_dtype(cleaned["c"])
-        assert "a_b" in cleaned
-        assert "a_c" in cleaned
-        assert "a_d" in cleaned
+
+        assert {"b", "a_a", "a_b", "a_c"} == set(cleaned.columns), "Unexpected columns"
+        assert pd.api.types.is_float_dtype(cleaned["b"])
 
     def test_type_detector_with_nan(self):
         dp = DataProcessor()
         data = pd.DataFrame(
             {
-                "a": ["a", "b", np.nan, "c", "d"],
+                "a": ["a", "b", np.nan, "c", "b"],
                 "b": [1, 2, 3, 4, np.nan],
                 "c": ["2020-01-01", np.nan, "2020-01-03", "2020-01-04", "2020-01-05"],
             }
         )
         cleaned = dp.fit_transform(data)
+
+        assert {"b", "a_a", "a_b", "a_c"} == set(cleaned.columns), "Unexpected columns"
         assert pd.api.types.is_float_dtype(cleaned["b"])
-        assert pd.api.types.is_datetime64_any_dtype(cleaned["c"])
-        assert "a_b" in cleaned
-        assert "a_c" in cleaned
-        assert "a_d" in cleaned
 
     def test_missing_values(self):
         data = pd.DataFrame(
             {
-                "a": ["a", "b", np.nan, "c", "d"],
+                "a": ["a", "b", np.nan, "c", "b"],
                 "b": [1, 2, 3, 4, np.nan],
                 "c": ["2020-01-01", np.nan, "2020-01-03", "2020-01-04", "2020-01-05"],
                 "d": [1, 2, 3, 4, 5],
@@ -94,37 +85,39 @@ class TestDataProcessor:
         )
 
         # Remove rows
+        # Despite having NaNs in 3 rows, we expect only one row to be removed:
+        # - "a" is categorical, thus encoded and has no NaNs anymore
+        # - "c" is datetime and thus completely dropped
         dp = DataProcessor(missing_values="remove_rows")
         cleaned = dp.fit_transform(data)
-        assert (
-            len(cleaned) == 3
-        ), cleaned.head()  # the nan in the categorical is omitted
+        assert cleaned.shape == (4, 5), "Did not remove NaNs as expected"
+        assert not cleaned.isna().values.any(), "DataFrame still contains NaNs"
 
         # Remove cols
+        # Similar argumentation as above.
         dp = DataProcessor(missing_values="remove_cols")
         cleaned = dp.fit_transform(data)
-        assert (
-            len(cleaned.keys()) == 6
-        ), cleaned.head()  # Categorical NaN is allowed, so 5 categoricals and d
+        assert cleaned.shape == (5, 4), "Did not remove NaNs as expected"
+        assert not cleaned.isna().values.any(), "DataFrame still contains NaNs"
 
         # Replace with 0
         dp = DataProcessor(missing_values="zero")
         cleaned = dp.fit_transform(data)
-        assert (cleaned.loc[2, ["a_b", "a_c", "a_d"]] == 0).all()
+        assert (cleaned.loc[2, ["a_a", "a_b", "a_c"]] == 0).all()
         assert cleaned["b"][4] == 0
-        assert cleaned["c"][1] == 0
+        assert not cleaned.isna().values.any(), "DataFrame still contains NaNs"
 
         # Interpolate
         dp = DataProcessor(missing_values="interpolate")
         cleaned = dp.fit_transform(data)
-        assert cleaned.isna().sum().sum() == 0, cleaned.head()
+        assert not cleaned.isna().values.any(), "DataFrame still contains NaNs"
 
         # Fill with mean
         dp = DataProcessor(missing_values="mean")
         cleaned = dp.fit_transform(data)
-        assert (cleaned.loc[2, ["a_b", "a_c", "a_d"]] == 0).all()
+        assert (cleaned.loc[2, ["a_a", "a_b", "a_c"]] == 0).all()
         assert cleaned["b"][4] == 2.5
-        assert cleaned["c"][1] == pd.to_datetime("2020-01-03 6:00:00", utc=True)
+        assert not cleaned.isna().values.any(), "DataFrame still contains NaNs"
 
     def test_classification_target(self):
         data = pd.DataFrame(
@@ -155,25 +148,25 @@ class TestDataProcessor:
         # Clip
         dp = DataProcessor(outlier_removal="clip", target="target")
         xt = dp.fit_transform(x)
-        assert xt.max().max() < 1e15, "Outlier not removed"
-        assert not xt.isna().any().any(), "NaN found"
+        assert xt.values.max() < 1e15, "Outlier not removed"
+        assert not xt.isna().values.any(), "NaN found"
 
         # z-score
         dp = DataProcessor(outlier_removal="z-score", target="target")
         xt = dp.fit_transform(x)
-        assert xt.max().max() < 1e15, "Outlier not removed"
-        assert not xt.isna().any().any(), "NaN found"
+        assert xt.values.max() < 1e15, "Outlier not removed"
+        assert not xt.isna().values.any(), "NaN found"
         assert np.isclose(
-            dp.transform(pd.DataFrame({"a": [1e14], "b": [1]})).max().max(), 1e14
+            dp.transform(pd.DataFrame({"a": [1e14], "b": [1]})).values.max(), 1e14
         )
-        assert dp.transform(pd.DataFrame({"a": [1e16], "b": [1]})).max().max() == 1
+        assert dp.transform(pd.DataFrame({"a": [1e16], "b": [1]})).values.max() == 1
 
         # Quantiles
         dp = DataProcessor(outlier_removal="quantiles", target="target")
         xt = dp.fit_transform(x)
         assert xt.max().max() < 1e15, "Outlier not removed"
         assert not xt.isna().any().any(), "NaN found"
-        assert dp.transform(pd.DataFrame({"a": [2], "b": [-2]})).max().max() == 0
+        assert dp.transform(pd.DataFrame({"a": [2], "b": [-2]})).values.max() == 0
 
     def test_duplicates(self):
         # Create a DataFrame that contains two columns with the same name
@@ -205,17 +198,13 @@ class TestDataProcessor:
 
     def test_nan_categorical(self):
         # Setup
-        df = pd.DataFrame({"a": ["hoi", np.nan, np.nan, np.nan]})
         dp = DataProcessor()
-        df = dp.fit_transform(df)
+        data = pd.DataFrame({"a": ["hoi", np.nan, np.nan, np.nan]})
+        cleaned = dp.fit_transform(data)
 
         # Tests
-        assert (
-            "a" in dp.cat_cols
-        ), "NaN categorical column not recognised as categorical."
-        assert "a_hoi" in list(
-            df.keys()
-        ), f"Categorical column not properly converted: {df.keys()}"
+        assert "a" in dp.cat_cols, "Did not recognize categorical column."
+        assert "a_hoi" in cleaned, f"Cat column not properly converted: {list(cleaned)}"
 
     def test_settings(self):
         # todo add tests for different arguments, was failing for
@@ -248,7 +237,7 @@ class TestDataProcessor:
         dp = DataProcessor()
         dp.fit_transform(x)
         dp.prune_features(["b"])
-        assert dp.int_cols == ["b"]
+        assert dp.num_cols == ["b"]
         assert dp.cat_cols == []
 
     def test_json_serializable(self):

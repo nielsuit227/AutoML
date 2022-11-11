@@ -70,10 +70,10 @@ class TestPipeline:
         pipeline._read_data(x, y)
         pipeline._mode_detector()
         pipeline._data_processing()
-        assert os.path.exists("Auto_ML/Data/Cleaned_v1.csv")
+        assert os.path.exists("Auto_ML/Data/Cleaned_v1.parquet")
         pipeline._feature_processing()
-        assert not os.path.exists("Auto_ML/Data/Cleaned_v1.csv")
-        assert os.path.exists("Auto_ML/Data/Extracted_v1.csv")
+        assert not os.path.exists("Auto_ML/Data/Cleaned_v1.parquet")
+        assert os.path.exists("Auto_ML/Data/Extracted_v1.parquet")
         pipeline._initial_modelling()
         pipeline.conclude_fitting()
         assert len(os.listdir("Auto_ML/Production/v1/")) > 0
@@ -82,15 +82,15 @@ class TestPipeline:
         pipeline._read_data(x, y)
         pipeline._mode_detector()
         pipeline._data_processing()
-        assert os.path.exists("Auto_ML/Data/Cleaned_v2.csv")
-        assert not os.path.exists("Auto_ML/Data/Extracted_v1.csv")
+        assert os.path.exists("Auto_ML/Data/Cleaned_v2.parquet")
+        assert not os.path.exists("Auto_ML/Data/Extracted_v1.parquet")
 
-    def test_read_write_csv(self):
+    def test_read_write_df(self):
         """
         Check whether intermediate data is stored and read correctly
         """
         # Set path
-        data_path = "test_data.csv"
+        data_path = "test_data.parquet"
 
         # Test single index
         data_write = pd.DataFrame(
@@ -99,8 +99,8 @@ class TestPipeline:
             dtype="int64",
         )
         data_write.index.name = "index"
-        Pipeline()._write_csv(data_write, data_path)
-        data_read = Pipeline._read_csv(data_path)
+        Pipeline()._write_df(data_write, data_path)
+        data_read = Pipeline._read_df(data_path)
         assert data_write.equals(
             data_read
         ), "Read data should be equal to original data"
@@ -108,8 +108,8 @@ class TestPipeline:
         # Test multi-index (cf. IntervalAnalyser)
         data_write = data_write.set_index(data_write.columns[-2:].to_list())
         data_write.index.names = ["log", "index"]
-        Pipeline()._write_csv(data_write, data_path)
-        data_read = Pipeline._read_csv(data_path)
+        Pipeline()._write_df(data_write, data_path)
+        data_read = Pipeline._read_df(data_path)
         assert data_write.equals(
             data_read
         ), "Read data should be equal to original data"

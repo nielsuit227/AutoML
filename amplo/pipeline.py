@@ -10,7 +10,7 @@ import time
 from datetime import datetime
 from inspect import signature
 from pathlib import Path
-from typing import Any, Tuple, Union
+from typing import Any
 from warnings import warn
 
 import joblib
@@ -35,6 +35,7 @@ from amplo.automl.feature_processing.feature_processor import (
 from amplo.automl.interval_analysis import IntervalAnalyser
 from amplo.automl.modelling import Modeller
 from amplo.automl.sequencing import Sequencer
+from amplo.base import BasePredictor
 from amplo.base.objects import LoggingMixin
 from amplo.classification.stacking import StackingClassifier
 from amplo.grid_search import ExhaustiveGridSearch, HalvingGridSearch, OptunaGridSearch
@@ -77,14 +78,6 @@ class Pipeline(LoggingMixin):
         Write to logging to given path if ``logs_to_file`` is True.
 
     # Data processing
-    int_cols : list of str, optional
-        Column names of integer columns (if None will detect automatically).
-    float_cols : list of str, optional
-        Column names of float columns (if None will detect automatically).
-    date_cols : list of str, optional
-        Column names of datetime column (if None will detect automatically).
-    cat_cols : list of str, optional
-        Column names of categorical columns (if None will detect automatically).
     missing_values : {"remove", "interpolate", "mean", "zero"}, default: "zero"
         How to treat missing values.
     outlier_removal : {"clip", "boxplot", "z-score", "none"}, default: "clip"
@@ -105,6 +98,8 @@ class Pipeline(LoggingMixin):
         Threshold for removing collinear features.
     feature_timeout : int, default: 3600
         Time budget for feature processing.
+    use_wavelets : bool, default: False
+        Whether to use wavelet transforms (useful for frequency data)
 
     # Interval analysis
     interval_analyse : bool, default: False
@@ -175,20 +170,16 @@ class Pipeline(LoggingMixin):
         self,
         # Main settings
         main_dir: str = "Auto_ML/",
-        target: str | None = None,
+        target: str = "target",
         name: str = "AutoML",
-        version: int | None = None,
-        mode: str | None = None,
+        version: int = -1,
+        mode: str = "notset",
         objective: str | None = None,
         verbose: int = 1,
         logging_to_file: bool = False,
         logging_path: str = "AutoML.log",
         *,
         # Data processing
-        int_cols: list[str] | None = None,
-        float_cols: list[str] | None = None,
-        date_cols: list[str] | None = None,
-        cat_cols: list[str] | None = None,
         missing_values: str = "zero",
         outlier_removal: str = "clip",
         z_score_threshold: int = 4,
@@ -199,6 +190,7 @@ class Pipeline(LoggingMixin):
         extract_features: bool = True,
         information_threshold: float = 0.999,
         feature_timeout: int = 3600,
+        use_wavelets: bool = False,
         # Interval analysis
         interval_analyse: bool = True,
         # Sequencing
@@ -242,7 +234,7 @@ class Pipeline(LoggingMixin):
             utils.logging.add_file_handler(logging_path)
 
         # Input checks: validity
-        if mode not in (None, "regression", "classification"):
+        if mode not in ("notset", "regression", "classification"):
             raise ValueError("Supported models: {'regression', 'classification', None}")
         if not 0 < information_threshold < 1:
             raise ValueError("Information threshold must be within (0, 1) interval.")
@@ -270,10 +262,6 @@ class Pipeline(LoggingMixin):
         self.objective = objective
 
         # Data processing
-        self.int_cols = int_cols
-        self.float_cols = float_cols
-        self.date_cols = date_cols
-        self.cat_cols = cat_cols
         self.missing_values = missing_values
         self.outlier_removal = outlier_removal
         self.z_score_threshold = z_score_threshold
@@ -286,6 +274,7 @@ class Pipeline(LoggingMixin):
         self.extract_features = extract_features
         self.information_threshold = information_threshold
         self.feature_timeout = feature_timeout
+        self.use_wavelets = use_wavelets
 
         # Interval analysis
         self.use_interval_analyser = interval_analyse
@@ -348,19 +337,19 @@ class Pipeline(LoggingMixin):
         self.drift_detector = DriftDetector()
 
         # Instance initiating
-        self.best_model = None
-        self.best_model_str = None
-        self.best_feature_set = None
-        self.best_score = None
+        self.best_model: BasePredictor | None = None
+        self.best_model_str: str | None = None
+        self.best_feature_set: str | None = None
+        self.best_score: float | None = None
         self._data = None
-        self.feature_sets = None
-        self.results = None
-        self.n_classes = None
+        self.feature_sets: dict | None = None
+        self.results: pd.DataFrame | None = None
+        self.n_classes: int | None = None
         self.is_fitted = False
 
         # Monitoring
-        self._prediction_time = None
-        self._main_predictors = None
+        self._prediction_time: float | None = None
+        self._main_predictors: dict | None = None
 
     # User Pointing Functions
     def get_settings(self, version: int | None = None) -> dict:
@@ -380,7 +369,23 @@ class Pipeline(LoggingMixin):
             assert Path(
                 settings_path
             ).exists(), "Cannot load settings from nonexistent version"
-            return json.load(open(settings_path, "r"))
+            with open(settings_path, "r") as settings:
+                return json.load(settings)
+
+    def load(self):
+        """
+        Restores a pipeline from directory, given main_dir and version.
+        """
+        assert self.main_dir and self.version > -1
+
+        # Load settings
+        settings_path = self.main_dir + f"Production/v{self.version}/Settings.json"
+        with open(settings_path, "r") as settings:
+            self.load_settings(json.load(settings))
+
+        # Load model
+        model_path = self.main_dir + f"Production/v{self.version}/Model.joblib"
+        self.load_model(joblib.load(model_path))
 
     def load_settings(self, settings: dict):
         """
@@ -388,7 +393,8 @@ class Pipeline(LoggingMixin):
 
         Parameters
         ----------
-        settings [dict]: Pipeline settings
+        settings : dict
+            Pipeline settings.
         """
         # Set parameters
         settings["pipeline"]["no_dirs"] = True
@@ -399,12 +405,12 @@ class Pipeline(LoggingMixin):
         # TODO: load_settings for IntervalAnalyser (not yet implemented)
         if "drift_detector" in settings:
             self.drift_detector = DriftDetector(
-                num_cols=self.data_processor.float_cols + self.data_processor.int_cols,
+                num_cols=self.data_processor.num_cols,
                 cat_cols=self.data_processor.cat_cols,
                 date_cols=self.data_processor.date_cols,
             ).load_weights(settings["drift_detector"])
 
-    def load_model(self, model: object):
+    def load_model(self, model: BasePredictor):
         """
         Restores a trained model
         """
@@ -505,11 +511,7 @@ class Pipeline(LoggingMixin):
         self._data_processing()
 
         # Fit Drift Detector to input
-        num_cols = list(
-            set(self.x).intersection(
-                self.data_processor.float_cols + self.data_processor.int_cols
-            )
-        )
+        num_cols = list(set(self.x).intersection(self.data_processor.num_cols))
         date_cols = list(set(self.x).intersection(self.data_processor.date_cols))
         cat_cols = list(set(self.x) - set(num_cols + date_cols))
         self.drift_detector = DriftDetector(
@@ -622,14 +624,15 @@ class Pipeline(LoggingMixin):
 
     def convert_data(
         self, x: pd.DataFrame, preprocess: bool = True
-    ) -> Tuple[pd.DataFrame, pd.Series]:
+    ) -> tuple[pd.DataFrame, pd.Series | None]:
         """
         Function that uses the same process as the pipeline to clean data.
         Useful if pipeline is pickled for production
 
         Parameters
         ----------
-        data [pd.DataFrame]: Input features
+        data : pd.DataFrame
+            Input features.
         """
         # Convert to Pandas
         if isinstance(x, np.ndarray):
@@ -656,7 +659,8 @@ class Pipeline(LoggingMixin):
 
         # Sequence
         if self.sequence:
-            x, y = self.data_sequencer.convert(x, y)
+            self.logger.warn("Sequencer is temporarily disabled.", DeprecationWarning)
+            # x, y = self.data_sequencer.convert(x, y)
 
         # Convert Features
         x = self.feature_processor.transform(
@@ -665,13 +669,11 @@ class Pipeline(LoggingMixin):
 
         # Standardize
         if self.standardize:
+            assert isinstance(y, pd.Series)
             x, y = self._transform_standardize(x, y)
 
         # NaN test -- datetime should be taken care of by now
-        if (
-            x.astype("float32").replace([np.inf, -np.inf], np.nan).isna().sum().sum()
-            != 0
-        ):
+        if np.any(x.astype("float32").replace([np.inf, -np.inf], np.nan).isna()):
             raise ValueError(
                 f"Column(s) with NaN: {list(x.keys()[x.isna().sum() > 0])}"
             )
@@ -686,7 +688,8 @@ class Pipeline(LoggingMixin):
 
         Parameters
         ----------
-        data [pd.DataFrame]: data to do prediction on
+        data : pd.DataFrame
+            Data to do prediction on.
         """
         start_time = time.time()
         assert self.is_fitted, "Pipeline not yet fitted."
@@ -700,7 +703,10 @@ class Pipeline(LoggingMixin):
         x, y = self.convert_data(data)
 
         # Predict
+        assert self.best_model
         predictions = self.best_model.predict(x)
+
+        # Convert
         if self.mode == "regression" and self.standardize:
             predictions = self._inverse_standardize(predictions)
         elif self.mode == "classification":
@@ -722,7 +728,8 @@ class Pipeline(LoggingMixin):
 
         Parameters
         ----------
-        data [pd.DataFrame]: data to do prediction on
+        data : pd.DataFrame
+            Data to do prediction on.
         """
         start_time = time.time()
         assert self.is_fitted, "Pipeline not yet fitted."
@@ -792,9 +799,10 @@ class Pipeline(LoggingMixin):
         """
 
         # Allow target name to be set via __init__
-        target_name = utils.clean_feature_name(
+        target_name = (
             (target if isinstance(target, str) else None) or self.target or "target"
         )
+        clean_target_name = utils.clean_feature_name(target_name)
 
         # Read / set data
         if isinstance(data_or_path, (str, Path)):
@@ -817,8 +825,6 @@ class Pipeline(LoggingMixin):
         else:
             raise ValueError(f"Invalid type for `data_or_path`: {type(data_or_path)}")
 
-        data = utils.data.clean_keys(data)
-
         # Validate target
         if target is None or isinstance(target, str):
             if target_name not in data:
@@ -838,14 +844,27 @@ class Pipeline(LoggingMixin):
                 target.index = data.index
 
             if target_name in data:
-                raise ValueError(f"A '{target_name}' column already exists in `data`.")
-            data[target_name] = target
+                # Ignore when content is the same
+                if (data[target_name] != target).any():
+                    raise ValueError(
+                        f"The column '{target_name}' column already exists in `data` "
+                        f"but has different values."
+                    )
+            else:
+                data[target_name] = target
 
         else:
             raise ValueError("Invalid type for `target`.")
 
-        assert target_name in data, "Internal error: Target not in data."
-        self.target = target_name
+        # We clean the target but not the feature columns since the DataProcessor
+        # does not return the cleaned target name; just the clean feature columns.
+        if clean_target_name != target_name:
+            if clean_target_name in data:
+                msg = f"A '{clean_target_name}' column already exists in `data`."
+                raise ValueError(msg)
+            data = data.rename(columns={target_name: clean_target_name})
+        assert clean_target_name in data, "Internal error: Target not in data."
+        self.target = clean_target_name
 
         # Finish
         self._set_data(data)
@@ -881,7 +900,7 @@ class Pipeline(LoggingMixin):
         Detects the mode (Regression / Classification)
         """
         # Only run if mode is not provided
-        if self.mode is not None:
+        if self.mode in ("classification", "regression"):
             return
 
         # Classification if string
@@ -913,10 +932,6 @@ class Pipeline(LoggingMixin):
         """
         self.data_processor = DataProcessor(
             target=self.target,
-            int_cols=self.int_cols,
-            float_cols=self.float_cols,
-            date_cols=self.date_cols,
-            cat_cols=self.cat_cols,
             include_output=True,
             missing_values=self.missing_values,
             outlier_removal=self.outlier_removal,
@@ -924,25 +939,27 @@ class Pipeline(LoggingMixin):
         )
 
         # Set paths
-        extracted_data_path = self.main_dir + f"Data/Extracted_v{self.version}.csv"
-        data_path = self.main_dir + f"Data/Cleaned_v{self.version}.csv"
+        extracted_data_path = self.main_dir + f"Data/Extracted_v{self.version}.parquet"
+        data_path = self.main_dir + f"Data/Cleaned_v{self.version}.parquet"
         settings_path = self.main_dir + f"Settings/Cleaning_v{self.version}.json"
 
         # Only load settings if feature processor is done already.
         if Path(extracted_data_path).exists() and Path(settings_path).exists():
-            self.settings["data_processing"] = json.load(open(settings_path, "r"))
+            with open(settings_path, "r") as settings:
+                self.settings["data_processing"] = json.load(settings)
             self.data_processor.load_settings(self.settings["data_processing"])
+            return
 
         # Else, if data processor is done, load settings & data
         elif Path(data_path).exists() and Path(settings_path).exists():
             # Load data
-            data = self._read_csv(data_path)
+            data = self._read_df(data_path)
             self._set_data(data)
 
             # Load settings
-            self.settings["data_processing"] = json.load(open(settings_path, "r"))
+            with open(settings_path, "r") as settings:
+                self.settings["data_processing"] = json.load(settings)
             self.data_processor.load_settings(self.settings["data_processing"])
-
             self.logger.info("Loaded Cleaned Data")
 
         # Else, run the data processor
@@ -954,28 +971,23 @@ class Pipeline(LoggingMixin):
             self._set_data(data)
 
             # Store data
-            self._write_csv(self.data, data_path)
+            self._write_df(self.data, data_path)
 
             # Clean up Extracted previous version
             if os.path.exists(
-                self.main_dir + f"Data/Extracted_v{self.version - 1}.csv"
+                self.main_dir + f"Data/Extracted_v{self.version - 1}.parquet"
             ):
-                os.remove(self.main_dir + f"Data/Extracted_v{self.version - 1}.csv")
+                os.remove(self.main_dir + f"Data/Extracted_v{self.version - 1}.parquet")
 
             # Save settings
             self.settings["data_processing"] = self.data_processor.get_settings()
             if not self.no_dirs:
-                json.dump(self.settings["data_processing"], open(settings_path, "w"))
-
-        # If no columns were provided, load them from data processor
-        if self.date_cols is None:
-            self.date_cols = self.settings["data_processing"]["date_cols"]
-        if self.int_cols is None:
-            self.int_cols = self.settings["data_processing"]["int_cols"]
-        if self.float_cols is None:
-            self.float_cols = self.settings["data_processing"]["float_cols"]
-        if self.cat_cols is None:
-            self.cat_cols = self.settings["data_processing"]["cat_cols"]
+                with open(settings_path, "w") as settings:
+                    json.dump(
+                        self.settings["data_processing"],
+                        settings,
+                        cls=utils.io.NpEncoder,
+                    )
 
         # Assert classes in case of classification
         if self.mode == "classification":
@@ -986,7 +998,7 @@ class Pipeline(LoggingMixin):
                     "you may want to reconsider classification mode"
                 )
             if set(self.y) != set([i for i in range(len(set(self.y)))]):
-                raise ValueError("Classes should be [0, 1, ...]")
+                raise ValueError(f"Classes should be [0, 1, ...], not {set(self.y)}")
 
     def _eda(self):
         if not self.plot_eda:
@@ -1018,11 +1030,11 @@ class Pipeline(LoggingMixin):
             fast_run=False,
             objective=self.objective,
         )
-        data_path = self.main_dir + f"Data/Balanced_v{self.version}.csv"
+        data_path = self.main_dir + f"Data/Balanced_v{self.version}.parquet"
 
         if Path(data_path).exists():
             # Load data
-            data = self._read_csv(data_path)
+            data = self._read_df(data_path)
             self._set_data(data)
 
             self.logger.info("Loaded Balanced data")
@@ -1034,7 +1046,7 @@ class Pipeline(LoggingMixin):
 
             # Store
             self._set_xy(x, y)
-            self._write_csv(self.data, data_path)
+            self._write_df(self.data, data_path)
 
     def _sequencing(self):
         """
@@ -1050,11 +1062,11 @@ class Pipeline(LoggingMixin):
             shift=self.sequence_shift,
             diff=self.sequence_diff,
         )
-        data_path = self.main_dir + f"Data/Sequence_v{self.version}.csv"
+        data_path = self.main_dir + f"Data/Sequence_v{self.version}.parquet"
 
         if Path(data_path).exists():
             # Load data
-            data = self._read_csv(data_path)
+            data = self._read_df(data_path)
             self._set_data(data)
 
             self.logger.info("Loaded Extracted Features")
@@ -1066,7 +1078,7 @@ class Pipeline(LoggingMixin):
 
             # Store
             self._set_xy(x, y)
-            self._write_csv(self.data, data_path)
+            self._write_df(self.data, data_path)
 
     def _feature_processing(self):
         """
@@ -1076,22 +1088,24 @@ class Pipeline(LoggingMixin):
         self.feature_processor = FeatureProcessor(
             mode=self.mode,
             is_temporal=None,
+            use_wavelets=self.use_wavelets,
             extract_features=self.extract_features,
             collinear_threshold=self.information_threshold,
             verbose=self.verbose,
         )
 
         # Set paths
-        data_path = self.main_dir + f"Data/Extracted_v{self.version}.csv"
+        data_path = self.main_dir + f"Data/Extracted_v{self.version}.parquet"
         settings_path = self.main_dir + f"Settings/Extracting_v{self.version}.json"
 
         if Path(data_path).exists() and Path(settings_path).exists():
             # Loading data
-            data = self._read_csv(data_path)
+            data = self._read_df(data_path)
             self._set_data(data)
 
             # Loading settings
-            self.settings["feature_processing"] = json.load(open(settings_path, "r"))
+            with open(settings_path, "r") as settings:
+                self.settings["feature_processing"] = json.load(settings)
             self.feature_processor.load_settings(self.settings["feature_processing"])
             self.feature_sets = self.settings["feature_processing"]["feature_sets_"]
 
@@ -1108,16 +1122,21 @@ class Pipeline(LoggingMixin):
 
             # Store data
             self._set_xy(x, y)
-            self._write_csv(self.data, data_path)
+            self._write_df(self.data, data_path)
 
-            # Cleanup Cleaned_vx.csv
-            if os.path.exists(self.main_dir + f"Data/Cleaned_v{self.version}.csv"):
-                os.remove(self.main_dir + f"Data/Cleaned_v{self.version}.csv")
+            # Cleanup Cleaned_vx.parquet
+            if os.path.exists(self.main_dir + f"Data/Cleaned_v{self.version}.parquet"):
+                os.remove(self.main_dir + f"Data/Cleaned_v{self.version}.parquet")
 
             # Save settings
             self.settings["feature_processing"] = self.feature_processor.get_settings()
             if not self.no_dirs:
-                json.dump(self.settings["feature_processing"], open(settings_path, "w"))
+                with open(settings_path, "w") as settings:
+                    json.dump(
+                        self.settings["feature_processing"],
+                        settings,
+                        cls=utils.io.NpEncoder,
+                    )
 
     def _interval_analysis(self):
         """
@@ -1134,13 +1153,11 @@ class Pipeline(LoggingMixin):
         self.interval_analyser = IntervalAnalyser(target=self.target)
 
         # Set paths
-        data_path = self.main_dir + f"Data/Interval_Analyzed_v{self.version}.csv"
-        # settings_path = self.main_dir +
-        # f'Settings/Interval_Analysis_v{self.version}.json'
+        data_path = self.main_dir + f"Data/Interval_Analyzed_v{self.version}.parquet"
 
-        if Path(data_path).exists():  # TODO: and Path(settings_path).exists():
+        if Path(data_path).exists():
             # Load data
-            data = self._read_csv(data_path)
+            data = self._read_df(data_path)
             self._set_data(data)
 
             # TODO implement `IntervalAnalyser.load_settings` and add to
@@ -1159,13 +1176,13 @@ class Pipeline(LoggingMixin):
 
             # Store data
             self._set_data(data)
-            self._write_csv(self.data, data_path)
+            self._write_df(self.data, data_path)
 
             # TODO implement `IntervalAnalyser.get_settings` and add to
             #  `self.get_settings`
             # # Save settings
             # self.settings['interval_analysis'] = self.intervalAnalyser.get_settings()
-            # json.dump(self.settings['interval_analysis'], open(settings_path, 'w'))
+            # json.dump(self.settings['interval_analysis'], open(settings_path, 'w'), cls=utils.io.NpEncoder)
 
     def _standardizing(self):
         """
@@ -1180,14 +1197,18 @@ class Pipeline(LoggingMixin):
 
         if Path(settings_path).exists():
             # Load data
-            self.settings["standardize"] = json.load(open(settings_path, "r"))
+            with open(settings_path, "r") as settings:
+                self.settings["standardize"] = json.load(settings)
 
         else:
             # Fit data
             self._fit_standardize(self.x, self.y)
 
             # Store Settings
-            json.dump(self.settings["standardize"], open(settings_path, "w"))
+            with open(settings_path, "w") as settings:
+                json.dump(
+                    self.settings["standardize"], settings, cls=utils.io.NpEncoder
+                )
 
         # Transform data
         x, y = self._transform_standardize(self.x, self.y)
@@ -1230,6 +1251,7 @@ class Pipeline(LoggingMixin):
         if self.results is None or self.version not in self.results["version"].values:
 
             # Iterate through feature sets
+            assert self.feature_sets
             for feature_set, cols in self.feature_sets.items():
 
                 # Skip empty sets
@@ -1261,7 +1283,8 @@ class Pipeline(LoggingMixin):
                     self.results = pd.concat([self.results, results])
 
             # Save results
-            self._write_csv(self.results, results_path)
+            if not self.no_dirs:
+                self.results.to_csv(results_path)
 
     def grid_search(self, model=None, feature_set=None, parameter_set=None):
         """
@@ -1464,7 +1487,7 @@ class Pipeline(LoggingMixin):
                 "date": datetime.today().strftime("%d %b %y"),
                 "model": type(stack).__name__,
                 "dataset": feature_set,
-                "params": json.dumps(stack.get_params()),
+                "params": json.dumps(stack.get_params(), cls=utils.io.NpEncoder),
                 "mean_objective": np.mean(score),
                 "std_objective": np.std(score),
                 "mean_time": np.mean(times),
@@ -1659,7 +1682,8 @@ class Pipeline(LoggingMixin):
         self.settings["drift_detector"] = self.drift_detector.get_weights()
 
         # Save settings
-        json.dump(self.settings, open(settings_path, "w"), indent=4)
+        with open(settings_path, "w") as settings:
+            json.dump(self.settings, settings, indent=4, cls=utils.io.NpEncoder)
 
     # Getter Functions / Properties
     @property
@@ -1689,7 +1713,7 @@ class Pipeline(LoggingMixin):
             )
 
     @property
-    def data(self) -> Union[None, pd.DataFrame]:
+    def data(self) -> pd.DataFrame | None:
         return self._data
 
     @property
@@ -1723,15 +1747,15 @@ class Pipeline(LoggingMixin):
 
     def _set_xy(
         self,
-        new_x: Union[np.ndarray, pd.DataFrame],
-        new_y: Union[np.ndarray, pd.Series],
+        new_x: np.ndarray | pd.DataFrame,
+        new_y: np.ndarray | pd.Series,
     ):
         if not isinstance(new_y, pd.Series):
             new_y = pd.Series(new_y, name=self.target)
         new_data = pd.concat([new_x, new_y], axis=1)
         self._set_data(new_data)
 
-    def _set_x(self, new_x: Union[np.ndarray, pd.DataFrame]):
+    def _set_x(self, new_x: np.ndarray | pd.DataFrame):
         # Convert to dataframe
         if isinstance(new_x, np.ndarray):
             old_x = self.data.drop(self.target, axis=1)
@@ -1760,12 +1784,12 @@ class Pipeline(LoggingMixin):
         # Set data
         self._data = pd.concat([new_x, self.y], axis=1)
 
-    def set_y(self, new_y: Union[np.ndarray, pd.Series]):
+    def set_y(self, new_y: np.ndarray | pd.Series):
         self._data[self.target] = new_y
 
     # Support Functions
     @staticmethod
-    def _read_csv(data_path) -> pd.DataFrame:
+    def _read_df(data_path) -> pd.DataFrame:
         """
         Read data from given path and set index or multi-index
 
@@ -1773,23 +1797,11 @@ class Pipeline(LoggingMixin):
         ----------
         data_path : str or Path
         """
-        assert Path(data_path).suffix == ".csv", "Expected a *.csv path"
+        assert Path(data_path).suffix == ".parquet", "Expected a *.parquet path"
 
-        data = pd.read_csv(data_path)
+        return pd.read_parquet(data_path)
 
-        if {"index", "log"}.issubset(data.columns):
-            # Multi-index: case when IntervalAnalyser was used
-            index = ["log", "index"]
-        elif "index" in data.columns:
-            index = ["index"]
-        else:
-            raise IndexError(
-                "No known index was found. "
-                "Expected to find at least a column named `index`."
-            )
-        return data.set_index(index)
-
-    def _write_csv(self, data, data_path):
+    def _write_df(self, data, data_path):
         """
         Write data to given path and set index if needed.
 
@@ -1798,28 +1810,22 @@ class Pipeline(LoggingMixin):
         data : pd.DataFrame or pd.Series
         data_path : str or Path
         """
-        assert Path(data_path).suffix == ".csv", "Expected a *.csv path"
+        assert Path(data_path).suffix == ".parquet", "Expected a *.parquet path"
 
         # Set single-index if not already present
         if len(data.index.names) == 1 and data.index.name is None:
             data.index.name = "index"
 
-        # Raise error if unnamed index is present
-        if None in data.index.names:
-            raise IndexError(
-                f"Found an unnamed index column ({list(data.index.names)})."
-            )
-
         # Write data
         if not self.no_dirs:
-            data.to_csv(data_path)
+            data.to_parquet(data_path)
 
     def _load_version(self):
         """
         Upon start, loads version
         """
         # No need if version is set
-        if self.version is not None:
+        if self.version > -1:
             return
 
         # Find production folders
@@ -1882,7 +1888,7 @@ class Pipeline(LoggingMixin):
 
     def _transform_standardize(
         self, x: pd.DataFrame, y: pd.Series
-    ) -> Tuple[pd.DataFrame, pd.Series]:
+    ) -> tuple[pd.DataFrame, pd.Series]:
         """
         Standardizes the input and output with values from settings.
 
@@ -1960,7 +1966,7 @@ class Pipeline(LoggingMixin):
         return utils.io.parse_json(results.iloc[0]["params"])
 
     def _grid_search_iteration(
-        self, model, parameter_set: Union[str, None], feature_set: str
+        self, model, parameter_set: str | None, feature_set: str
     ):
         """
         INTERNAL | Grid search for defined model, parameter set and feature set.

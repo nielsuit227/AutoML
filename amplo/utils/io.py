@@ -10,6 +10,7 @@ from time import time
 from typing import TYPE_CHECKING, Iterable, cast
 from warnings import warn
 
+import numpy as np
 import pandas as pd
 from requests import HTTPError
 
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 __all__ = [
     "boolean_input",
     "parse_json",
+    "NpEncoder",
     "read_pandas",
     "get_file_metadata",
     "merge_folders",
@@ -40,6 +42,17 @@ FILE_READERS = {
     ".stata": pd.read_stata,
     ".pickle": pd.read_pickle,
 }
+
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)
 
 
 def boolean_input(question: str) -> bool:

@@ -88,12 +88,13 @@ class OptunaGridSearch(BaseGridSearch):
         elif p_type == "int":
             suggest = trial.suggest_int
         elif p_type == "logint":
-            p_kwargs += dict(log=True)
+            p_kwargs["log"] = True
             suggest = trial.suggest_int
         elif p_type == "uniform":
-            suggest = trial.suggest_uniform
+            suggest = trial.suggest_float
         elif p_type == "loguniform":
-            suggest = trial.suggest_loguniform
+            p_kwargs["log"] = True
+            suggest = trial.suggest_float
         else:
             raise NotImplementedError("Invalid parameter specification")
 
