@@ -195,12 +195,18 @@ def _read_files_in_folders(
         # Read files
         for file in sorted(files):
 
-            if blob_api:
-                datum = blob_api.read_pandas(file)
-                metadatum = blob_api.get_metadata(file)
-            else:
-                datum = read_pandas(file)
-                metadatum = get_file_metadata(file)
+            # read_pandas() may raise an EmptyDataError when the file has no content.
+            # The try...except catches such errors and warns the user instead.
+            try:
+                if blob_api:
+                    datum = blob_api.read_pandas(file)
+                    metadatum = blob_api.get_metadata(file)
+                else:
+                    datum = read_pandas(file)
+                    metadatum = get_file_metadata(file)
+            except pd.errors.EmptyDataError:
+                warn(f"Empty file detected and thus skipped: '{file}'")
+                continue
 
             if isinstance(datum, pd.Series):
                 datum = datum.to_frame()
