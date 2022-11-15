@@ -17,6 +17,7 @@ import pandas as pd
 import polars as pl
 import pywt
 from scipy import signal
+from tqdm import tqdm
 
 from amplo.automl.feature_processing._base import (
     BaseFeatureExtractor,
@@ -673,9 +674,9 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         counts = pd.Series(index=index, dtype=int).fillna(0).groupby(level=0).count()
 
         if self.mode == "classification":
-            # We'll make the window size such that on average there's 100 samples
-            # or that we have at least 1 window per log
-            ws = int(min(counts.min(), counts.mean() // 100))
+            # We'll make the window size such that on average there's 5 samples
+            # NOTE: ** IMPORTANT ** Window size CANNOT be small, it significantly slows down the window calculations.
+            ws = int(min(counts.min(), counts.mean() // 5))
 
         elif self.mode == "regression":
             ws = 1
@@ -807,10 +808,12 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             raise ValueError(f"Invalid instructions: {instruction}")
 
         # Pooling
+        self.logger.info("Pooling data")
         pooled_data = []
-        for col, instr in instruction.items():
+        for col, instr in tqdm(instruction.items(), disable=self.verbose == 0):
             agg_func = get_pool_functions(instr)
             # Apply
+            # Note: For many windows, this becomes slow (up to 2.5s per column
             pooled_col = pl_pool(data[col], self.window_size_, agg_func)
             pooled_data += [pooled_col]
         pooled_data = pd.concat(pooled_data, axis=1)
