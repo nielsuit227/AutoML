@@ -71,14 +71,6 @@ class TestPipelineByMode:
         )
         pipeline.fit(self.data)
 
-        # Test Directories
-        assert os.path.exists("Auto_ML")
-        assert os.path.exists("Auto_ML/Data")
-        assert os.path.exists("Auto_ML/Features")
-        assert os.path.exists("Auto_ML/Production")
-        assert os.path.exists("Auto_ML/Documentation")
-        assert os.path.exists("Auto_ML/Results.csv")
-
         if self.mode == "classification":
             # Pipeline Prediction
             prediction = pipeline.predict_proba(self.data)

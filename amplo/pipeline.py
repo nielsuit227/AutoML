@@ -23,7 +23,6 @@ from tqdm import tqdm
 
 import amplo
 from amplo import utils
-from amplo.automl.data_exploring import DataExplorer
 from amplo.automl.data_processing import DataProcessor
 from amplo.automl.data_sampling import DataSampler
 from amplo.automl.drift_detection import DriftDetector
@@ -57,11 +56,11 @@ class Pipeline(LoggingMixin):
     ----------
     # Main parameters
     main_dir : str, default: "Auto_ML/"
-        Main directory of pipeline (for documentation).
+        Main directory of pipeline
     target : str, optional
         Column name of the output variable.
     name : str, default: "AutoML"
-        Name of the project (for documentation).
+        Name of the project
     version : int, default: 1
         Pipeline version. Will automatically increment when a version exists.
     mode : {None, "classification", "regression"}, default: None
@@ -154,8 +153,6 @@ class Pipeline(LoggingMixin):
         Will be executed with `exec`, can be multi-line, uses data as input.
 
     # Flags
-    plot_eda : bool, default: False
-        Whether to run exploratory data analysis.
     process_data : bool, default: True
         Whether to force data processing.
     no_dirs : bool, default: False
@@ -215,7 +212,6 @@ class Pipeline(LoggingMixin):
         # Production
         preprocess_function: str | None = None,
         # Flags
-        plot_eda: bool = False,
         process_data: bool = True,
         no_dirs: bool = False,
         # Other
@@ -306,7 +302,6 @@ class Pipeline(LoggingMixin):
         self.preprocess_function = preprocess_function
 
         # Flags
-        self.plot_eda = plot_eda
         self.process_data = process_data
         self.no_dirs = no_dirs
 
@@ -519,9 +514,6 @@ class Pipeline(LoggingMixin):
         )
         self.drift_detector.fit(self.x)
 
-        # Run Exploratory Data Analysis
-        self._eda()
-
         # Balance data
         self._data_sampling()
 
@@ -550,7 +542,6 @@ class Pipeline(LoggingMixin):
         2. Grid Search
             Optimizes the hyperparameters of the best performing models
         3. (optional) Create Stacking model
-        4. (optional) Create documentation
 
         Parameters
         ----------
@@ -1001,20 +992,6 @@ class Pipeline(LoggingMixin):
             if set(self.y) != set([i for i in range(len(set(self.y)))]):
                 raise ValueError(f"Classes should be [0, 1, ...], not {set(self.y)}")
 
-    def _eda(self):
-        if not self.plot_eda:
-            return
-
-        self.logger.info("Starting Exploratory Data Analysis")
-        eda = DataExplorer(
-            self.x,
-            y=self.y,
-            mode=self.mode,
-            folder=self.main_dir,
-            version=self.version,
-        )
-        eda.run()
-
     def _data_sampling(self):
         """
         Only run for classification problems. Balances the data using imblearn.
@@ -1314,10 +1291,10 @@ class Pipeline(LoggingMixin):
         When both parameters, ``model`` and ``feature_set``, are provided, the grid
         search behaves as follows:
             - When both parameters are either of dtype ``str`` or have the same length,
-              then grid search will treat them as pairs.
+            then grid search will treat them as pairs.
             - When one parameter is an iterable and the other parameter is either a
-              string or an iterable of different length, then grid search will happen
-              for each unique combination of these parameters.
+            string or an iterable of different length, then grid search will happen
+            for each unique combination of these parameters.
         """
 
         # Skip grid search and set best initial model as best grid search parameters
@@ -1838,10 +1815,7 @@ class Pipeline(LoggingMixin):
     def _create_dirs(self):
         folders = [
             "",
-            "EDA",
             "Data",
-            "Features",
-            "Documentation",
             "Production",
             "Settings",
         ]

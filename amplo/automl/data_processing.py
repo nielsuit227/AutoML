@@ -378,15 +378,14 @@ class DataProcessor:
                         self.data[key] = numeric
                         continue
 
-                    # Check date (random subsample as it's expensive)
+                    # Check date
                     date = pd.to_datetime(
-                        self.data[key].astype("str"),
+                        f.astype("str"),
                         errors="coerce",
                         infer_datetime_format=True,
                     )
                     if date.isna().sum() < 0.3 * len(f):
                         self.date_cols.append(key)
-                        self.data[key] = date
                         continue
 
                     # Check categorical variable
@@ -421,13 +420,19 @@ class DataProcessor:
             self.data = data
         assert isinstance(self.data, pd.DataFrame)
 
-        # Drop Datetime columns, we don't use them.
+        # Drop Datetime columns
         if self.date_cols and self.drop_datetime:
             warnings.warn(
                 f"Data contains datetime columns but are removed: '{self.date_cols}'",
                 UserWarning,
             )
             self.data = self.data.drop(self.date_cols, axis=1)
+        # Or convert to datetime (before done only on subset)
+        elif self.date_cols:
+            for key in self.date_cols:
+                self.data[key] = pd.to_datetime(
+                    self.data[key], errors="coerce", infer_datetime_format=True
+                )
 
         # Integer columns
         for key in self.bool_cols:
@@ -441,17 +446,17 @@ class DataProcessor:
 
         # Categorical columns
         if fit_categorical:
-            self.data = self._fit_cat_cols()
+            self._fit_cat_cols()
         else:
             assert self.is_fitted, (
                 ".convert_data_types() was called with fit_categorical=False, while "
                 "categorical encoder is not yet fitted."
             )
-            self.data = self._transform_cat_cols()
+        self.data = self._transform_cat_cols()
 
         return self.data
 
-    def _fit_cat_cols(self, data=None) -> pd.DataFrame:
+    def _fit_cat_cols(self, data=None):
         """
         Encoding categorical variables always needs a scheme. This fits the scheme.
         """
@@ -462,19 +467,14 @@ class DataProcessor:
 
         for key in self.cat_cols:
             # Clean the categorical variables
-            is_nan = self.data[key].isna()
+            is_nan = self.data[key].isna().any()
             self.data[key] = self.data[key].apply(clean_feature_name)
-            self.data[key][is_nan] = None  # reset NaN value in order not to encode them
 
             # Get dummies, convert & store
-            dummies = pd.get_dummies(self.data[key], prefix=key)
-            self.data = pd.concat([self.data.drop(key, axis=1), dummies], axis=1)
+            dummies = pd.get_dummies(self.data[key], prefix=key, dummy_na=is_nan)
             self.dummies[key] = dummies.keys().tolist()
 
-            # Check for duplicates
-            # for column in self.data.keys()[self.data.columns.duplicated()]:
-
-        return self.data
+        return self
 
     def _transform_cat_cols(self, data=None) -> pd.DataFrame:
         """
@@ -661,23 +661,44 @@ class DataProcessor:
         elif self.missing_values == "zero":
             self.data = self.data.fillna(0)
 
+        # Mean and Interpolate require more than 1 value, use zero if less
+        elif self.missing_values in ("interpolate", "mean") and len(self.data) <= 1:
+            self.data = self.data.fillna(0)
+
         # Linearly interpolates missing values
         elif self.missing_values == "interpolate":
-
             # Get all non-date_cols & interpolate
-            ik = np.setdiff1d(self.data.keys().to_list(), self.date_cols)
-            self.data[ik] = self.data[ik].interpolate(limit_direction="both")
+            non_date = np.setdiff1d(self.data.keys().to_list(), self.date_cols)
+            self.data[non_date] = self.data[non_date].interpolate(
+                limit_direction="both"
+            )
 
             # Fill rest (date & more missing values cols)
-            if self.data.isna().sum().sum() != 0:
-                self.data = self.data.fillna(0)
+            self._interpolate_dates()
 
         # Fill missing values with column mean
         elif self.missing_values == "mean":
-            self.data = self.data.fillna(self.data.mean())
+            non_date = np.setdiff1d(self.data.keys().to_list(), self.date_cols)
+            self.data[non_date] = self.data[non_date].fillna(self.data.mean())
+
+            # Fill dates
+            self._interpolate_dates()
 
         assert isinstance(self.data, pd.DataFrame)
         return self.data
+
+    def _interpolate_dates(self):
+        """
+        Unfortunately pandas does not support this out of the box. PR was made, but
+        closed pre-merged. https://github.com/pandas-dev/pandas/pull/21915
+        """
+        assert isinstance(self.data, pd.DataFrame)
+        for key in self.date_cols:
+            if self.data[key].isna().any():
+                unix = self.data[key].astype("int64")
+                unix[unix < 0] = np.nan  # NaT are -9e10
+                unix = unix.interpolate(method="bfill").interpolate("pad")
+                self.data[key] = pd.to_datetime(unix, unit="ns")
 
     def convert_float_int(self, data=None) -> pd.DataFrame:
         """

@@ -74,7 +74,7 @@ class TestDataProcessor:
         )
         cleaned = dp.fit_transform(data)
 
-        assert {"b", "a_a", "a_b", "a_c", "c"} == set(
+        assert {"b", "a_a", "a_b", "a_nan", "a_c", "c"} == set(
             cleaned.columns
         ), "Unexpected columns"
         assert pd.api.types.is_float_dtype(cleaned["b"])
@@ -92,7 +92,7 @@ class TestDataProcessor:
         # Remove rows
         # Despite having NaNs in 3 rows, we expect only one row to be removed:
         # - "a" is categorical, thus encoded and has no NaNs anymore
-        # - "c" is datetime and thus completely dropped
+        # So we go from rows 5 -> 3, cols 4 -> 6
         dp = DataProcessor(missing_values="remove_rows")
         cleaned = dp.fit_transform(data)
         assert cleaned.shape == (3, 6), "Did not remove NaNs as expected"

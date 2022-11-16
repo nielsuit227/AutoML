@@ -3,7 +3,6 @@
 import warnings
 from typing import Union
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -252,8 +251,6 @@ class DriftDetector:
                             "params": params,
                         }
                     )
-                plt.legend(["Original"] + distributions)
-                plt.show()
 
                 # Select lowest
                 self.distributions[key] = fitted[np.argmin(distances)]
