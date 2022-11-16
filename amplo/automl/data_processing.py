@@ -449,19 +449,6 @@ class DataProcessor:
             )
             self.data = self._transform_cat_cols()
 
-        # We need everything to become numeric, so all that is not mentioned will be
-        # handled as numeric
-        all_cols = [
-            *self.num_cols,
-            *self.bool_cols,
-            # *self.date_cols,  # ignore datetime: we don't use them
-            *self.cat_cols,
-            self.target,
-        ]
-        for key in self.data.keys():
-            if key not in all_cols:
-                self.data[key] = pd.to_numeric(self.data[key], errors="coerce")
-
         return self.data
 
     def _fit_cat_cols(self, data=None) -> pd.DataFrame:
