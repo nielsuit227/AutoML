@@ -25,10 +25,11 @@ class DataProcessor:
         int_cols: list[str] | None = None,  # deprecated
         float_cols: list[str] | None = None,  # deprecated
         include_output: bool = True,
+        drop_datetime: bool = False,
+        remove_constants: bool = True,
         missing_values: str = "interpolate",
         outlier_removal: str = "clip",
         z_score_threshold: int = 4,
-        remove_constants: bool = True,
         version: int = 1,
         verbosity: int = 1,
     ):
@@ -55,14 +56,16 @@ class DataProcessor:
             Deprecated
         include_output : bool
             Whether to include output in the data
+        drop_datetime : bool
+            Whether to drop datetime columns
+        remove_constants : bool
+            If False, does not remove constant columns
         missing_values : {"remove_rows", "remove_cols", "interpolate", "mean", "zero"}
             How to deal with missing values.
         outlier_removal : {"quantiles", "z-score", "clip", "none"}
             How to deal with outliers.
         z_score_threshold : int
             If outlier_removal="z-score", the threshold is adaptable
-        remove_constants : bool
-            If False, does not remove constant columns
         version : int
             Versioning the output files
         verbosity : int
@@ -100,6 +103,7 @@ class DataProcessor:
         # Arguments
         self.version = version
         self.include_output = include_output
+        self.drop_datetime = drop_datetime
         self.target = target or None
         self.num_cols = num_cols or []
         self.bool_cols = bool_cols or []
@@ -418,7 +422,7 @@ class DataProcessor:
         assert isinstance(self.data, pd.DataFrame)
 
         # Drop Datetime columns, we don't use them.
-        if self.date_cols:
+        if self.date_cols and self.drop_datetime:
             warnings.warn(
                 f"Data contains datetime columns but are removed: '{self.date_cols}'",
                 UserWarning,
@@ -479,6 +483,10 @@ class DataProcessor:
             dummies = pd.get_dummies(self.data[key], prefix=key)
             self.data = pd.concat([self.data.drop(key, axis=1), dummies], axis=1)
             self.dummies[key] = dummies.keys().tolist()
+
+            # Check for duplicates
+            # for column in self.data.keys()[self.data.columns.duplicated()]:
+
         return self.data
 
     def _transform_cat_cols(self, data=None) -> pd.DataFrame:

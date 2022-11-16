@@ -330,7 +330,7 @@ class Pipeline(LoggingMixin):
 
         # Required sub-classes
         self.data_sampler = DataSampler()
-        self.data_processor = DataProcessor()
+        self.data_processor = DataProcessor(drop_datetime=True)
         self.data_sequencer = Sequencer()
         self.feature_processor = FeatureProcessor()
         self.interval_analyser = IntervalAnalyser()
@@ -933,6 +933,7 @@ class Pipeline(LoggingMixin):
         self.data_processor = DataProcessor(
             target=self.target,
             include_output=True,
+            drop_datetime=True,
             missing_values=self.missing_values,
             outlier_removal=self.outlier_removal,
             z_score_threshold=self.z_score_threshold,

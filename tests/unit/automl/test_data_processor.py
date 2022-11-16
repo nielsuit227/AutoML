@@ -46,7 +46,7 @@ class TestDataProcessor:
         cleaned = dp.fit_transform(data)
         assert cleaned["a"].astype(int).tolist() == [1, 2, 3, 4, 5]
 
-    def test_type_detector(self):
+    def test_type_detector_no_nan(self):
         dp = DataProcessor()
         data = pd.DataFrame(
             {
@@ -56,8 +56,11 @@ class TestDataProcessor:
             }
         )
         cleaned = dp.fit_transform(data)
+        print(cleaned.head())
 
-        assert {"b", "a_a", "a_b", "a_c"} == set(cleaned.columns), "Unexpected columns"
+        assert {"b", "a_a", "a_b", "a_c", "c"} == set(
+            cleaned.columns
+        ), "Unexpected columns"
         assert pd.api.types.is_float_dtype(cleaned["b"])
 
     def test_type_detector_with_nan(self):
@@ -71,7 +74,9 @@ class TestDataProcessor:
         )
         cleaned = dp.fit_transform(data)
 
-        assert {"b", "a_a", "a_b", "a_c"} == set(cleaned.columns), "Unexpected columns"
+        assert {"b", "a_a", "a_b", "a_c", "c"} == set(
+            cleaned.columns
+        ), "Unexpected columns"
         assert pd.api.types.is_float_dtype(cleaned["b"])
 
     def test_missing_values(self):
@@ -90,14 +95,14 @@ class TestDataProcessor:
         # - "c" is datetime and thus completely dropped
         dp = DataProcessor(missing_values="remove_rows")
         cleaned = dp.fit_transform(data)
-        assert cleaned.shape == (4, 5), "Did not remove NaNs as expected"
+        assert cleaned.shape == (4, 6), "Did not remove NaNs as expected"
         assert not cleaned.isna().values.any(), "DataFrame still contains NaNs"
 
         # Remove cols
         # Similar argumentation as above.
         dp = DataProcessor(missing_values="remove_cols")
         cleaned = dp.fit_transform(data)
-        assert cleaned.shape == (5, 4), "Did not remove NaNs as expected"
+        assert cleaned.shape == (5, 5), "Did not remove NaNs as expected"
         assert not cleaned.isna().values.any(), "DataFrame still contains NaNs"
 
         # Replace with 0
