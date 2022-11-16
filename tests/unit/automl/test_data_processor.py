@@ -95,7 +95,7 @@ class TestDataProcessor:
         # - "c" is datetime and thus completely dropped
         dp = DataProcessor(missing_values="remove_rows")
         cleaned = dp.fit_transform(data)
-        assert cleaned.shape == (4, 6), "Did not remove NaNs as expected"
+        assert cleaned.shape == (3, 6), "Did not remove NaNs as expected"
         assert not cleaned.isna().values.any(), "DataFrame still contains NaNs"
 
         # Remove cols
