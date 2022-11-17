@@ -254,11 +254,8 @@ def upload_model(
         ("version", version, (str, int)),
     )
 
-    # Set model directory to the requested version
-    model_dir = Path(model_dir) / "Production" / str(_format_version(version))
-
     # Check directory
-    model_dir = Path(model_dir)
+    model_dir = Path(model_dir) / str(_format_version)
     if not model_dir.is_dir():
         raise NotADirectoryError(f"Invalid `model_dir` directory: {model_dir}")
 
