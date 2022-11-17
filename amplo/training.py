@@ -7,6 +7,7 @@ import shutil
 from copy import deepcopy
 from pathlib import Path
 from typing import cast
+from warnings import warn
 
 from azure.core.exceptions import ResourceNotFoundError
 from requests import HTTPError
@@ -290,6 +291,7 @@ def train_on_cloud(
     pipe_kwargs: dict | None = None,
     model_version: int = 1,
     *,
+    train_id: int | None = None,
     host_os: str | None = None,
     access_token_os: str | None = None,
 ) -> dict[str, int]:
@@ -300,7 +302,7 @@ def train_on_cloud(
     -----
     Make sure to have set the following environment variables:
         - ``DATABRICKS_INSTANCE``
-          (see https://docs.microsoft.com/en-us/azure/databricks/dev-tools/api/latest/authentication).
+        (see https://docs.microsoft.com/en-us/azure/databricks/dev-tools/api/latest/authentication).
         - ``DATABRICKS_ACCESS_TOKEN`` (see Databricks > User Settings > Access tokens).
 
     Note two important differences to ``DatabricksJobsAPI.run_job``.
@@ -326,6 +328,8 @@ def train_on_cloud(
         Keyword arguments for pipeline. Note that defaults will be set.
     model_version : int, default: 1
         Model version.
+    train_id : int, optional for now
+        Training ID, used for error handling. Will be a required parameter in future editions.
     host_os : str, optional, default: None
         Key in the os environment for the Databricks host.
     access_token_os : str, optional, default: None
@@ -337,6 +341,8 @@ def train_on_cloud(
         If response is success (200), ``run_id`` (globally unique key of newly triggered
         run) is one of the present keys.
     """
+    if not train_id:
+        warn("train_id will be a required parameter in the future.", DeprecationWarning)
 
     # Input checks
     pipe_kwargs = _set_default_pipe_kwargs(
@@ -356,6 +362,7 @@ def train_on_cloud(
         "service": service,
         "issue": issue,
         "model_id": model_id,
+        "train_id": train_id,
         "pipe_kwargs": json.dumps(pipe_kwargs),
     }
 
