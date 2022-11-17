@@ -255,7 +255,7 @@ def upload_model(
     )
 
     # Check directory
-    model_dir = Path(model_dir) / str(_format_version)
+    model_dir = Path(model_dir) / str(_format_version(version))
     if not model_dir.is_dir():
         raise NotADirectoryError(f"Invalid `model_dir` directory: {model_dir}")
 
