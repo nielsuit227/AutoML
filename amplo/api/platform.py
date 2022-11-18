@@ -193,7 +193,7 @@ class AmploPlatformAPI(BaseRequestAPI):
 
 
 def upload_model(
-    model_id: int,
+    train_id: int,
     model_dir: str | Path,
     team: str,
     machine: str,
@@ -245,7 +245,7 @@ def upload_model(
     """
 
     check_dtypes(
-        ("model_id", model_id, int),
+        ("train_id", train_id, int),
         ("model_dir", model_dir, (str, Path)),
         ("team", team, str),
         ("machine", machine, str),
@@ -269,11 +269,11 @@ def upload_model(
 
     # Check that the training of the model exists
     api = AmploPlatformAPI.from_os_env(host, access_token_os)
-    trainings = api.list_trainings(team, machine, service, issue, version, id=model_id)
+    trainings = api.list_trainings(team, machine, service, issue, version)
     if len(trainings) != 1:
         raise ValueError("There exists no training with the given parameters.")
 
-    return api.upload_training(team, machine, model_id, model_files)
+    return api.upload_training(team, machine, train_id, model_files)
 
 
 def report_training_fail(
