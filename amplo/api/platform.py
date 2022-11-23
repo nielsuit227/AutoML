@@ -162,10 +162,9 @@ class AmploPlatformAPI(BaseRequestAPI):
             "team": team,
             "machine": machine,
             "id": training_id,
-            "files": files,
             "new_status": status,
         }
-        return super().request("put", "trainings", data=data)
+        return super().request("put", "trainings", data=data, files=files)
 
     def get_datalogs(
         self,
@@ -265,7 +264,7 @@ def upload_model(
         if not (model_dir / file).exists():
             raise FileNotFoundError(f"File '{file}' not found in '{model_dir}'.")
         io = open(model_dir / file, "r")
-        model_files.append(io)
+        model_files.append(("files", io))
 
     # Check that the training of the model exists
     api = AmploPlatformAPI.from_os_env(host, access_token_os)
@@ -273,7 +272,7 @@ def upload_model(
     if len(trainings) != 1:
         raise ValueError("There exists no training with the given parameters.")
 
-    return api.upload_training(team, machine, train_id, model_files)
+    return api.upload_training(team, machine, train_id, model_files, status=2)
 
 
 def report_training_fail(
