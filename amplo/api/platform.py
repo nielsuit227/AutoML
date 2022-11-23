@@ -263,7 +263,7 @@ def upload_model(
     for file in ("Settings.json", "Model.joblib"):
         if not (model_dir / file).exists():
             raise FileNotFoundError(f"File '{file}' not found in '{model_dir}'.")
-        io = open(model_dir / file, "r")
+        io = open(model_dir / file, "rb")
         model_files.append(("files", io))
 
     # Check that the training of the model exists
