@@ -85,16 +85,12 @@ class ModelValidator(LoggingMixin):
             self.logger.info(f"{name} {values[0]:.2f} \u00B1 {values[1]:.2f}")
 
         cm = np.array(metrics.get("confusion_matrix", []))
-        if mode == "classification" and cm.shape == (2, 2, 2):
-            cm_text = []
-            for mean, std in zip(cm[0].ravel(), cm[1].ravel()):
-                cm_text.append(f"{mean:.2f} \u00B1 {std:.2f}".ljust(12))
-
+        if mode == "classification" and cm.shape == (2, 2):
             for line in [
                 "Confusion Matrix:",
                 "  actual / predicted  |    Negative    |    Positive    |",
-                f"            Negative  |  {cm_text[0]}  |  {cm_text[1]}  |",
-                f"            Positive  |  {cm_text[2]}  |  {cm_text[3]}  |",
+                f"            Negative  |  {f'{cm[0][0]}'.rjust(12)}  |  {f'{cm[0][1]}'.rjust(12)}  |",
+                f"            Positive  |  {f'{cm[1][0]}'.rjust(12)}  |  {f'{cm[1][1]}'.rjust(12)}  |",
             ]:
                 self.logger.info(line)
 
@@ -184,17 +180,14 @@ class ModelValidator(LoggingMixin):
             metrics[name] = [np.mean(values), np.std(values)]
 
         # Add confusion matrix metrics
-        cm_totals = np.sum(cm, axis=(1, 2), keepdims=True)
-        cm_means = np.mean(cm / cm_totals, axis=0)
-        cm_stds = np.std(cm / cm_totals, axis=0)
-        del cm_totals
-        metrics["confusion_matrix"] = [cm_means.tolist(), cm_stds.tolist()]
+        cm_total = np.sum(cm, axis=0)
+        metrics["confusion_matrix"] = cm_total
 
         if is_binary:
-            metrics["true_positives"] = [cm_means[0, 0], cm_stds[0, 0]]
-            metrics["false_positives"] = [cm_means[0, 1], cm_stds[0, 1]]
-            metrics["true_negatives"] = [cm_means[1, 0], cm_stds[1, 0]]
-            metrics["false_negatives"] = [cm_means[1, 1], cm_stds[1, 1]]
+            metrics["true_positives"] = cm_total[0, 0]
+            metrics["false_positives"] = cm_total[0, 1]
+            metrics["true_negatives"] = cm_total[1, 1]
+            metrics["false_negatives"] = cm_total[1, 0]
 
         return metrics
 
