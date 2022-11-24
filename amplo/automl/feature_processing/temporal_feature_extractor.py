@@ -355,12 +355,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         x, y = self._fit_data_to_window_size(x, y)
 
         # Calculate baseline scores (w/o taking time into account)
-        rng = np.random.default_rng(384432)
-        random_idxs = rng.choice(
-            list(range(y.shape[0])), min(10_000, y.shape[0]), replace=False
-        )
-        self._init_feature_baseline_scores(x.iloc[random_idxs], y.iloc[random_idxs])
-        del rng, random_idxs
+        self._init_feature_baseline_scores(x, y)
 
         # Fit features
         y_pooled = self._pool_target(y)
