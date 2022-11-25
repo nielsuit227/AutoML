@@ -88,9 +88,9 @@ class ModelValidator(LoggingMixin):
         if mode == "classification" and cm.shape == (2, 2):
             for line in [
                 "Confusion Matrix:",
-                "  actual / predicted  |    Negative    |    Positive    |",
-                f"            Negative  |  {f'{cm[0][0]}'.rjust(12)}  |  {f'{cm[0][1]}'.rjust(12)}  |",
-                f"            Positive  |  {f'{cm[1][0]}'.rjust(12)}  |  {f'{cm[1][1]}'.rjust(12)}  |",
+                "Predicted \ actual  |    Positive    |    Negative    |",
+                f"          Positive  |  {f'{cm[1][1]}'.rjust(12)}  |  {f'{cm[0][1]}'.rjust(12)}  |",
+                f"          Negative  |  {f'{cm[1][0]}'.rjust(12)}  |  {f'{cm[0][0]}'.rjust(12)}  |",
             ]:
                 self.logger.info(line)
 
