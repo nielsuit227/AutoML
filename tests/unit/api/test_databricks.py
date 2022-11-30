@@ -45,7 +45,7 @@ class TestDatabricksJobsAPI:
     def test_get_run(self):
         # Find an existing run
         runs = self.api.list_runs(limit=1).get("runs")
-        if len(runs) == 0:
+        if not runs or len(runs) == 0:
             pytest.skip("There exists no run.")
         run_id = runs[0]["run_id"]
 
@@ -85,7 +85,7 @@ class TestDatabricksTrainOnCloudNotebook:
         # Assert that `upload_models` is present and accepts those keyword arguments
         func_params = signature(upload_model).parameters.keys()
         expected_func_params = [
-            "model_id",
+            "train_id",
             "model_dir",
             "team",
             "machine",

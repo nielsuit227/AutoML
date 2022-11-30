@@ -1,10 +1,11 @@
 #  Copyright (c) 2022 by Amplo.
+from __future__ import annotations
 
 import os
 import time
 from copy import deepcopy
 from datetime import datetime
-from typing import TypeVar
+from typing import Optional, TypeVar
 
 import joblib
 import numpy as np
@@ -106,48 +107,37 @@ class Modeller:
 
     def __init__(
         self,
-        mode="regression",
-        cv=None,
-        objective="accuracy",
-        samples=None,
-        needs_proba=True,
-        folder="",
-        dataset="set_0",
-        store_models=False,
-        store_results=True,
+        mode: str = "regression",
+        cv: Optional[model_selection.BaseCrossValidator] = None,
+        objective: str = "accuracy",
+        samples: Optional[int] = None,
+        needs_proba: bool = True,
+        folder: str = "",
+        dataset: str = "set_0",
+        store_models: bool = False,
+        store_results: bool = True,
     ):
-        # Check input
-        check_dtypes(
-            ("mode", mode, str),
-            ("objective", objective, str),
-            ("samples", samples, (type(None), int)),
-            ("folder", folder, str),
-            ("dataset", dataset, str),
-            ("store_models", store_models, bool),
-            ("store_results", store_results, bool),
-        )
         if mode not in ("classification", "regression"):
             raise ValueError(f"Unsupported mode: {mode}")
 
         # Parameters
         self.cv = cv
         self.objective = objective
-        self.scoring = metrics.get_scorer(objective)
         self.mode = mode
         self.samples = samples
         self.dataset = str(dataset)
         self.store_results = store_results
         self.store_models = store_models
+        self.needs_proba = needs_proba
         self.results = pd.DataFrame(
             columns=[
                 "date",
                 "model",
                 "dataset",
                 "params",
-                "mean_objective",
-                "std_objective",
-                "mean_time",
-                "std_time",
+                "score",
+                "worst_case",
+                "time",
             ]
         )
 
@@ -164,13 +154,65 @@ class Modeller:
             if not os.path.exists(self.folder):
                 os.makedirs(self.folder)
 
-        self.needs_proba = needs_proba
-
     def fit(self, x, y):
         # Copy number of samples
         self.samples = len(y)
 
-        return self._fit(x, y)
+        # Convert to NumPy
+        x = np.array(x)
+        y = np.array(y).ravel()
+
+        if self.store_results and "Initial_Models.csv" in os.listdir(self.folder):
+            self.results = pd.read_csv(self.folder + "Initial_Models.csv")
+            for i in range(len(self.results)):
+                self.print_results(self.results.iloc[i])
+
+        else:
+
+            # Models
+            self.models = self.return_models()
+
+            # Loop through models
+            for model in self.models:
+
+                # Time & loops through Cross-Validation
+                t_start = time.time()
+                scores = model_selection.cross_val_score(
+                    model, x, y, scoring=self.objective
+                )
+                score = sum(scores) / len(scores)
+                run_time = time.time() - t_start
+
+                # Append results
+                result = {
+                    "date": datetime.today().strftime("%d %b %y"),
+                    "model": type(model).__name__,
+                    "dataset": self.dataset,
+                    "params": model.get_params(),
+                    "score": score,
+                    "worst_case": np.mean(scores) - np.std(scores),
+                    "time": run_time,
+                }
+                self.results = pd.concat(
+                    [self.results, pd.Series(result).to_frame().T], ignore_index=True
+                )
+                self.print_results(result)
+
+                # Store model
+                if self.store_models:
+                    joblib.dump(
+                        model,
+                        self.folder
+                        + type(model).__name__
+                        + "_{:.4f}.joblib".format(score),
+                    )
+
+            # Store CSV
+            if self.store_results:
+                self.results.to_csv(self.folder + "Initial_Models.csv")
+
+        # Return results
+        return self.results
 
     def return_models(self):
         """
@@ -225,77 +267,12 @@ class Modeller:
 
         return models
 
-    def _fit(self, x, y):
-        # Convert to NumPy
-        x = np.array(x)
-        y = np.array(y).ravel()
-
-        if self.store_results and "Initial_Models.csv" in os.listdir(self.folder):
-            self.results = pd.read_csv(self.folder + "Initial_Models.csv")
-            for i in range(len(self.results)):
-                self.print_results(self.results.iloc[i])
-
-        else:
-
-            # Models
-            self.models = self.return_models()
-
-            # Loop through models
-            for master_model in self.models:
-
-                # Time & loops through Cross-Validation
-                val_score = []
-                train_score = []
-                train_time = []
-                for t, v in self.cv.split(x, y):
-                    t_start = time.time()
-                    xt, xv, yt, yv = x[t], x[v], y[t], y[v]
-                    model = deepcopy(master_model)
-                    model.fit(xt, yt)
-                    val_score.append(self.scoring(model, xv, yv))
-                    train_score.append(self.scoring(model, xt, yt))
-                    train_time.append(time.time() - t_start)
-
-                # Append results
-                result = {
-                    "date": datetime.today().strftime("%d %b %y"),
-                    "model": type(model).__name__,
-                    "dataset": self.dataset,
-                    "params": model.get_params(),
-                    "mean_objective": np.mean(val_score),
-                    "std_objective": np.std(val_score),
-                    "worst_case": np.mean(val_score) - np.std(val_score),
-                    "mean_time": np.mean(train_time),
-                    "std_time": np.std(train_time),
-                }
-                self.results = pd.concat(
-                    [self.results, pd.Series(result).to_frame().T], ignore_index=True
-                )
-                self.print_results(result)
-
-                # Store model
-                if self.store_models:
-                    joblib.dump(
-                        model,
-                        self.folder
-                        + type(model).__name__
-                        + "_{:.4f}.joblib".format(np.mean(val_score)),
-                    )
-
-            # Store CSV
-            if self.store_results:
-                self.results.to_csv(self.folder + "Initial_Models.csv")
-
-        # Return results
-        return self.results
-
     def print_results(self, result):
         logger.info(
-            "{} {}: {} \u00B1 {},    training time: {:.1f} s".format(
+            "{} {}: {}    training time: {:.1f} s".format(
                 result["model"].ljust(30),
                 self.objective,
-                f"{result['mean_objective']:.4f}",
-                f"{result['std_objective']:.4f}",
-                result["mean_time"],
+                f"{result['worst_case']:.4f}".ljust(15),
+                result["time"],
             )
         )

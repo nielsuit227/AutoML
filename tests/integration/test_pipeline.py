@@ -27,6 +27,10 @@ def make_mode(request, target="target"):
 
 @pytest.mark.usefixtures("make_mode")
 class TestPipelineByMode:
+    target: str
+    mode: str
+    data: pd.DataFrame
+
     def test_mode_detector(self):
         # Numerical test
         pipeline = Pipeline(no_dirs=True, target=self.target)
@@ -52,7 +56,7 @@ class TestPipelineByMode:
         # Fit pipeline
         pipeline = Pipeline(
             target=self.target,
-            grid_search_type=None,
+            n_grid_searches=0,
             stacking=True,
             extract_features=False,
         )
@@ -64,10 +68,7 @@ class TestPipelineByMode:
             mode=self.mode,
             objective="r2" if self.mode == "regression" else "neg_log_loss",
             n_grid_searches=0,
-            plot_eda=False,
-            process_data=False,
             extract_features=False,
-            document_results=False,
         )
         pipeline.fit(self.data)
 
@@ -82,7 +83,7 @@ class TestPipelineByMode:
             x = pipeline.x[pipeline.settings["features"]]
             y = self.data[self.target]
             assert np.allclose(
-                c.values, x.values
+                c.values, x.values  # type: ignore
             ), f"Inconsistent X: max diff: {np.max(abs(c.values - x.values)):.2e}"
             assert np.allclose(y, pipeline.y), "Inconsistent y-data"
 
@@ -135,7 +136,7 @@ class TestPipeline:
         make_interval_data(directory=data_dir)
 
         # Pipeline
-        pipeline = Pipeline(n_grid_searches=0)
+        pipeline = Pipeline(n_grid_searches=0, extract_features=False)
         pipeline.fit(data_dir)
 
         # Check if IntervalAnalyser is fitted
@@ -145,7 +146,10 @@ class TestPipeline:
         assert Path(
             "Auto_ML/Data/Interval_Analyzed_v1.parquet"
         ).exists(), "Interval-analyzed data was not properly stored"
-        assert list(pipeline.data.index.names) == ["log", "index"], "Index is incorrect"
+        assert pipeline.data is not None and list(pipeline.data.index.names) == [
+            "log",
+            "index",
+        ], "Index is incorrect"
         # TODO: add checks for settings
 
         # Remove dummy data
@@ -159,7 +163,7 @@ class TestPipeline:
             )
         ).T
         y = np.linspace(0, 10, 12)
-        pipeline = Pipeline(n_grid_searches=0)
+        pipeline = Pipeline(n_grid_searches=0, extract_features=False)
         pipeline.fit(x, y)
 
         # Do the same, but with temporal
@@ -187,4 +191,4 @@ class TestPipeline:
             }
         )
         yp = pipeline.predict_proba(df)
-        assert np.allclose(yp, [[0.16389499, 0.83610501]])
+        assert np.allclose(yp, np.array([[0.16389499, 0.83610501]]))

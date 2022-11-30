@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import copy
-import itertools
 import json
 import os
 import time
 from datetime import datetime
 from inspect import signature
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from warnings import warn
 
 import joblib
@@ -31,13 +30,13 @@ from amplo.automl.feature_processing.feature_processor import (
     get_required_columns,
     translate_features,
 )
+from amplo.automl.grid_search import OptunaGridSearch
 from amplo.automl.interval_analysis import IntervalAnalyser
 from amplo.automl.modelling import Modeller
 from amplo.automl.sequencing import Sequencer
 from amplo.base import BasePredictor
 from amplo.base.objects import LoggingMixin
 from amplo.classification.stacking import StackingClassifier
-from amplo.grid_search import ExhaustiveGridSearch, HalvingGridSearch, OptunaGridSearch
 from amplo.observation import DataObserver, ModelObserver
 from amplo.regression.stacking import StackingRegressor
 from amplo.validation import ModelValidator
@@ -133,8 +132,6 @@ class Pipeline(LoggingMixin):
         Whether to store all trained model files.
 
     # Grid search
-    grid_search_type : {"exhaustive", "halving", "optuna"}, default: "optuna"
-        Type of grid search to apply.
     grid_search_timeout : int, default: 3600
         Time budget for grid search (in seconds).
     n_grid_searches : int, default: 3
@@ -203,7 +200,6 @@ class Pipeline(LoggingMixin):
         cv_splits: int = 10,
         store_models: bool = False,
         # Grid search
-        grid_search_type: str = "optuna",
         grid_search_timeout: int = 3600,
         n_grid_searches: int = 3,
         n_trials_per_grid_search: int = 250,
@@ -234,12 +230,6 @@ class Pipeline(LoggingMixin):
             raise ValueError("Supported models: {'regression', 'classification', None}")
         if not 0 < information_threshold < 1:
             raise ValueError("Information threshold must be within (0, 1) interval.")
-        valid_gs_types = {"exhaustive", "halving", "optuna"}
-        if (
-            grid_search_type is not None
-            and grid_search_type.lower() not in valid_gs_types
-        ):
-            raise ValueError(f"Grid search type must be one of: {valid_gs_types}")
 
         # Warn unused parameters
         if kwargs:
@@ -290,7 +280,6 @@ class Pipeline(LoggingMixin):
         self.store_models = store_models
 
         # Grid search
-        self.grid_search_type = grid_search_type
         self.grid_search_timeout = grid_search_timeout
         self.n_grid_searches = n_grid_searches
         self.n_trials_per_grid_search = n_trials_per_grid_search
@@ -421,7 +410,6 @@ class Pipeline(LoggingMixin):
         metadata: dict[int, dict[str, str | float]] | None = None,
         model: str | list[str] | None = None,
         feature_set: str | list[str] | None = None,
-        parameter_set: dict | None = None,
         params: dict | None = None,
     ):
         """
@@ -447,8 +435,6 @@ class Pipeline(LoggingMixin):
             Constrain grid search and fitting conclusion to given feature set(s).
             Propagated to `self.model_training` and `self.conclude_fitting`.
             Options: {rf_threshold, rf_increment, shap_threshold, shap_increment}
-        parameter_set : dict, optional
-            Parameter grid to optimize over. Propagated to `self.model_training`.
         params : dict, optional
             Constrain parameters for fitting conclusion.
             Propagated to `self.conclude_fitting`.
@@ -463,9 +449,7 @@ class Pipeline(LoggingMixin):
         )
 
         # Train / optimize models
-        self.model_training(
-            model=model, feature_set=feature_set, parameter_set=parameter_set
-        )
+        self.model_training(model=model, feature_set=feature_set)
 
         # Conclude fitting
         self.conclude_fitting(model=model, feature_set=feature_set, params=params)
@@ -1264,27 +1248,25 @@ class Pipeline(LoggingMixin):
             if not self.no_dirs:
                 self.results.to_csv(results_path)
 
-    def grid_search(self, model=None, feature_set=None, parameter_set=None):
+    def grid_search(
+        self, model: Optional[str] = None, feature_set: str = "rf_threshold"
+    ) -> Pipeline:
         """
         Runs a grid search.
 
         By default, takes ``self.results`` and runs for the top ``n =
         self.n_grid_searches`` optimizations. There is the option to provide ``model``
         and ``feature_set``, but **both** have to be provided. In this case, the model
-        and dataset combination will be optimized.
-
-        Implemented types, Exhaustive, Halving, Optuna.
+        and feature_set combination will be optimized.
 
         Parameters
         ----------
-        model : list of (str or object) or object or str, optional
+        model : str, optional
             Which model to run grid search for.
-        feature_set : list of str or str, optional
+        feature_set : str, default = rf_threshold
             Which feature set to run gid search for. Must be provided when `model` is
             not None.
             Options: {rf_threshold, rf_increment, shap_threshold, shap_increment}
-        parameter_set : dict, optional
-            Parameter grid to optimize over.
 
         Notes
         -----
@@ -1296,88 +1278,60 @@ class Pipeline(LoggingMixin):
             string or an iterable of different length, then grid search will happen
             for each unique combination of these parameters.
         """
+        assert self.mode
+        assert self.x is not None
+        assert self.feature_sets is not None
+        assert self.objective
+        assert self.cv
+        assert self.results is not None and len(self.results) > 0
 
-        # Skip grid search and set best initial model as best grid search parameters
-        if self.grid_search_type is None or self.n_grid_searches == 0:
-            best_initial_model = self._sort_results(
-                self.results[self.results["version"] == self.version]
-            ).iloc[:1]
-            best_initial_model["type"] = "Hyper Parameter"
-            self.results = pd.concat(
-                [self.results, best_initial_model], ignore_index=True
-            )
-            return self
-
-        # Define models
-        if model is None:
-            # Run through first best initial models (n = self.n_grid_searches)
-            selected_results = self.sort_results(
+        # Define iterations
+        if model and feature_set:
+            iterations = [(model, feature_set)]
+        else:
+            # Get best n model / feature set combinations
+            current_results = self._sort_results(
                 self.results[
                     np.logical_and(
                         self.results["type"] == "Initial modelling",
                         self.results["version"] == self.version,
                     )
                 ]
-            ).iloc[: self.n_grid_searches]
-            models = [
-                utils.get_model(model_name, mode=self.mode, samples=len(self.x))
-                for model_name in selected_results["model"]
-            ]
-            feature_sets = selected_results["dataset"]
-
-        elif feature_set is None:
-            raise AttributeError(
-                "When `model` is provided, `feature_set` cannot be None. "
-                "Provide either both params or neither of them."
             )
-
-        else:
-            models = (
-                [utils.get_model(model, mode=self.mode, samples=len(self.x))]
-                if isinstance(model, str)
-                else [model]
-            )
-            feature_sets = (
-                [feature_set] if isinstance(feature_set, str) else list(feature_set)
-            )
-            if len(models) != len(feature_sets):
-                # Create each combination
-                combinations = list(
-                    itertools.product(np.unique(models), np.unique(feature_sets))
-                )
-                models = [elem[0] for elem in combinations]
-                feature_sets = [elem[1] for elem in combinations]
+            iterations = []
+            count = 0
+            while len(iterations) < self.n_grid_searches:
+                row = current_results.iloc[count]
+                if row["type"] != "Hyper Parameter":
+                    iterations.append((row["model"], row["feature_set"]))
+                count += 1
 
         # Iterate and grid search over each pair of model and feature_set
-        for model, feature_set in zip(models, feature_sets):
-
-            # Organise existing model results
-            m_results = self.results[
-                np.logical_and(
-                    self.results["model"] == type(model).__name__,
-                    self.results["version"] == self.version,
-                )
-            ]
-            m_results = self._sort_results(
-                m_results[m_results["dataset"] == feature_set]
+        for model, feature_set in iterations:
+            self.logger.info(
+                f"Starting Hyper Parameter Optimization for {type(model).__name__} on "
+                f"{feature_set} features ({len(self.x)} samples, "
+                f"{len(self.feature_sets[feature_set])} features)"
             )
 
-            # Skip grid search if optimized model already exists
-            if not ("Hyper Parameter" == m_results["type"]).any():
-                # Run grid search for model
-                grid_search_results = self._grid_search_iteration(
-                    model, parameter_set, feature_set
-                )
-                grid_search_results = self.sort_results(grid_search_results)
+            grid_search = OptunaGridSearch(
+                utils.get_model(model, mode=self.mode, samples=len(self.x)),
+                timeout=self.grid_search_timeout,
+                cv=self.cv,
+                n_trials=self.n_trials_per_grid_search,
+                scoring=self.objective,
+                verbose=self.verbose,
+            )
 
-                # Store results
-                grid_search_results["version"] = self.version
-                grid_search_results["dataset"] = feature_set
-                grid_search_results["type"] = "Hyper Parameter"
-                self.results = pd.concat(
-                    [self.results, grid_search_results], ignore_index=True
-                )
-                self.results.to_csv(self.main_dir + "Results.csv", index=False)
+            # Get results
+            results = grid_search.fit(self.x[self.feature_sets[feature_set]], self.y)
+
+            # Store results
+            results["version"] = self.version
+            results["dataset"] = feature_set
+            results["type"] = "Hyper Parameter"
+            self.results = pd.concat([self.results, results], ignore_index=True)
+            self.results.to_csv(self.main_dir + "Results.csv", index=False)
 
         return self
 
@@ -1396,14 +1350,7 @@ class Pipeline(LoggingMixin):
         self.logger.info("Creating Stacking Ensemble")
 
         # Select most frequent feature set from hyperparameter optimization
-        results = self._sort_results(
-            self.results[
-                np.logical_and(
-                    self.results["type"] == "Hyper Parameter",
-                    self.results["version"] == self.version,
-                )
-            ]
-        )
+        results = self.results[self.results["version"] == self.version]
         feature_set = results["dataset"].value_counts().index[0]
         results = results[results["dataset"] == feature_set]
         self.logger.info("Selected Stacking feature set: {}".format(feature_set))
@@ -1939,77 +1886,6 @@ class Pipeline(LoggingMixin):
 
         # Parse & return best parameters (regardless of if it's optimized)
         return utils.io.parse_json(results.iloc[0]["params"])
-
-    def _grid_search_iteration(
-        self, model, parameter_set: str | None, feature_set: str
-    ):
-        """
-        INTERNAL | Grid search for defined model, parameter set and feature set.
-        """
-        self.logger.info(
-            f"Starting Hyper Parameter Optimization for {type(model).__name__} on "
-            f"{feature_set} features ({len(self.x)} samples, "
-            f"{len(self.feature_sets[feature_set])} features)"
-        )
-
-        # Select right hyper parameter optimizer
-        if self.grid_search_type == "exhaustive":
-            grid_search = ExhaustiveGridSearch(
-                model,
-                params=parameter_set,
-                cv=self.cv,
-                scoring=self.objective,
-                n_trials=self.n_trials_per_grid_search,
-                timeout=self.grid_search_timeout,
-                verbose=self.verbose,
-            )
-        elif self.grid_search_type == "halving":
-            grid_search = HalvingGridSearch(
-                model,
-                params=parameter_set,
-                cv=self.cv,
-                scoring=self.objective,
-                n_trials=self.n_trials_per_grid_search,
-                verbose=self.verbose,
-            )
-        elif self.grid_search_type == "optuna":
-            grid_search = OptunaGridSearch(
-                model,
-                timeout=self.grid_search_timeout,
-                cv=self.cv,
-                n_trials=self.n_trials_per_grid_search,
-                scoring=self.objective,
-                verbose=self.verbose,
-            )
-        else:
-            raise NotImplementedError(
-                "Only Exhaustive, Halving and Optuna are implemented."
-            )
-        # Get results
-        results = grid_search.fit(self.x[self.feature_sets[feature_set]], self.y)
-        results = results.sort_values("worst_case", ascending=False)
-
-        # Warn when best hyperparameters are close to predefined grid
-        edge_params = grid_search.get_parameter_min_max()
-        best_params = pd.Series(results["params"].iloc[0], name="best")
-        params = edge_params.join(best_params, how="inner")
-
-        def warn_when_too_close_to_edge(param: pd.Series, tol=0.01):
-            # Min-max scaling
-            min_, best, max_ = param["min"], param["best"], param["max"]
-            scaled = (best - min_) / (max_ - min_)
-            # Check if too close and warn if so
-            if not (tol < scaled < 1 - tol):
-                msg = "Optimal value for parameter is very close to edge case: "
-                if min(abs(min_), abs(max_)) < 1:
-                    msg += f"{param.name}={best:.2e} (range: {min_:.2e}...{max_:.2e})"
-                else:
-                    msg += f"{param.name}={best} (range: {min_}...{max_})"
-                warn(msg)
-
-        params.apply(warn_when_too_close_to_edge, axis=1)
-
-        return results
 
     def _get_main_predictors(self, data):
         """

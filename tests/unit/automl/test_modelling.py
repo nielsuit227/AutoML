@@ -15,7 +15,7 @@ def make_mode(request):
         x, y = make_classification()
         objective = "neg_log_loss"
     elif mode == "regression":
-        x, y = make_regression()
+        x, y = make_regression()  # type: ignore
         objective = "r2"
     else:
         raise ValueError("Invalid mode")
@@ -35,6 +35,10 @@ def clean():
 @pytest.mark.usefixtures("make_mode")
 class TestModelling:
     folder = "tmp/"
+    mode: str
+    objective: str
+    x: pd.DataFrame
+    y: pd.Series
 
     def test_modeller(self):
         mod = Modeller(mode=self.mode, objective=self.objective, folder=self.folder)
@@ -44,19 +48,11 @@ class TestModelling:
             mod.results, pd.DataFrame
         ), "Results should be type pd.DataFrame"
         assert len(mod.results) != 0, "Results empty"
-        assert mod.results["mean_objective"].max() < 1, "R2 needs to be smaller than 1"
+        assert mod.results["score"].max() < 1, "R2 needs to be smaller than 1"
         assert (
-            not mod.results["mean_objective"].isna().any()
-        ), "Mean Objective shouldn't contain NaN"
-        assert (
-            not mod.results["std_objective"].isna().any()
-        ), "Std Objective shouldn't contain NaN"
-        assert (
-            not mod.results["mean_time"].isna().any()
-        ), "Mean time shouldn't contain NaN"
-        assert (
-            not mod.results["std_time"].isna().any()
-        ), "Std time shouldn't contain NaN"
+            not mod.results["worst_case"].isna().any()
+        ), "worst_case shouldn't contain NaN"
+        assert not mod.results["time"].isna().any(), "Time shouldn't contain NaN"
         assert "date" in mod.results.keys()
         assert "model" in mod.results.keys()
         assert "dataset" in mod.results.keys()
