@@ -4,6 +4,7 @@
 Feature processor for extracting static features.
 """
 
+
 import json
 import re
 from warnings import warn
@@ -40,14 +41,18 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
         *BaseFeatureExtractor._add_to_settings,
     ]
 
-    def __init__(self, mode="notset", verbose=0):
-        super().__init__(mode=mode, verbose=verbose)
+    def fit(self, data: pd.DataFrame) -> "StaticFeatureExtractor":
+        # We implement fit_transform because we anyhow transform the data. Therefore,
+        # when using fit_transform we don't have to do redundant transformations.
+        self.fit_transform(data)
+        return self
 
-    def _fit_transform(self, x, y=None, **fit_params):
-        self.logger.info("Start fitting data.")
+    def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        self.logger.info("Fitting data.")
+        self.reset()
 
         # Input checks
-        x, y = self._check_x_y(x, y)
+        x, y = self._check_data(data)
         numeric_cols = [
             col for col, typ in zip(x, x.dtypes) if np.issubdtype(typ, np.number)
         ]
@@ -74,15 +79,19 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
             ],
             axis=1,
         )
+        # Ensure ordering of columns & sanitize
+        x_out = x_out[self.features_]
+        x_out = sanitize_dataframe(x_out)
 
-        self.logger.info("Finished fitting.")
-        return sanitize_dataframe(x_out[self.features_])
+        self._is_fitted = True
+        return x_out
 
-    def _transform(self, x, y=None):
+    def transform(self, data: pd.DataFrame) -> pd.DataFrame:
         self.logger.info("Transforming data.")
+        self.check_is_fitted()
 
         # Handle input
-        x = self._check_x(x)
+        x, _ = self._check_data(data, require_y=False)
 
         # Apply transformations
         x_out = pd.concat(
@@ -95,8 +104,15 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
             ],
             axis=1,
         )
+        # Ensure ordering of columns & sanitize
+        x_out = x_out[self.features_]
+        x_out = sanitize_dataframe(x_out)
 
-        return sanitize_dataframe(x_out[self.features_])
+        return x_out
+
+    def transform_target(self, y: pd.Series) -> pd.Series:
+        self.check_is_fitted()
+        return self._check_y(y, copy=False)
 
     # ----------------------------------------------------------------------
     # Feature processing
@@ -246,7 +262,7 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
 
         # Score and decide which features to accept
         scores = self.select_scores(
-            distances.apply(self._calc_feature_scores, y=y),
+            distances.apply(self._calc_feature_scores, y=y),  # type: ignore
             best_n_per_class=50,
             update_baseline=update_baseline,
         )
@@ -299,7 +315,7 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
 
         # Score and decide which features to accept
         scores = self.select_scores(
-            feats.apply(self._calc_feature_scores, y=y, axis=0),
+            feats.apply(self._calc_feature_scores, y=y, axis=0),  # type: ignore
             best_n_per_class=50,
             update_baseline=update_baseline,
         )
@@ -350,7 +366,7 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
 
         # Score and decide which features to accept
         scores = self.select_scores(
-            feats.apply(self._calc_feature_scores, y=y, axis=0),
+            feats.apply(self._calc_feature_scores, y=y, axis=0),  # type: ignore
             best_n_per_class=50,
             update_baseline=update_baseline,
         )

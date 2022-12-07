@@ -6,6 +6,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 import pytest
+from numpy.random import Generator
 
 from amplo.automl.feature_processing.feature_processor import (
     FeatureProcessor,
@@ -21,6 +22,8 @@ from amplo.automl.feature_processing.temporal_feature_extractor import (
 
 @pytest.mark.usefixtures("make_rng")
 class TestFunctions:
+    rng: Generator
+
     def test_find_collinear_columns(self):
         col = np.linspace(-4, 4, 100)
         x = pd.DataFrame(
@@ -56,56 +59,58 @@ class TestFunctions:
 
 @pytest.mark.usefixtures("make_rng")
 class TestFeatureProcessor:
+    rng: Generator
+
     @pytest.mark.parametrize("mode", ["classification", "multiclass", "regression"])
     @pytest.mark.parametrize("extraction", ["nop", "static", "temporal"])
-    def test_transform(self, mode, make_x_y, extraction):
-        x, y = make_x_y
-        x = x.iloc[:, :5]  # for speed up
+    def test_transform(self, mode, make_data, extraction):
+        data = make_data
         kwargs = {"mode": mode, "analyse_feature_sets": None}
         if extraction == "nop":
             fp = FeatureProcessor(extract_features=False, **kwargs)
         elif extraction == "static":
             fp = FeatureProcessor(extract_features=True, is_temporal=False, **kwargs)
         elif extraction == "temporal":
-            index = pd.MultiIndex.from_product([[0, 1], range(len(x) // 2)])
-            x.index = index
-            y.index = index
+            index = pd.MultiIndex.from_product([[0, 1], range(len(data) // 2)])
+            data.index = index
             kwargs = {**kwargs, "timeout": 1}
             fp = FeatureProcessor(extract_features=True, is_temporal=True, **kwargs)
         else:
             raise ValueError("Invalid extraction mode.")
 
         # Test equivalence of transform and fit_transform
-        out1 = fp.fit_transform(x, y)
-        out2 = fp.transform(x)
+        out1 = fp.fit_transform(data)
+        out2 = fp.transform(data)
         assert all(out1 == out2)
 
         # Test transform_target
         if isinstance(fp.feature_extractor, TemporalFeatureExtractor):
-            y_transformed = fp.feature_extractor._fit_data_to_window_size(y)
+            y_transformed = fp.feature_extractor._fit_data_to_window_size(
+                data["target"]
+            )
             y_transformed = fp.feature_extractor._pool_target(y_transformed)
         else:
-            y_transformed = y
-        assert all(y_transformed == fp.transform_target(y))
+            y_transformed = data["target"]
+        assert np.allclose(y_transformed, fp.transform_target(data["target"]))
 
     @pytest.mark.parametrize("mode", ["classification", "regression"])
-    def test_settings(self, mode, make_x_y):
-        x, y = make_x_y
+    def test_settings(self, mode, make_data):
+        data = make_data
         fp = FeatureProcessor(
             mode=mode, extract_features=False, analyse_feature_sets=None
         )
-        fp.fit(x, y)
+        fp.fit(data)
 
         # Test load settings directly
         new_fp = FeatureProcessor().load_settings(fp.get_settings())
         assert fp.get_settings() == new_fp.get_settings()
-        assert all(fp.transform(x) == new_fp.transform(x))
+        assert all(fp.transform(data) == new_fp.transform(data))
 
         # Test JSON serializable
         settings = json.loads(json.dumps(fp.get_settings()))
         new_fp = FeatureProcessor().load_settings(settings)
         assert fp.get_settings() == new_fp.get_settings()
-        assert all(fp.transform(x) == new_fp.transform(x))
+        assert all(fp.transform(data) == new_fp.transform(data))
 
     @pytest.mark.parametrize("is_temporal", [True, False])
     def test_check_is_temporal_attribute(self, is_temporal):
@@ -144,15 +149,17 @@ class TestFeatureProcessor:
     @pytest.mark.parametrize("analyse_fs", [None, "auto", "all", "gini", "shap"])
     def test_feature_sets(self, mode, analyse_fs):
         size = 100
-        y = pd.Series(self.rng.choice([0, 1], size))
-        x = pd.DataFrame({"y": y, "zeros": np.zeros(size)})
+        data = pd.DataFrame({"zeros": np.zeros(size)})
+        data["target"] = pd.Series(self.rng.choice([0, 1], size))
+        data["y"] = data["target"]
         fp = FeatureProcessor(
+            target="target",
             mode=mode,
             extract_features=False,
             analyse_feature_sets=analyse_fs,
             selection_cutoff=0.99,
             selection_increment=0.01,
-        ).fit(x, y)
+        ).fit(data)
 
         if analyse_fs is None:
             assert set(fp.feature_sets_) == {"take_all"}
@@ -161,8 +168,10 @@ class TestFeatureProcessor:
             # Check validity of feature sets
             for name, values in fp.feature_sets_.items():
                 assert set(values) == {"y"}, "Invalid feature set."
-                x_out = fp.transform(x, feature_set=name)
-                assert all(x_out == x[["y"]]), "Erroneous feature set transformation."
+                x_out = fp.transform(data, feature_set=name)
+                assert all(
+                    x_out["y"] == data["y"]
+                ), "Erroneous feature set transformation."
 
             # Check that desired feature sets are present
             expected_fs = set()

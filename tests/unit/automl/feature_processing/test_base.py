@@ -12,13 +12,12 @@ from amplo.automl.feature_processing._base import (
     sanitize_dataframe,
     sanitize_series,
 )
-from tests import make_x_y
 
 
-@pytest.fixture(scope="class")
-def make_good_and_corrupt_classification():
+@pytest.fixture(scope="function")
+def make_good_and_corrupt_classification(make_x_y):
     # Make corrupted data
-    x_corrupt, y_corrupt = make_x_y(mode="classification")
+    x_corrupt, y_corrupt = make_x_y
     x_corrupt.iloc[0, 0] = np.nan
     y_corrupt.iloc[0] = np.nan
     x_corrupt.columns = list(range(len(x_corrupt.columns)))
@@ -84,6 +83,7 @@ class TestBaseFeatureProcessor:
             # Should error when trying to set an unknown mode.
             BaseFeatureProcessor(mode="invalid_mode")
 
+    @pytest.mark.parametrize("mode", ["classification"])
     def test_check_x(self, make_good_and_corrupt_classification):
         fp = BaseFeatureProcessor  # has not to be instantiated
         x_good, x_corrupt, _, _ = make_good_and_corrupt_classification
@@ -105,6 +105,7 @@ class TestBaseFeatureProcessor:
             fp._check_x(x_corrupt)
         x_corrupt.columns = x_corrupt_columns  # reset since fixture has scope="class"
 
+    @pytest.mark.parametrize("mode", ["classification"])
     def test_check_y(self, make_good_and_corrupt_classification):
         fp = BaseFeatureProcessor  # has not to be instantiated
         _, _, y_good, y_corrupt = make_good_and_corrupt_classification
@@ -118,6 +119,7 @@ class TestBaseFeatureProcessor:
         assert np.allclose(checked, y_good), "Invalid data sanitization."
         assert isinstance(checked.name, str), "Non-string name."
 
+    @pytest.mark.parametrize("mode", ["classification"])
     def test_check_x_y(self, make_good_and_corrupt_classification):
         fp = BaseFeatureProcessor  # has not to be instantiated
         x, _, y, _ = make_good_and_corrupt_classification
@@ -137,6 +139,8 @@ class TestBaseFeatureProcessor:
 
 @pytest.mark.usefixtures("make_rng")
 class TestBaseFeatureExtractor:
+    rng: np.random.Generator
+
     def test_setting_features(self):
         fe = BaseFeatureExtractor()
         # Test set_features
@@ -173,7 +177,7 @@ class TestBaseFeatureExtractor:
         x = pd.DataFrame({"1to1": y, "random": self.rng.geometric(0.5, size)})
 
         # Test _calc_feature_scores
-        scores = x.apply(fe._calc_feature_scores, y=y, axis=0)
+        scores = x.apply(fe._calc_feature_scores, y=y, axis=0)  # type: ignore
         assert all(scores["1to1"] >= 0.9)
         assert all(scores["random"] < 0.9)
 

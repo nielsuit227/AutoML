@@ -42,12 +42,12 @@ class TestIntervalAnalyser:
         cls.n_samples = 50
         cls.n_features = 25
         cls.ia_folder = Path("IA")
-        rmtree(cls.ia_folder)
+        rmtree(cls.ia_folder)  # type: ignore
         create_test_folders(cls.ia_folder, cls.n_samples, cls.n_features)
 
     @classmethod
     def teardown_class(cls):
-        rmtree(cls.ia_folder)
+        rmtree(cls.ia_folder)  # type: ignore
 
     def test_all(self):
         # Set up IntervalAnalyser
@@ -59,6 +59,7 @@ class TestIntervalAnalyser:
         assert ia.n_files == 280
 
         # Functional tests
+        assert ia._distributions is not None
         for i in range(ia.n_files):
             dist = ia._distributions[i].values
             assert all(
@@ -71,6 +72,7 @@ class TestIntervalAnalyser:
         # Data tests
         data_no_noise = ia.data_without_noise
         data_full = ia.data_with_noise
+        assert ia.n_samples is not None and ia._features is not None
         assert (
             len(data_full) == ia.n_samples and len(data_no_noise) == ia.n_samples // 2
         ), "Incorrect number of samples"
@@ -91,6 +93,7 @@ class TestIntervalAnalyser:
                 features = make_interval_data(
                     directory=None, target=ia.target, cat_choices=False
                 )
+                assert features is not None and ia.target in features
                 labels = features.pop(ia.target)
                 # Set parse arguments
                 parse_args = (features, labels)
@@ -112,7 +115,7 @@ class TestIntervalAnalyser:
                 raise NotImplementedError()
 
             # Read data
-            _, _ = ia._parse_data(*parse_args)
+            _, _ = ia._parse_data(*parse_args)  # type: ignore
 
             # Data checks
             assert all(
@@ -120,10 +123,10 @@ class TestIntervalAnalyser:
                 for data in (ia._labels, ia._features, ia.orig_data)
             ), "Data should not be empty"
             assert (
-                len(ia._features.select_dtypes(include=["datetime64"]).columns) == 0
+                len(ia._features.select_dtypes(include=["datetime64"]).columns) == 0  # type: ignore
             ), "Date-time columns should have been eliminated, internally"
             assert (
-                len(ia._features.select_dtypes(include=["float64"]).columns) == 0
+                len(ia._features.select_dtypes(include=["float64"]).columns) == 0  # type: ignore
             ), "Dtype float64 columns should have been converted to float32"
 
             # Other checks
@@ -135,5 +138,4 @@ class TestIntervalAnalyser:
     # TODO test multi-index error
     # TODO test index misalignment error
     # TODO test feature/sample length error
-    # TODO test target in features error
     # TODO test target != labels.name

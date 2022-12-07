@@ -38,6 +38,8 @@ class TestScoreWatcher:
 
 @pytest.mark.usefixtures("make_rng")
 class TestFunctions:
+    rng: np.random.Generator
+
     def test_pool_single_index(self):
         size = 100
         window_size = 10
@@ -46,7 +48,7 @@ class TestFunctions:
         agg_func = get_pool_functions("mean")
 
         pooled = pl_pool(x, window_size, agg_func, use_multi_index=False)
-        desired_pool = x.values.reshape((-1, window_size)).mean(1)
+        desired_pool = x.values.reshape((-1, window_size)).mean(1)  # type: ignore
         assert np.allclose(pooled.values.reshape(-1), desired_pool)
 
     def test_extract_wavelets(self):
@@ -64,18 +66,22 @@ class TestFunctions:
 
 @pytest.mark.usefixtures("make_rng")
 class TestTemporalFeatureExtractor:
+    rng: np.random.Generator
+
     @pytest.mark.parametrize("mode", ["classification", "regression"])
     def test_mode_and_settings(self, mode, make_x_y):
         x, y = make_x_y
         x = x.iloc[:, :5]  # for speed up
+        data = pd.DataFrame(x)
+        data["target"] = y
         index = pd.MultiIndex.from_product([[0, 1], range(len(x) // 2)])
         x.index = index
         y.index = index
 
-        fe = TemporalFeatureExtractor(mode=mode, timeout=3)
+        fe = TemporalFeatureExtractor(target="target", mode=mode, timeout=3)
 
         # Test output
-        out1 = fe.fit_transform(x, y)
+        out1 = fe.fit_transform(data)
         out2 = fe.transform(x)
         assert set(out1) == set(fe.features_), "`features_` doesn't match output."
         assert all(out1 == out2), "`fit_transform` and `transform` don't match."
@@ -124,9 +130,8 @@ class TestTemporalFeatureExtractor:
         )
 
         # Setup feature extractor
-        fe = TemporalFeatureExtractor(mode=mode)
+        fe = TemporalFeatureExtractor(mode=mode, window_size=window_size)
         fe._set_validation_model()
-        fe.window_size_ = window_size
         fe._baseline_scores = [0.99]
 
         # Fit and check
@@ -147,8 +152,8 @@ class TestTemporalFeatureExtractor:
         # Make wavelet contours
         wavelet1 = fit_wavelets[0]
         wavelet2 = fit_wavelets[1]
-        wav_contour1, _ = pywt.ContinuousWavelet(wavelet1).wavefun(level=6)  # noqa
-        wav_contour2, _ = pywt.ContinuousWavelet(wavelet2).wavefun(level=5)  # noqa
+        wav_contour1, _ = pywt.ContinuousWavelet(wavelet1).wavefun(level=6)  # type: ignore
+        wav_contour2, _ = pywt.ContinuousWavelet(wavelet2).wavefun(level=5)  # type: ignore
         wav_contour1 = wav_contour1.real
         wav_contour2 = wav_contour2.real
 
@@ -221,6 +226,7 @@ class TestTemporalFeatureExtractor:
         fe._set_window_size(index)
 
         # Check window size
+        assert fe.window_size_
         if mode == "classification":
             assert fe.window_size_ >= 1
         elif mode == "regression":
@@ -231,8 +237,8 @@ class TestTemporalFeatureExtractor:
     @pytest.mark.parametrize("mode", ["classification", "regression"])
     def test_pool_target(self, mode, make_x_y):
         size = 90
-        fe = TemporalFeatureExtractor(mode=mode)
-        fe.window_size_ = 9
+        fe = TemporalFeatureExtractor(mode=mode, window_size=9)
+        assert fe.window_size_
 
         if mode == "classification":
             y_np = self.rng.choice([0, 1], size=size)
@@ -254,15 +260,17 @@ class TestTemporalFeatureExtractor:
         y = pd.Series(y_np, index=index)
         y_pooled = fe._pool_target(y).values
 
-        assert np.allclose(y_pooled, desired_pool), "Pooling doesn't work as expected."
+        assert np.allclose(
+            y_pooled, desired_pool  # type:ignore
+        ), "Pooling doesn't work as expected."
 
     def test_pool_features(self):
         size = 90
         index = pd.MultiIndex.from_product([[0], range(size)])
         x = pd.DataFrame({"feat_1": self.rng.normal(size=size)}, index=index)
 
-        fe = TemporalFeatureExtractor()
-        fe.window_size_ = 9
+        fe = TemporalFeatureExtractor(window_size=9)
+        assert fe.window_size_
 
         # Test instruction not given (make all valid pools)
         out = fe._pool_features(x, instruction=None)
@@ -275,7 +283,7 @@ class TestTemporalFeatureExtractor:
         assert np.allclose(out.values, desired_out)
 
     @pytest.mark.parametrize("n_idx_lvl", range(1, 4))
-    def test_check_index(self, n_idx_lvl):
+    def test_assert_multiindex(self, n_idx_lvl):
         # Setup
         size = 100
         if n_idx_lvl == 1:
@@ -290,15 +298,14 @@ class TestTemporalFeatureExtractor:
 
         # Test data checking
         fe = TemporalFeatureExtractor()
-        if n_idx_lvl in (1, 3):
-            with pytest.raises(ValueError):
-                # Should raise an error when receiving invalid multi-index.
-                fe._check_x(x)
-        else:
-            x_check = fe._check_x(x)
-            assert np.allclose(x, x_check)
-
-        # Test convert_single_index option
         if n_idx_lvl == 1:
-            x_check = fe._check_x(x, convert_single_index=True)
+            x_check, _ = fe._assert_multiindex(x, raise_on_single=False)
             assert np.allclose(x, x_check)
+            with pytest.raises(ValueError):
+                fe._assert_multiindex(x)
+        elif n_idx_lvl == 2:
+            x_check, _ = fe._assert_multiindex(x)
+            assert np.allclose(x, x_check)
+        else:
+            with pytest.raises(ValueError):
+                fe._assert_multiindex(x)

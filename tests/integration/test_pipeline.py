@@ -1,9 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
 import json
-import os
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import joblib
 import numpy as np
@@ -13,16 +11,7 @@ from sklearn.metrics import log_loss, r2_score
 
 from amplo import Pipeline
 from amplo.utils.testing import make_interval_data
-from tests import make_data, rmtree
-
-
-@pytest.fixture(scope="class", params=["regression", "classification"])
-def make_mode(request, target="target"):
-    mode = request.param
-    request.cls.mode = mode
-    request.cls.target = target
-    request.cls.data = make_data(mode=mode, target=target)
-    yield
+from tests import rmtree
 
 
 @pytest.mark.usefixtures("make_mode")
@@ -34,7 +23,7 @@ class TestPipelineByMode:
     def test_mode_detector(self):
         # Numerical test
         pipeline = Pipeline(no_dirs=True, target=self.target)
-        pipeline._read_data(self.data)._mode_detector()
+        pipeline._mode_detector(self.data)
         assert pipeline.mode == self.mode
 
         # Categorical test
@@ -44,23 +33,8 @@ class TestPipelineByMode:
             data[self.target] = [f"Class_{v}" for v in data[self.target].values]
             # Detect mode
             pipeline = Pipeline(no_dirs=True, target=self.target)
-            pipeline._read_data(data)._mode_detector()
+            pipeline._mode_detector(self.data)
             assert pipeline.mode == self.mode
-
-    def test_stacking(self):
-        # Set stacking model
-        if self.mode == "classification":
-            stacking_model = "StackingClassifier"
-        else:
-            stacking_model = "StackingRegressor"
-        # Fit pipeline
-        pipeline = Pipeline(
-            target=self.target,
-            n_grid_searches=0,
-            stacking=True,
-            extract_features=False,
-        )
-        pipeline.fit(self.data, model=stacking_model)
 
     def test_dir_and_settings(self):
         pipeline = Pipeline(
@@ -78,15 +52,6 @@ class TestPipelineByMode:
             assert log_loss(self.data[self.target], prediction) > -1
 
         elif self.mode == "regression":
-            # Test data handling
-            c, _ = pipeline.convert_data(self.data.drop(self.target, axis=1))
-            x = pipeline.x[pipeline.settings["features"]]
-            y = self.data[self.target]
-            assert np.allclose(
-                c.values, x.values  # type: ignore
-            ), f"Inconsistent X: max diff: {np.max(abs(c.values - x.values)):.2e}"
-            assert np.allclose(y, pipeline.y), "Inconsistent y-data"
-
             # Pipeline Prediction
             prediction = pipeline.predict(self.data)
             assert len(prediction.shape) == 1
@@ -96,8 +61,8 @@ class TestPipelineByMode:
             raise ValueError(f"Invalid mode {self.mode}")
 
         # Settings prediction
-        settings = json.load(open("Auto_ML/Production/v1/Settings.json", "r"))
-        model = joblib.load("Auto_ML/Production/v1/Model.joblib")
+        settings = json.load(open("Auto_ML/Settings.json", "r"))
+        model = joblib.load("Auto_ML/Model.joblib")
         p = Pipeline(no_dirs=True)
         p.load_settings(settings)
         p.load_model(model)
@@ -106,15 +71,27 @@ class TestPipelineByMode:
         else:
             assert np.allclose(p.predict(self.data), prediction)
 
+        # Test loading function
+        p.load()
+        if self.mode == "classification":
+            assert np.allclose(p.predict_proba(self.data), prediction)
+        else:
+            assert np.allclose(p.predict(self.data), prediction)
+
         # Check settings
+        assert p.best_model_
+        assert p.best_model_str_
+        assert p.best_params_
+        assert p.best_feature_set_
+        assert p.best_score_
         assert "pipeline" in settings
         assert "version" in settings
         assert "model" in settings
         assert "amplo_version" in settings
         assert "params" in settings
-        assert "drift_detector" in settings
         assert "features" in settings
         assert "validation" in settings
+        assert "feature_processing" in settings
         assert "data_processing" in settings
 
 
@@ -133,24 +110,16 @@ class TestPipeline:
         """
         # Create dummy data
         data_dir = "./test_data"
-        make_interval_data(directory=data_dir)
+        make_interval_data(directory=data_dir, target="target")
 
         # Pipeline
-        pipeline = Pipeline(n_grid_searches=0, extract_features=False)
+        pipeline = Pipeline(
+            n_grid_searches=0, extract_features=False, interval_analyse=True
+        )
         pipeline.fit(data_dir)
 
         # Check if IntervalAnalyser is fitted
         assert pipeline.interval_analyser.is_fitted, "IntervalAnalyser was not fitted"
-
-        # Check data handling
-        assert Path(
-            "Auto_ML/Data/Interval_Analyzed_v1.parquet"
-        ).exists(), "Interval-analyzed data was not properly stored"
-        assert pipeline.data is not None and list(pipeline.data.index.names) == [
-            "log",
-            "index",
-        ], "Index is incorrect"
-        # TODO: add checks for settings
 
         # Remove dummy data
         rmtree(data_dir, must_exist=True)
@@ -178,7 +147,8 @@ class TestPipeline:
         # Set up pipeline
         model = joblib.load("tests/files/Model.joblib")
         settings = json.load(open("tests/files/Settings.json", "r"))
-        pipeline = Pipeline()
+        pipeline = Pipeline(main_dir="tests/files/")
+        pipeline.load()
         pipeline.load_settings(settings)
         pipeline.load_model(model)
 

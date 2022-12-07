@@ -6,19 +6,16 @@ Base class used to build new observers.
 
 import abc
 import warnings
-from copy import deepcopy
 from typing import TYPE_CHECKING, Dict, List, Union
 
 import numpy as np
-from sklearn.metrics import get_scorer
-from sklearn.model_selection import train_test_split
 
 from amplo.utils import check_dtypes
 
 if TYPE_CHECKING:
     from amplo import Pipeline
 
-__all__ = ["BaseObserver", "PipelineObserver", "ProductionWarning", "_report_obs"]
+__all__ = ["BaseObserver", "ProductionWarning", "_report_obs"]
 
 
 class ProductionWarning(RuntimeWarning):
@@ -40,6 +37,10 @@ class BaseObserver(abc.ABC):
         keys `type` (str), `name` (str), `status_ok` (bool) and `description`
         (str) - with corresponding dtypes.
     """
+
+    CLASSIFICATION = "classification"
+    REGRESSION = "regression"
+    _obs_type = None
 
     def __init__(self):
         self.observations: List[Dict[str, Union[str, bool]]] = []
@@ -84,54 +85,6 @@ class BaseObserver(abc.ABC):
         obs = {"typ": typ, "name": name, "status_ok": status_ok, "message": message}
         self.observations.append(obs)
 
-    @abc.abstractmethod
-    def observe(self):
-        """
-        Observe the data, model, ...
-
-        Observations should be reported via `self.report_observation()`.
-        """
-
-
-class PipelineObserver(BaseObserver, metaclass=abc.ABCMeta):
-    """
-    Extension of ``BaseObserver``.
-
-    Unifies behavior of class initialization.
-
-    Parameters
-    ----------
-    pipeline : Pipeline
-        The amplo pipeline object that will be observed.
-
-    Class Attributes
-    ----------------
-    _obs_type : str
-        Name of the observation.
-    CLASSIFICATION : str
-        Name for a classification mode.
-    REGRESSION : str
-        Name for a regression mode.
-    """
-
-    _obs_type = None
-    CLASSIFICATION = "classification"
-    REGRESSION = "regression"
-
-    def __init__(self, pipeline: "Pipeline"):
-        super().__init__()
-
-        if not type(pipeline).__name__ == "Pipeline":
-            raise ValueError("Must be an Amplo pipeline.")
-
-        # Set pipeline
-        self._pipe = pipeline
-
-        # Split data
-        self.xt, self.xv, self.yt, self.yv = train_test_split(
-            self.x, self.y, test_size=0.3, random_state=9276306
-        )
-
     @property
     def obs_type(self) -> str:
         """
@@ -141,36 +94,13 @@ class PipelineObserver(BaseObserver, metaclass=abc.ABCMeta):
             raise AttributeError("Class attribute `_obs_type` is not set.")
         return self._obs_type
 
-    @property
-    def mode(self):
-        return self._pipe.mode
+    @abc.abstractmethod
+    def observe(self):
+        """
+        Observe the data, model, ...
 
-    @property
-    def scorer(self):
-        return get_scorer(self._pipe.objective)
-
-    @property
-    def model(self):
-        return deepcopy(self._pipe.best_model)
-
-    @property
-    def fitted_model(self):
-        fitted_model = self.model
-        fitted_model.fit(self.xt, self.yt)
-        return fitted_model
-
-    @property
-    def x(self):
-        # Use best feature set, if available.
-        if self._pipe.best_feature_set is not None:
-            select_columns = self._pipe.feature_sets[self._pipe.best_feature_set]
-            return self._pipe.x[select_columns]
-        else:
-            return self._pipe.x
-
-    @property
-    def y(self):
-        return self._pipe.y
+        Observations should be reported via `self.report_observation()`.
+        """
 
 
 def _report_obs(func):
@@ -188,8 +118,7 @@ def _report_obs(func):
     decorator
     """
 
-    def report(self: PipelineObserver, *args, **kwargs):
-        assert isinstance(self, PipelineObserver)
+    def report(self: BaseObserver, *args, **kwargs):
         status_ok, message = func(self, *args, **kwargs)
         self.report_observation(self.obs_type, func.__name__, status_ok, message)
 

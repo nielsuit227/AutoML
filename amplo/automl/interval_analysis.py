@@ -1,8 +1,8 @@
 #  Copyright (c) 2022 by Amplo.
+from __future__ import annotations
 
 import warnings
 from pathlib import Path
-from typing import Union
 
 import faiss
 import numpy as np
@@ -23,10 +23,10 @@ class IntervalAnalyser:
 
     def __init__(
         self,
-        target: str = None,
+        target: str | None = None,
         norm: str = "euclidean",  # TODO: implement functionality
         min_length: int = 1000,
-        n_neighbors: int = None,
+        n_neighbors: int | None = None,
         n_trees: int = 10,
         verbose: int = 1,
     ):
@@ -129,7 +129,7 @@ class IntervalAnalyser:
         return self.orig_data.drop(self._noise_indices)
 
     def fit_transform(
-        self, data_or_path: Union[pd.DataFrame, str, Path], labels: pd.Series = None
+        self, data_or_path: pd.DataFrame | str | Path, labels: pd.Series | None = None
     ):
         """
         Function that runs the K-Nearest Neighbors and returns a dataframe with the
@@ -182,7 +182,7 @@ class IntervalAnalyser:
         return self.data_with_noise
 
     def _parse_data(
-        self, data_or_path: Union[pd.DataFrame, str, Path], labels: pd.Series = None
+        self, data_or_path: pd.DataFrame | str | Path, labels: pd.Series | None = None
     ):
         """
         Parse data for interval analysis and store it internally
@@ -242,9 +242,13 @@ class IntervalAnalyser:
         if not check_pearson_correlation(features, labels):
             warnings.warn("Data is correlated, starting FeatureProcessor.")
             # Remove collinear features and pick Random Forest Increment
-            fp = FeatureProcessor(mode="classification", extract_features=False)
-            fp.fit(features, labels)
-            features = fp.transform(features, feature_set="rf_increment")
+            fp = FeatureProcessor(
+                mode="classification", extract_features=False, target=self.target
+            )
+            features[self.target] = labels
+            features = fp.fit_transform(features)
+            if self.target in features:
+                features = features.drop(self.target, axis=1)
 
         # Set name of labels
         if self.target != labels.name:

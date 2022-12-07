@@ -5,33 +5,16 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.datasets import fetch_california_housing, load_iris
 
-# TODO: Make use of the dummy data creator
-#  from Amplo.Utils.testing import (DummyDataSampler, make_data, make_cat_data, make_num_data)  # noqa: E501
 from amplo.automl import DataProcessor
 from amplo.utils.data import check_dataframe_quality
 
 
-@pytest.fixture(scope="class", params=["regression", "classification"])
-def make_mode(request):
-    mode = request.param
-    target = "target"
-    if mode == "classification":
-        x, y = load_iris(return_X_y=True, as_frame=True)
-    elif mode == "regression":
-        x, y = fetch_california_housing(return_X_y=True, as_frame=True)
-    else:
-        raise NotImplementedError("Invalid mode")
-    x.columns = [f"Feature_{i}" for i in range(len(x.columns))]
-    request.cls.mode = mode
-    request.cls.target = target
-    request.cls.data = pd.concat([x, y.to_frame(target)], axis=1)
-    yield
-
-
 @pytest.mark.usefixtures("make_mode")
 class TestMode:
+    target: str
+    data: pd.DataFrame
+
     def test_mode(self):
         dp = DataProcessor(self.target)
         cleaned = dp.fit_transform(self.data)
@@ -50,34 +33,71 @@ class TestDataProcessor:
         dp = DataProcessor()
         data = pd.DataFrame(
             {
-                "a": ["a", "b", "c", "b", "a"],
-                "b": [1, 2, 3, 4, 5],
-                "c": [f"2020-01-{i:02}" for i in range(1, 6)],
+                "cat": ["a", "b", "c", "b"],
+                "int": [1, 2, 3, 4],
+                "date": [
+                    "2020-01-01",
+                    "2020-01-03",
+                    "2020-01-04",
+                    "2020-01-05",
+                ],
+                "bool": [True, False, True, False],
+                "float": [0.1, 0.2, 0.3, 0.4],
             }
         )
         cleaned = dp.fit_transform(data)
-        print(cleaned.head())
 
-        assert {"b", "a_a", "a_b", "a_c", "c"} == set(
-            cleaned.columns
-        ), "Unexpected columns"
-        assert pd.api.types.is_float_dtype(cleaned["b"])
+        assert {
+            "cat_a",
+            "cat_b",
+            "cat_c",
+            "int",
+            "date",
+            "bool",
+            "float",
+        } == set(cleaned.columns), "Unexpected columns"
+        assert len(dp.num_cols_) == 2
+        assert set(dp.num_cols_) == {"float", "int"}
+        assert len(dp.bool_cols_) == 1
+        assert set(dp.bool_cols_) == {"bool"}
+        assert len(dp.cat_cols_) == 1
+        assert set(dp.cat_cols_) == {"cat"}
 
     def test_type_detector_with_nan(self):
         dp = DataProcessor()
         data = pd.DataFrame(
             {
-                "a": ["a", "b", np.nan, "c", "b"],
-                "b": [1, 2, 3, 4, np.nan],
-                "c": ["2020-01-01", np.nan, "2020-01-03", "2020-01-04", "2020-01-05"],
+                "cat": ["a", "b", np.nan, "c", "b"],
+                "int": [1, 2, 3, 4, np.nan],
+                "date": [
+                    "2020-01-01",
+                    np.nan,
+                    "2020-01-03",
+                    "2020-01-04",
+                    "2020-01-05",
+                ],
+                "bool": [True, False, np.nan, True, False],
+                "float": [0.1, 0.2, 0.3, 0.4, np.nan],
             }
         )
         cleaned = dp.fit_transform(data)
 
-        assert {"b", "a_a", "a_b", "a_nan", "a_c", "c"} == set(
-            cleaned.columns
-        ), "Unexpected columns"
-        assert pd.api.types.is_float_dtype(cleaned["b"])
+        assert {
+            "cat_a",
+            "cat_b",
+            "cat_nan",
+            "cat_c",
+            "int",
+            "date",
+            "bool",
+            "float",
+        } == set(cleaned.columns), "Unexpected columns"
+        assert len(dp.num_cols_) == 2
+        assert set(dp.num_cols_) == {"float", "int"}
+        assert len(dp.bool_cols_) == 1
+        assert set(dp.bool_cols_) == {"bool"}
+        assert len(dp.cat_cols_) == 1
+        assert set(dp.cat_cols_) == {"cat"}
 
     def test_missing_values(self):
         data = pd.DataFrame(
@@ -95,7 +115,7 @@ class TestDataProcessor:
         # So we go from rows 5 -> 3, cols 4 -> 6
         dp = DataProcessor(missing_values="remove_rows")
         cleaned = dp.fit_transform(data)
-        assert cleaned.shape == (3, 6), "Did not remove NaNs as expected"
+        assert cleaned.shape == (3, 7), f"Did not remove NaNs as expected \n{cleaned}"
         assert not cleaned.isna().values.any(), "DataFrame still contains NaNs"
 
         # Remove cols
@@ -146,6 +166,7 @@ class TestDataProcessor:
         x = pd.DataFrame(
             {
                 "a": [*(23 * [1]), 1e15],
+                "b": np.linspace(0, 1, 24),
                 "target": np.linspace(0, 1, 24).tolist(),
             }
         )
@@ -177,20 +198,20 @@ class TestDataProcessor:
         # Create a DataFrame that contains two columns with the same name
         x = pd.DataFrame({"a": [1, 2, 1], "a_copy": [1, 2, 1], "b": [3, 1, 3]})
         x = x.rename(columns={"a_copy": "a"})
-        dp = DataProcessor()
+        dp = DataProcessor(drop_duplicate_rows=True)
         xt = dp.fit_transform(x)
         assert len(xt) == 2, "Didn't remove duplicate rows"
         assert len(xt.keys()) == 2, "Didn't remove duplicate columns"
 
     def test_constants(self):
         x = pd.DataFrame({"a": [1, 1, 1, 1, 1], "b": [1, 2, 3, 5, 6]})
-        dp = DataProcessor()
+        dp = DataProcessor(drop_constants=True)
         xt = dp.fit_transform(x)
         assert "a" not in xt.keys(), "Didn't remove constant column"
 
     def test_dummies(self):
         x = pd.DataFrame({"a": ["a", "b", "c", "b", "c", "a"]})
-        dp = DataProcessor(cat_cols=["a"])
+        dp = DataProcessor()
         xt = dp.fit_transform(x)
         assert "a" not in xt.keys(), "'a' still in keys"
         assert "a_b" in xt.keys(), "a_b missing"
@@ -208,7 +229,7 @@ class TestDataProcessor:
         cleaned = dp.fit_transform(data)
 
         # Tests
-        assert "a" in dp.cat_cols, "Did not recognize categorical column."
+        assert "a" in dp.cat_cols_, "Did not recognize categorical column."
         assert "a_hoi" in cleaned, f"Cat column not properly converted: {list(cleaned)}"
 
     def test_settings(self):
@@ -222,13 +243,13 @@ class TestDataProcessor:
                 target: ["a", "b", "c", "b", "c", "a"],
             }
         )
-        dp = DataProcessor(cat_cols=["a"], target=target)
+        dp = DataProcessor(target=target, include_output=False, drop_constants=True)
         xt = dp.fit_transform(x)
-        assert len(xt.drop(target, axis=1).keys()) == x["a"].nunique()
+        assert len(xt.keys()) == x["a"].nunique()
         settings = dp.get_settings()
         dp2 = DataProcessor()
         dp2.load_settings(settings)
-        assert isinstance(dp2.get_settings()["_label_encodings"], list)
+        assert isinstance(dp2.get_settings()["label_encodings_"], list)
         xt2 = dp2.transform(pd.DataFrame({"a": ["a", "b"], "b": [1, 2]}))
         assert np.allclose(
             pd.DataFrame(
@@ -242,8 +263,8 @@ class TestDataProcessor:
         dp = DataProcessor()
         dp.fit_transform(x)
         dp.prune_features(["b"])
-        assert dp.num_cols == ["b"]
-        assert dp.cat_cols == []
+        assert dp.num_cols_ == ["b"]
+        assert dp.cat_cols_ == []
 
     def test_json_serializable(self):
         x = pd.DataFrame(
@@ -262,19 +283,20 @@ class TestDataProcessor:
         dp = DataProcessor(target="a")
         xt = dp.fit_transform(df)
         assert "a" in xt
-        assert np.allclose(xt["a"].values, np.array([0, 1, 2, 1, 2, 0]))
+        assert np.allclose(np.array(xt["a"].values), np.array([0, 1, 2, 1, 2, 0]))
 
     def test_target_encoding(self):
         target = "target"
-        orig_labels = pd.Series(["a", "b", "c", "b", "c", "a"], name=target)
+        y_values = ["a", "b", "c", "b", "c", "a"]
+        data = pd.DataFrame({target: y_values})
         dp = DataProcessor(target=target)
-        enc_labels = pd.Series(dp.encode_labels(orig_labels))
-        assert enc_labels.nunique() == orig_labels.nunique()
-        assert enc_labels.min() == 0, "Encoding must start at zero"
+        encoded = dp.encode_labels(data, fit=True)
+        assert data[target].nunique() == encoded[target].nunique()
+        assert encoded[target].min() == 0, "Encoding must start at zero"
         assert pd.api.types.is_integer_dtype(
-            enc_labels
+            encoded[target]
         ), "Encoding must be of dtype `int`"
-        dec_labels = pd.Series(dp.decode_labels(enc_labels))
+        decoded = dp.decode_labels(np.array(encoded[target].values))
         assert (
-            dec_labels == orig_labels
+            decoded == y_values
         ).all(), "Decoding does not result in original dataframe"

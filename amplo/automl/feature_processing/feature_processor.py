@@ -4,6 +4,7 @@
 Feature processor for extracting and selecting features.
 """
 
+
 from __future__ import annotations
 
 import re
@@ -222,6 +223,8 @@ class FeatureProcessor(BaseFeatureProcessor):
 
     Parameters
     ----------
+    target : str, default: "target"
+        Target column that must be present in data.
     mode : {"notset", "classification", "regression"}, optional, default: "notset"
         Model mode.
     is_temporal : bool, optional
@@ -261,18 +264,19 @@ class FeatureProcessor(BaseFeatureProcessor):
 
     def __init__(
         self,
-        mode="notset",
-        use_wavelets=True,
-        is_temporal=None,
-        extract_features=True,
-        collinear_threshold=0.99,
-        analyse_feature_sets="auto",
-        selection_cutoff=0.85,
-        selection_increment=0.005,
-        verbose=1,
+        target: str = "target",
+        mode: str = "classification",
+        use_wavelets: bool = True,
+        is_temporal: bool | None = None,
+        extract_features: bool = True,
+        collinear_threshold: float = 0.99,
+        analyse_feature_sets: str = "auto",
+        selection_cutoff: float = 0.85,
+        selection_increment: float = 0.005,
+        verbose: int = 1,
         **extractor_kwargs,
     ):
-        super().__init__(mode=mode, verbose=verbose)
+        super().__init__(target=target, mode=mode, verbose=verbose)
 
         check_dtypes(
             ("is_temporal", is_temporal, (bool, type(None))),
@@ -298,31 +302,43 @@ class FeatureProcessor(BaseFeatureProcessor):
         self.analyse_feature_sets = analyse_feature_sets
         self.selection_cutoff = selection_cutoff
         self.selection_increment = selection_increment
-        self.feature_extractor = None
         self.extractor_kwargs = extractor_kwargs
 
-    def _fit_transform(self, x, y=None, **fit_params):
-        self.logger.info("Start fitting data.")
+    def fit(self, data: pd.DataFrame):
+        # We implement fit_transform because we anyhow transform the data. Therefore,
+        # when using fit_transform we don't have to do redundant transformations.
+        self.fit_transform(data)
+        return self
+
+    def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        self.logger.info("Fitting data.")
+        self.reset()
 
         # Input checks
-        x, y = self._check_x_y(x, y)
+        x, y = self._check_data(data)
 
         # Define which columns are datetime, numeric and collinear.
         self._find_columns_of_interest(x)
         x = x[self.numeric_cols_]
+        numeric_data = pd.concat([x, y], axis=1)
 
         # Fit and transform feature extractor.
         self._check_is_temporal_attribute(x)
-        x_ext = self._fit_transform_feature_extractor(x, y)
+        x_ext = self._fit_transform_feature_extractor(numeric_data)
         y_ext = self.transform_target(y)
 
         # Analyse feature importance and feature sets
         self._analyse_feature_sets(x_ext, y_ext)
 
-        self.logger.info("Finished fitting.")
-        return x_ext
+        # Recombine x and y data
+        data_out = pd.concat([x_ext, y_ext], axis=1)
 
-    def transform(self, x, y=None, feature_set=None):
+        self._is_fitted = True
+        return data_out
+
+    def transform(
+        self, data: pd.DataFrame, feature_set: str | None = None
+    ) -> pd.DataFrame:
         """
         Transform data and return it.
 
@@ -335,10 +351,7 @@ class FeatureProcessor(BaseFeatureProcessor):
 
         Parameters
         ----------
-        x : numpy.ndarray or pandas.DataFrame
-            Feature data to transform.
-        y : numpy.ndarray or pandas.Series
-            Additional target data to transform.
+        data : pd.DataFrame
         feature_set : str, optional
             Desired feature set.
             When feature_set is None, all features will be returned.
@@ -346,9 +359,8 @@ class FeatureProcessor(BaseFeatureProcessor):
         Returns
         -------
         pandas.DataFrame
-            Transformed version of x.
         """
-        # Check whether is fitted
+        self.logger.info("Transforming data.")
         self.check_is_fitted()
 
         # Set features for transformation
@@ -365,27 +377,28 @@ class FeatureProcessor(BaseFeatureProcessor):
         orig_features_ = self.features_
         self.features_ = features
 
-        # Transform data
-        xt = self._transform(x, y)
+        # Handle input
+        if self.target in data:
+            x, y = self._check_data(data)
+        else:
+            x = self._check_x(data)
+            y = None
+        x = self._impute_missing_columns(x)
+
+        # Transform
+        assert self.feature_extractor
+        data_out = self.feature_extractor.transform(x)
+        if y is not None:
+            data_out[self.target] = self.feature_extractor.transform_target(y)
 
         # Restore original features
         self.features_ = orig_features_
 
-        return xt
+        return data_out
 
-    def _transform(self, x, y=None, feature_set=None):
-        self.logger.info("Transforming data.")
-
-        # Handle input
-        x = self._check_x(x)
-        x = self._impute_missing_columns(x)
-
-        # Transform
-        return self.feature_extractor.transform(x)
-
-    def transform_target(self, y):
+    def transform_target(self, y: pd.Series) -> pd.Series:
         """
-        Transform target column (only if temporal data).
+        Transform target column (necessary for temporal data).
 
         Parameters
         ----------
@@ -395,16 +408,12 @@ class FeatureProcessor(BaseFeatureProcessor):
         -------
         pd.Series
         """
-        if isinstance(self.feature_extractor, TemporalFeatureExtractor):
-            y = self.feature_extractor._fit_data_to_window_size(y)  # noqa
-            y = self.feature_extractor._pool_target(y)  # noqa
-
-        return y
+        return self.feature_extractor.transform_target(y)
 
     # ----------------------------------------------------------------------
     # Feature processing
 
-    def _check_is_temporal_attribute(self, x):
+    def _check_is_temporal_attribute(self, x: pd.DataFrame):
         """
         Checks is_temporal attribute. If not set and x is multi-indexed, sets to true.
 
@@ -417,7 +426,7 @@ class FeatureProcessor(BaseFeatureProcessor):
             # When x is multi-indexed, we assume that we have temporal data.
             self.is_temporal = len(x.index.names) == 2
 
-    def _find_columns_of_interest(self, x):
+    def _find_columns_of_interest(self, x: pd.DataFrame):
         """
         Examines the data and separates different column types.
 
@@ -433,10 +442,12 @@ class FeatureProcessor(BaseFeatureProcessor):
         """
         self.logger.info("Analysing columns of interest.")
 
-        self.datetime_cols_ = [
-            col for col in x if pd.api.types.is_datetime64_any_dtype(x[col])
+        self.datetime_cols_: list[str] = [
+            col for col in x.columns if pd.api.types.is_datetime64_any_dtype(x[col])
         ]
-        non_datetime_cols = [col for col in x if col not in self.datetime_cols_]
+        non_datetime_cols: list[str] = [
+            col for col in x.columns if col not in self.datetime_cols_
+        ]
         self.collinear_cols_ = find_collinear_columns(
             x.loc[:, non_datetime_cols], self.collinear_threshold
         )
@@ -451,7 +462,7 @@ class FeatureProcessor(BaseFeatureProcessor):
             f"thus removed."
         )
 
-    def _impute_missing_columns(self, x):
+    def _impute_missing_columns(self, x: pd.DataFrame) -> pd.DataFrame:
         """
         Imputes missing columns when not present for transforming.
 
@@ -495,14 +506,14 @@ class FeatureProcessor(BaseFeatureProcessor):
 
         return x
 
-    def _fit_transform_feature_extractor(self, x, y):
+    def _fit_transform_feature_extractor(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Selects feature processor instance and calls fit_transform.
 
         Parameters
         ----------
-        x : pd.DataFrame
-        y : pd.Series
+        data : pd.DataFrame
+            Data (including target) to be transformed.
 
         Returns
         -------
@@ -513,9 +524,12 @@ class FeatureProcessor(BaseFeatureProcessor):
 
         # Fit feature extractor
         if not self.extract_features:
-            self.feature_extractor = NopFeatureExtractor(mode=None)
+            self.feature_extractor = NopFeatureExtractor(
+                target=self.target, mode=self.mode, verbose=self.verbose
+            )
         elif self.is_temporal:
             self.feature_extractor = TemporalFeatureExtractor(
+                target=self.target,
                 mode=self.mode,
                 fit_wavelets=self.use_wavelets,
                 verbose=self.verbose,
@@ -523,11 +537,13 @@ class FeatureProcessor(BaseFeatureProcessor):
             )
         else:
             self.feature_extractor = StaticFeatureExtractor(
-                mode=self.mode, verbose=self.verbose  # , **self.extractor_kwargs
+                target=self.target,
+                mode=self.mode,
+                verbose=self.verbose,
             )
 
         # Extract features
-        x_ext = self.feature_extractor.fit_transform(x, y)
+        x_ext = self.feature_extractor.fit_transform(data)
 
         # Find collinear features and remove those
         collinear_cols = find_collinear_columns(x_ext, self.collinear_threshold)
@@ -540,7 +556,7 @@ class FeatureProcessor(BaseFeatureProcessor):
         return x_ext[self.feature_extractor.features_]
 
     @property
-    def features_(self):
+    def features_(self) -> list[str]:
         """
         Returns `features_` attribute of the feature extractor.
 
@@ -554,7 +570,7 @@ class FeatureProcessor(BaseFeatureProcessor):
         return self.feature_extractor.features_
 
     @features_.setter
-    def features_(self, value):
+    def features_(self, value: list[str]):
         """
         Setter for `features_` attribute.
 
@@ -574,7 +590,7 @@ class FeatureProcessor(BaseFeatureProcessor):
     # ----------------------------------------------------------------------
     # Feature selection
 
-    def _analyse_feature_sets(self, x, y):
+    def _analyse_feature_sets(self, x: pd.DataFrame, y: pd.Series):
         """
         Explores importance of features and defines selected subsets.
 
@@ -609,7 +625,7 @@ class FeatureProcessor(BaseFeatureProcessor):
             key: sorted(values) for key, values in self.feature_sets_.items()
         }
 
-    def _select_gini_impurity(self, x, y):
+    def _select_gini_impurity(self, x: pd.DataFrame, y: pd.Series):
         """
         Selects features based on the random forest feature importance.
 
@@ -663,7 +679,7 @@ class FeatureProcessor(BaseFeatureProcessor):
             f"{self.selection_increment * 100:.2f}% RF increment."
         )
 
-    def _select_shap(self, x, y):
+    def _select_shap(self, x: pd.DataFrame, y: pd.Series):
         """
         Calculates shapely value to be used as a measure of feature importance.
 

@@ -1,20 +1,18 @@
 #  Copyright (c) 2022 by Amplo.
+from __future__ import annotations
 
 import shutil
 import time
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
-from sklearn.datasets import make_classification, make_regression
 
 from amplo.automl import Modeller
+from amplo.base import BaseEstimator
 
 __all__ = [
     "rmtree",
     "rmfile",
-    "make_x_y",
-    "make_data",
     "get_all_modeller_models",
     "find_first_warning_of_type",
     "RandomPredictor",
@@ -32,27 +30,6 @@ def rmtree(folder="Auto_ML", must_exist=False):
 
 def rmfile(file: str, must_exist=False):
     Path(file).unlink(missing_ok=not must_exist)
-
-
-def make_x_y(mode: str):
-    if mode == "classification":
-        x, y = make_classification(n_features=5)
-    elif mode == "multiclass":
-        x, y = make_classification(n_features=5, n_classes=3, n_informative=3)
-    elif mode == "regression":
-        x, y = make_regression(n_features=5)
-    else:
-        raise ValueError("Invalid mode")
-    x, y = pd.DataFrame(x), pd.Series(y)
-    x.columns = [f"feature_{i}" for i in range(len(x.columns))]
-    y.name = "target"
-    return x, y
-
-
-def make_data(mode: str, target="target"):
-    data, y = make_x_y(mode)
-    data[target] = y
-    return data
 
 
 def get_all_modeller_models(mode: str, **kwargs):
@@ -91,7 +68,7 @@ def find_first_warning_of_type(typ, record):
 # Dummies
 
 
-class _DummyPredictor:
+class _DummyPredictor(BaseEstimator):
     """
     Dummy predictor for testing.
 
@@ -122,7 +99,6 @@ class _DummyPredictor:
         return self.predictor.predict(x)
 
     def predict_proba(self, x):
-        assert isinstance(self.predictor, self._dummy_classifier)
         return self.predictor.predict_proba(x)
 
     @property
@@ -131,27 +107,29 @@ class _DummyPredictor:
             return self.predictor.classes
 
 
-class _RandomClassifier:
+class _RandomClassifier(BaseEstimator):
     """
     Dummy classifier for testing.
     """
 
     def __init__(self):
-        self.classes = None
+        self.classes_ = None
 
     def fit(self, x, y):
-        self.classes = np.unique(y)
+        self.classes_ = np.unique(y)
 
     def predict(self, x):
-        return np.random.choice(self.classes, len(x))
+        assert self.classes_ is not None
+        return np.random.choice(self.classes_, len(x))
 
     def predict_proba(self, x):
-        size = len(x), len(self.classes)
+        assert self.classes_ is not None
+        size = len(x), len(self.classes_)
         proba = np.random.uniform(size=size)
         return proba * (1.0 / proba.sum(1)[:, np.newaxis])  # normalize
 
 
-class _RandomRegressor:
+class _RandomRegressor(BaseEstimator):
     """
     Dummy regressor for testing.
     """
@@ -163,7 +141,8 @@ class _RandomRegressor:
         self.range = np.min(y), np.max(y)
 
     def predict(self, x):
-        return np.random.uniform(*self.range, len(x))
+        assert self.range
+        return np.random.uniform(self.range, len(x))
 
 
 class RandomPredictor(_DummyPredictor):
@@ -171,23 +150,24 @@ class RandomPredictor(_DummyPredictor):
     _dummy_regressor = _RandomRegressor
 
 
-class _OverfitClassifier:
+class _OverfitClassifier(BaseEstimator):
     """
     Dummy classifier for testing. Returns the class if present in the data, else
     predicts 0
     """
 
     def __init__(self):
-        self.classes = None
+        self.classes_: np.ndarray | None = None
         self.x = None
         self.y = None
 
     def fit(self, x, y):
         self.x = x.to_numpy()
         self.y = y
-        self.classes = y.unique()
+        self.classes_ = y.unique()
 
     def predict(self, x):
+        assert self.y is not None
         yt = []
         for i, row in x.iterrows():
             ind = np.where((row.values == self.x).all(axis=1))[0]
@@ -195,11 +175,12 @@ class _OverfitClassifier:
                 yt.append(-1)
             else:
                 yt.append(self.y.iloc[ind[0]])
-        return yt
+        return np.array(yt)
 
     def predict_proba(self, x):
+        assert self.classes_ is not None and self.y is not None
         yt = []
-        zeroes = [0 for _ in range(len(self.classes))]
+        zeroes = [0 for _ in range(len(self.classes_))]
         for i, row in x.iterrows():
             ind = np.where((row.values == self.x).all(axis=1))[0]
             if len(ind) == 0:
@@ -208,35 +189,34 @@ class _OverfitClassifier:
                 yt.append(
                     [
                         0 if self.y.iloc[ind[0]] != i else 1
-                        for i in range(len(self.classes))
+                        for i in range(len(self.classes_))
                     ]
                 )
-        return yt
+        return np.array(yt)
 
 
-class _OverfitRegressor:
+class _OverfitRegressor(_DummyPredictor):
     """
     Dummy regressor for testing.
     """
 
     def __init__(self):
-        self.classes = None
         self.x = None
         self.y = None
 
     def fit(self, x, y):
         self.x = x.to_numpy()
         self.y = y
-        self.classes = y.unique()
 
     def predict(self, x):
+        assert self.y is not None and self.x is not None
         yt = []
         for i, row in x.iterrows():
             ind = np.where((row.values == self.x).all(axis=1))[0]
-            if len(ind) == 0:
-                yt.append(-1)
+            if len(ind) > 0:
+                yt.append(ind[0])
             else:
-                yt.append(self.y.iloc[ind[0]])
+                yt.append(-1000)
         return yt
 
 

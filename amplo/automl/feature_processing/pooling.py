@@ -14,6 +14,22 @@ from numpy.typing import ArrayLike
 from polars import internals as pli
 
 # ----------------------------------------------------------------------
+# Basics
+
+
+def root_mean_square(column: str | pli.Series) -> pli.Expr | float:
+    if isinstance(column, str):
+        column = pli.col(column)
+    return (column**2).mean() ** 0.5
+
+
+def sum_values(column: str | pli.Series) -> pli.Expr | float:
+    if isinstance(column, str):
+        column = pli.col(column)
+    return column.sum()
+
+
+# ----------------------------------------------------------------------
 # Characteristics
 
 
@@ -106,8 +122,12 @@ POOL_FUNCTIONS = {
     "max": pl.max,
     "mean": pl.mean,
     "std": pl.std,
+    "median": pl.median,
+    "variance": pl.var,
     "kurtosis": pl.Expr.kurtosis,
     "skew": pl.Expr.skew,
+    "root_mean_square": root_mean_square,
+    "sum_values": sum_values,
     # --- Characteristics ---
     "entropy": pl.Expr.entropy,
     "abs_energy": abs_energy,

@@ -6,7 +6,6 @@ import re
 import time
 import warnings
 from datetime import datetime
-from typing import Dict, Union
 
 import numpy as np
 import optuna
@@ -43,7 +42,7 @@ def max_leaf_size(samples: int) -> int:
     return minimax(MIN_LEAF_SIZE, int(samples / 10), MAX_LEAF_SIZE)
 
 
-def warn_at_extreme(params: Dict[str, int | float | str], samples: int):
+def warn_at_extreme(params: dict[str, int | float | str], samples: int):
     for param, value in params.items():
         if param in ["depth", "max_depth"]:
             if value == MIN_DEPTH or value == max_depth(samples):
@@ -115,7 +114,7 @@ class OptunaGridSearch(LoggingMixin):
         Limit the time for optimization.
     cv : sklearn.model_selection.BaseCrossValidator
         Cross validation object.
-    scoring : str or sklearn.metrics._scorer._BaseScorer
+    scoring : str or sklearn.metrics._scorer._BaseScorer, default = neg_log_loss
         A valid string for `sklearn.metrics.get_scorer`.
     verbose : int
         Verbose logging.
@@ -124,6 +123,7 @@ class OptunaGridSearch(LoggingMixin):
     def __init__(
         self,
         model: BaseEstimator,
+        target: str,
         n_trials: int = 250,
         timeout: int = -1,
         cv: BaseCrossValidator = StratifiedKFold(n_splits=10),
@@ -141,6 +141,7 @@ class OptunaGridSearch(LoggingMixin):
         scoring = get_scorer(scoring)  # type: ignore
 
         # Set class attributes
+        self.target = target
         self.model = model
         self.n_trials = n_trials
         self.timeout = timeout
@@ -148,8 +149,6 @@ class OptunaGridSearch(LoggingMixin):
         self.scoring = get_scorer(scoring)
 
         # Set attributes
-        self.x_ = None  # Access in objective method necessary
-        self.y_ = None  # Access in objective method necessary
         self.binary_ = None
         self.samples_ = None
 
@@ -162,7 +161,7 @@ class OptunaGridSearch(LoggingMixin):
 
     def _get_hyper_params(
         self, trial: optuna.Trial
-    ) -> Dict[str, Union[None, bool, int, float, str]]:
+    ) -> dict[str, None | bool | int | float | str]:
         """Get model specific hyper parameter values, indicating predefined
         search areas to optimize.
 
@@ -561,19 +560,14 @@ class OptunaGridSearch(LoggingMixin):
             "Hyper parameter tuning not implemented for {}".format(model_name)
         )
 
-    def fit(self, x, y):
-        if isinstance(y, pd.DataFrame):
-            assert len(y.keys()) == 1, "Multiple target columns not supported."
-            y = y[y.keys()[0]]
-        assert isinstance(x, pd.DataFrame), "X should be Pandas DataFrame"
-        assert isinstance(y, pd.Series), "Y should be Pandas Series or DataFrame"
+    def fit(self, data: pd.DataFrame):
+        assert self.target in data
+        self.y = data[self.target]
+        self.x = data.drop(self.target, axis=1)
 
         # Set mode
-        self.binary = y.nunique() == 2
-        self.samples_ = len(y)
-
-        # Store
-        self.x, self.y = x, y
+        self.binary = self.y.nunique() == 2
+        self.samples_ = len(self.y)
 
         # Set up study
         study = optuna.create_study(

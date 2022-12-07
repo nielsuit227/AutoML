@@ -1,7 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
+from __future__ import annotations
 
 import warnings
-from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -20,9 +20,9 @@ class DriftDetector:
 
     def __init__(
         self,
-        num_cols: list = None,
-        cat_cols: list = None,
-        date_cols: list = None,
+        num_cols: list | None = None,
+        cat_cols: list | None = None,
+        date_cols: list | None = None,
         n_bins: int = 500,
         sigma: int = 3,
         with_pdf: bool = False,
@@ -284,9 +284,7 @@ class DriftDetector:
 
         return violations
 
-    def add_output_bins(
-        self, old_bins: tuple, prediction: Union[np.ndarray, pd.Series]
-    ):
+    def add_output_bins(self, old_bins: tuple, prediction: np.ndarray | pd.Series):
         """
         Just a utility, adds new data to an old distribution.
         """

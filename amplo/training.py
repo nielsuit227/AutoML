@@ -25,8 +25,6 @@ DEFAULT_PIPE_KWARGS = {
     "interval_analyse": False,
     "standardize": False,
     "missing_values": "zero",
-    "balance": False,
-    "stacking": False,
     "grid_search_timeout": 7200,
     "n_grid_searches": 1,
     "verbose": 1,

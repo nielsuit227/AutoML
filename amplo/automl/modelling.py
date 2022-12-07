@@ -1,20 +1,17 @@
 #  Copyright (c) 2022 by Amplo.
 from __future__ import annotations
 
-import os
 import time
-from copy import deepcopy
 from datetime import datetime
-from typing import Optional, TypeVar
+from typing import TypeVar
 
-import joblib
 import numpy as np
 import pandas as pd
-from sklearn import ensemble, linear_model, metrics, model_selection, svm
+from sklearn import ensemble, linear_model, model_selection, svm
 
+from amplo.base import LoggingMixin
 from amplo.classification import CatBoostClassifier, LGBMClassifier, XGBClassifier
 from amplo.regression import CatBoostRegressor, LGBMRegressor, XGBRegressor
-from amplo.utils import check_dtypes
 from amplo.utils.logging import get_root_logger
 
 __all__ = ["ClassificationType", "Modeller", "ModelType", "RegressionType"]
@@ -60,7 +57,7 @@ ModelType = TypeVar(
 )
 
 
-class Modeller:
+class Modeller(LoggingMixin):
     """
     Modeller for classification or regression tasks.
 
@@ -90,15 +87,6 @@ class Modeller:
         of `return_models()` function.
     needs_proba : bool
         Whether the modelling needs a probability.
-    folder : str
-        Folder to store models and/or results.
-    dataset : str
-        Name of feature set. For documentation purposes only.
-    store_models : bool
-        Whether to store the trained models. If true, `folder` must be
-        specified to take effect.
-    store_results : bool
-        Whether to store the results. If true, `folder` must be specified.
 
     See Also
     --------
@@ -107,27 +95,24 @@ class Modeller:
 
     def __init__(
         self,
-        mode: str = "regression",
-        cv: Optional[model_selection.BaseCrossValidator] = None,
-        objective: str = "accuracy",
-        samples: Optional[int] = None,
+        target: str | None = None,
+        mode: str = "classification",
+        cv: model_selection.BaseCrossValidator | None = None,
+        objective: str | None = None,
+        samples: int | None = None,
         needs_proba: bool = True,
-        folder: str = "",
-        dataset: str = "set_0",
-        store_models: bool = False,
-        store_results: bool = True,
+        verbose: int = 1,
     ):
+        super().__init__(verbose=verbose)
         if mode not in ("classification", "regression"):
             raise ValueError(f"Unsupported mode: {mode}")
 
         # Parameters
+        self.target = target
         self.cv = cv
         self.objective = objective
         self.mode = mode
         self.samples = samples
-        self.dataset = str(dataset)
-        self.store_results = store_results
-        self.store_models = store_models
         self.needs_proba = needs_proba
         self.results = pd.DataFrame(
             columns=[
@@ -148,68 +133,51 @@ class Modeller:
             elif self.mode == "regression":
                 self.cv = model_selection.KFold(n_splits=3)
 
-        # Folder
-        self.folder = folder if len(folder) == 0 or folder[-1] == "/" else folder + "/"
-        if (store_results or store_models) and self.folder != "":
-            if not os.path.exists(self.folder):
-                os.makedirs(self.folder)
+    def fit(self, data: pd.DataFrame) -> pd.DataFrame:
+        if not self.target:
+            raise ValueError("Can only fit when target is provided.")
+        if self.target not in data:
+            raise ValueError(f"Target column not in dataframe: {self.target}")
 
-    def fit(self, x, y):
-        # Copy number of samples
-        self.samples = len(y)
+        self.samples = len(data)
+        y = data[self.target]
+        x = data.drop(self.target, axis=1)
 
         # Convert to NumPy
         x = np.array(x)
         y = np.array(y).ravel()
 
-        if self.store_results and "Initial_Models.csv" in os.listdir(self.folder):
-            self.results = pd.read_csv(self.folder + "Initial_Models.csv")
-            for i in range(len(self.results)):
-                self.print_results(self.results.iloc[i])
+        # Models
+        self.models = self.return_models()
 
-        else:
+        # Loop through models
+        for model in self.models:
 
-            # Models
-            self.models = self.return_models()
+            # Time & loops through Cross-Validation
+            t_start = time.time()
+            scores = model_selection.cross_val_score(
+                model, x, y, scoring=self.objective
+            )
+            score = sum(scores) / len(scores)
+            run_time = time.time() - t_start
 
-            # Loop through models
-            for model in self.models:
-
-                # Time & loops through Cross-Validation
-                t_start = time.time()
-                scores = model_selection.cross_val_score(
-                    model, x, y, scoring=self.objective
-                )
-                score = sum(scores) / len(scores)
-                run_time = time.time() - t_start
-
-                # Append results
-                result = {
-                    "date": datetime.today().strftime("%d %b %y"),
-                    "model": type(model).__name__,
-                    "dataset": self.dataset,
-                    "params": model.get_params(),
-                    "score": score,
-                    "worst_case": np.mean(scores) - np.std(scores),
-                    "time": run_time,
-                }
-                self.results = pd.concat(
-                    [self.results, pd.Series(result).to_frame().T], ignore_index=True
-                )
-                self.print_results(result)
-
-                # Store model
-                if self.store_models:
-                    joblib.dump(
-                        model,
-                        self.folder
-                        + type(model).__name__
-                        + "_{:.4f}.joblib".format(score),
-                    )
-
-            # Store CSV
-            if self.store_results:
-                self.results.to_csv(self.folder + "Initial_Models.csv")
+            # Append results
+            result = {
+                "date": datetime.today().strftime("%d %b %y"),
+                "model": type(model).__name__,
+                "params": model.get_params(),
+                "score": score,
+                "worst_case": np.mean(scores) - np.std(scores),
+                "time": run_time,
+            }
+            self.results = pd.concat(
+                [self.results, pd.Series(result).to_frame().T], ignore_index=True
+            )
+            self.logger.info(
+                f"{result['model'].ljust(30)} {self.objective}: "
+                f"{result['worst_case']:15.4f}    training time:"
+                f" {result['time']:.1f} s"
+            )
 
         # Return results
         return self.results
@@ -228,7 +196,7 @@ class Modeller:
         # All classifiers
         if self.mode == "classification":
             # The thorough ones
-            if self.samples < 25000:
+            if not self.samples or self.samples < 25000:
                 models.append(svm.SVC(kernel="rbf", probability=self.needs_proba))
                 models.append(ensemble.BaggingClassifier())
                 # models.append(ensemble.GradientBoostingClassifier()) == XG Boost
@@ -249,7 +217,7 @@ class Modeller:
 
         elif self.mode == "regression":
             # The thorough ones
-            if self.samples < 25000:
+            if not self.samples or self.samples < 25000:
                 models.append(svm.SVR(kernel="rbf"))
                 models.append(ensemble.BaggingRegressor())
                 # models.append(ensemble.GradientBoostingRegressor()) == XG Boost
@@ -266,13 +234,3 @@ class Modeller:
             models.append(ensemble.RandomForestRegressor())
 
         return models
-
-    def print_results(self, result):
-        logger.info(
-            "{} {}: {}    training time: {:.1f} s".format(
-                result["model"].ljust(30),
-                self.objective,
-                f"{result['worst_case']:.4f}".ljust(15),
-                result["time"],
-            )
-        )

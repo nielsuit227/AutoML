@@ -4,15 +4,16 @@
 Feature processor for extracting temporal features.
 """
 
+
 from __future__ import annotations
 
 import re
 import time
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 from warnings import warn
 
 import numpy as np
-import numpy.typing
+import numpy.typing as npt
 import pandas as pd
 import polars as pl
 import pywt
@@ -86,11 +87,11 @@ def pl_pool(
 
         # Convert function to polars
         if func.__module__ == "polars.internals.lazy_functions":
-            func = func(str(series.name))
+            func = func(str(series.name))  # type: ignore
         elif func.__module__ == "polars.internals.expr":
-            func = func(pl.col(str(series.name)))
+            func = func(pl.col(str(series.name)))  # type: ignore
         else:
-            func = pl.col(str(series.name)).apply(func)
+            func = pl.col(str(series.name)).apply(func)  # type: ignore
 
         # Rename output variable and add to `pl_agg`
         func = func.alias(f"{series.name}__pool={name}")
@@ -163,7 +164,7 @@ class ScoreWatcher:
             key: (0, 0, np.array(0)) for key in keys
         }
 
-    def __getitem__(self, key: str) -> tuple[int, np.ndarray]:
+    def __getitem__(self, key: str) -> tuple[int, npt.NDArray[np.floating]]:
         """
         Get the counter and score for the given key.
 
@@ -185,7 +186,7 @@ class ScoreWatcher:
         """
         return f"{self.__class__.__name__}({sorted(self.watch)})"
 
-    def update(self, key: str, score: numpy.typing.ArrayLike, weight: int = 1) -> None:
+    def update(self, key: str, score: npt.ArrayLike, weight: int = 1) -> None:
         """
         Update a key of the watcher.
 
@@ -211,7 +212,7 @@ class ScoreWatcher:
             new_score /= new_weight  # type: ignore
         self.watch[key] = (count + 1, new_weight, np.asarray(new_score, float))
 
-    def mean(self) -> np.ndarray:
+    def mean(self) -> npt.NDArray[np.floating]:
         """
         Calculate the mean of all scores.
 
@@ -223,7 +224,7 @@ class ScoreWatcher:
         scores = [s for counter, _, s in self.watch.values() if counter > 0]
         return np.asarray(scores, float).mean(0)
 
-    def std(self) -> np.ndarray:
+    def std(self) -> npt.NDArray[np.floating]:
         """
         Calculate the standard deviation of all scores.
 
@@ -244,6 +245,9 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
     ----------
     mode : {"notset", "classification", "regression"}, optional, default: "notset"
         Model mode.
+    window_size : int, optional, default: None
+        Determines how many data rows will be collected and summarized by pooling.
+        If None, will determine a reasonable window size for the data at hand.
     fit_raw : bool, default: True
         Whether to include pooling from raw features to extract features.
     fit_wavelets : bool or list of str, default: True
@@ -278,7 +282,9 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
 
     def __init__(
         self,
+        target: str = "target",
         mode: str = "notset",
+        window_size: int | None = None,
         fit_raw: bool = True,
         fit_wavelets: bool | list[str] = True,
         pooling: list[str] | None = None,
@@ -286,7 +292,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         timeout: int = 1800,
         verbose: int = 0,
     ):
-        super().__init__(mode=mode, verbose=verbose)
+        super().__init__(target=target, mode=mode, verbose=verbose)
 
         # Warnings
         if self.mode == "regression":
@@ -301,6 +307,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
 
         # Check inputs and set defaults
         check_dtypes(
+            ("window_size", window_size, (type(None), int)),
             ("fit_raw", fit_raw, bool),
             ("fit_wavelets", fit_wavelets, (bool, list)),
             ("pooling", pooling, (type(None), list)),
@@ -324,20 +331,26 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             )
 
         # Set attributes
+        self.window_size_ = window_size
         self.fit_raw = fit_raw
         self.fit_wavelets = fit_wavelets
         self.pooling = pooling
         self.strategy = strategy
         self.timeout = timeout
 
-        # Flags
-        self._received_multi_index = True
+    def fit(self, data: pd.DataFrame) -> "TemporalFeatureExtractor":
+        # We implement fit_transform because we anyhow transform the data. Therefore,
+        # when using fit_transform we don't have to do redundant transformations.
+        self.fit_transform(data)
+        return self
 
-    def _fit_transform(self, x, y=None, **fit_params):
-        self.logger.info("Start fitting data.")
+    def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        self.logger.info("Fitting data.")
+        self.reset()
 
         # Input checks
-        x, y = self._check_x_y(x, y)
+        data, _ = self._assert_multiindex(data)
+        x, y = self._check_data(data)
         numeric_cols = [
             col for col, typ in zip(x, x.dtypes) if np.issubdtype(typ, np.number)
         ]
@@ -352,7 +365,9 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         # Initialize fitting
         self._set_validation_model()
         self._set_window_size(x.index)
-        x, y = self._fit_data_to_window_size(x, y)
+        x, y = self._fit_data_to_window_size(x, y)  # type: ignore
+        x = cast(pd.DataFrame, x)  # type hint
+        y = cast(pd.Series, y)  # type hint
 
         # Calculate baseline scores (w/o taking time into account)
         self._init_feature_baseline_scores(x, y)
@@ -366,15 +381,20 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             ],
             axis=1,
         )
+        # Ensure ordering of columns & sanitize
+        x_out = x_out[self.features_]
+        x_out = sanitize_dataframe(x_out)
 
-        self.logger.info("Finished fitting.")
-        return sanitize_dataframe(x_out[self.features_])
+        self._is_fitted = True
+        return x_out
 
-    def _transform(self, x, y=None):
+    def transform(self, data: pd.DataFrame) -> pd.DataFrame:
         self.logger.info("Transforming data.")
+        self.check_is_fitted()
 
         # Handle input
-        x = self._check_x(x, convert_single_index=True)
+        data, got_multiindex = self._assert_multiindex(data, raise_on_single=False)
+        x, _ = self._check_data(data, require_y=False)
         x = self._fit_data_to_window_size(x)
 
         # Apply transformations
@@ -385,15 +405,32 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             ],
             axis=1,
         )
-
-        # Sanitize df
-        x_out = sanitize_dataframe(x_out[self.features_])
+        # Ensure ordering of columns & sanitize
+        x_out = x_out[self.features_]
+        x_out = sanitize_dataframe(x_out)
 
         # Return
-        if self._received_multi_index:
+        if got_multiindex:
             return x_out
         else:
             return x_out.set_index(x_out.index.droplevel(0))
+
+    def transform_target(self, y: pd.Series) -> pd.Series:
+        self.check_is_fitted()
+
+        # Handle input
+        y, got_multiindex = self._assert_multiindex(y, raise_on_single=False)
+        y = self._check_y(y, copy=False)
+        y = self._fit_data_to_window_size(y)  # type: ignore
+
+        # Transform
+        y_out = self._pool_target(y)
+
+        # Return
+        if got_multiindex:
+            return y_out
+        else:
+            return y_out.set_index(y_out.index.droplevel(0))
 
     # ----------------------------------------------------------------------
     # Feature processing
@@ -416,7 +453,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
 
         # Score and decide which features to accept
         scores = self.select_scores(
-            x_pooled.apply(self._calc_feature_scores, y=y_pooled, axis=0),
+            x_pooled.apply(self._calc_feature_scores, y=y_pooled, axis=0),  # type: ignore
             best_n_per_class=50,
             update_baseline=update_baseline,
         )
@@ -459,6 +496,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             return pd.DataFrame(index=self._pool_target(dummy_y).index)
 
         self.logger.info("Fitting wavelet-transformed features.")
+        self.fit_wavelets = cast(list[str], self.fit_wavelets)  # type hint
 
         # Pre-initialization
         rng = np.random.default_rng(39478)
@@ -473,7 +511,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             peak_freqs[col] = freqs[peak_idx]
 
         # Initialize column-wavelet iterator
-        col_wav_iterator = [
+        col_wav_iterator: list[tuple[str, str]] = [
             (col, wav)
             for col in x
             for wav in self.fit_wavelets
@@ -481,7 +519,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         ]
         if self.strategy in ("random", "smart"):
             # Shuffle iterator
-            rng.shuffle(col_wav_iterator)
+            rng.shuffle(col_wav_iterator)  # type: ignore
 
         # Initialize watchers (for smart timeout)
         col_watcher = ScoreWatcher(x.keys().to_list())
@@ -561,7 +599,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
                 .apply(_extract_wavelets, scales=scales, wavelet=wav, name=col)
             )
             feats_pooled = self._pool_features(feats, pooling_instructions, True)
-            scores = feats_pooled.apply(self._calc_feature_scores, y=y_pooled, axis=0)
+            scores = feats_pooled.apply(self._calc_feature_scores, y=y_pooled, axis=0)  # type: ignore
 
             # Update watchers
             col_watcher.update(col, scores.sum(1), scores.shape[1])
@@ -633,7 +671,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             for col in columns:
                 x_out += [
                     x[col]
-                    .groupby(level=0, sort=False)
+                    .groupby(level=0, sort=False, group_keys=False)
                     .apply(_extract_wavelets, scales=scales, wavelet=wv, name=col)
                 ]
         x_out = pd.concat(x_out, axis=1)
@@ -641,7 +679,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         # Pooling
         pool_info = [tuple(c.split("__pool=")) for c in self.wav_features_]
         pool_info = pd.DataFrame(pool_info).groupby(0).agg(list)[1].to_dict()
-        x_pooled = self._pool_features(x_out, pool_info)
+        x_pooled = self._pool_features(x_out, pool_info)  # type: ignore
 
         assert set(self.wav_features_) == set(
             x_pooled
@@ -652,19 +690,29 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
     # ----------------------------------------------------------------------
     # Utils
 
-    def _check_x(self, x, copy=True, sanitize=True, convert_single_index=False):
-        # Call parent checking method
-        x_check = BaseFeatureExtractor._check_x(x, copy=copy, sanitize=sanitize)
-        # Check multi-index
-        n_index_cols = len(x.index.names)
-        if n_index_cols == 1 and convert_single_index:
-            x_check.index = pd.MultiIndex.from_product([[0], x_check.index])
-            self._received_multi_index = False
-        elif n_index_cols != 2:
-            raise ValueError("Data is not properly multi-indexed.")
-        return x_check
+    def _assert_multiindex(
+        self, data: PandasType, raise_on_single=True, copy=True
+    ) -> tuple[PandasType, bool]:
+        data = data.copy() if copy else data
+        n_index_cols = len(data.index.names)
 
-    def _set_window_size(self, index):
+        if n_index_cols == 1 and raise_on_single:
+            raise ValueError("Data must be multiindexed.")
+        elif n_index_cols == 1:
+            data.index = pd.MultiIndex.from_product([[0], data.index])
+            data_is_multiindexed = False
+        elif n_index_cols == 2:
+            data_is_multiindexed = True
+        else:
+            raise ValueError("Data is neither single- nor properly multiindexed.")
+
+        return data, data_is_multiindexed
+
+    def _set_window_size(self, index: pd.Index) -> None:
+
+        if isinstance(self.window_size_, int):
+            return
+
         # Count log sizes
         counts = pd.Series(index=index, dtype=int).fillna(0).groupby(level=0).count()
 
@@ -684,7 +732,9 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
 
         self.logger.debug(f"Set window size to {self.window_size_}.")
 
-    def _fit_data_to_window_size(self, *data):
+    def _fit_data_to_window_size(
+        self, *data: PandasType
+    ) -> PandasType | list[PandasType]:
         """
         Fit the data to a multiple of the window size.
 
@@ -705,8 +755,8 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         if len(data) < 1:
             raise ValueError("Got no data.")
 
-        data = list(data)  # make `data` indexable
-        for i, datum in enumerate(data):
+        data_out = []
+        for datum in data:
             # Check datum
             if len(datum.index.names) != 2:
                 raise ValueError("Index is not a MultiIndex of size 2.")
@@ -715,15 +765,16 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
                 datum.index.names = ["log", "index"]
 
             # Add or remove tail
-            data[i] = datum.groupby(level=0, group_keys=False).apply(
+            datum = datum.groupby(level=0, group_keys=False, sort=False).apply(  # type: ignore
                 self._add_or_remove_tail
             )
+            data_out.append(datum)
 
-        if len(data) == 1:
-            return data[0]
-        return data
+        if len(data_out) == 1:
+            return data_out[0]
+        return data_out
 
-    def _add_or_remove_tail(self, data):
+    def _add_or_remove_tail(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Fill or cut the tail to fit the data length to a multiple of the window size.
 
@@ -740,6 +791,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         pd.DataFrame
             Parsed data.
         """
+        self.window_size_ = cast(int, self.window_size_)  # type hint
 
         if self.window_size_ == 1:
             return data
@@ -758,8 +810,8 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
 
     def _pool_features(
         self,
-        data,
-        instruction: dict[str, list[str]] | list[str] | None = None,
+        data: pd.DataFrame,
+        instruction: dict[str, str | list[str] | None] | list[str] | None = None,
         drop_nan_columns=False,
     ) -> pd.DataFrame:
         """
@@ -772,7 +824,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         ----------
         data : pd.DataFrame
             Data to be pooled.
-        instruction : dict of {str: list of str} or list of str, optional
+        instruction : dict of {str: str or list of str or None} or list of str, optional
             Instructions for pooling. Each key corresponds to the column name and
             its value defines the pooling names for the column.
             Default: Will calculate all implemented pools.
@@ -790,26 +842,26 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
         """
         if not instruction and self.mode == "regression":
             # Use only mean feature (since window_size=1).
-            instruction = {col: "mean" for col in data}
+            instruction = {str(col): "mean" for col in data}
         elif not instruction:
-            instruction = {col: None for col in data}  # set default
+            instruction = {str(col): None for col in data}  # set default
         elif isinstance(instruction, dict):
             for col, instr in instruction.items():
                 instruction[col] = list(get_pool_functions(instr))  # validate
         elif isinstance(instruction, list):
             instr = list(get_pool_functions(instruction))  # validate
-            instruction = {col: instr for col in data}
+            instruction = {str(col): instr for col in data}
         else:
             raise ValueError(f"Invalid instructions: {instruction}")
 
         # Pooling
-        self.logger.info("Pooling data")
+        self.logger.debug("Pooling data")
         pooled_data = []
-        for col, instr in tqdm(instruction.items(), disable=self.verbose == 0):
+        for col, instr in tqdm(instruction.items(), disable=self.verbose <= 1):
             agg_func = get_pool_functions(instr)
             # Apply
             # Note: For many windows, this becomes slow (up to 2.5s per column
-            pooled_col = pl_pool(data[col], self.window_size_, agg_func)
+            pooled_col = pl_pool(data[col], self.window_size_, agg_func)  # type: ignore
             pooled_data += [pooled_col]
         pooled_data = pd.concat(pooled_data, axis=1)
 
@@ -820,7 +872,7 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
 
         return sanitize_dataframe(pooled_data)
 
-    def _pool_target(self, target):
+    def _pool_target(self, target: pd.Series):
         """
         Pools target data with given window size.
 

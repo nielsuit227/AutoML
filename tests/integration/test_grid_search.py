@@ -28,8 +28,8 @@ def make_data(request):
         raise ValueError("Mode is invalid")
 
     request.cls.mode = mode
-    request.cls.x = pd.DataFrame(x)
-    request.cls.y = pd.Series(y)
+    request.cls.data = pd.DataFrame(x)
+    request.cls.data["target"] = y
     yield
 
 
@@ -38,8 +38,7 @@ class TestGridSearch:
     objective: str
     mode: str
     k_fold: type[KFold] | type[StratifiedKFold]
-    x: pd.DataFrame
-    y: pd.Series
+    data: pd.DataFrame
 
     def test_each_model(self):
         """
@@ -55,13 +54,14 @@ class TestGridSearch:
             # Grid search
             search = OptunaGridSearch(
                 model,
+                target="target",
                 cv=self.k_fold(n_splits=3),
                 verbose=0,
                 timeout=10,
                 n_trials=2,
                 scoring=self.objective,
             )
-            results = search.fit(self.x, self.y)
+            results = search.fit(self.data)
 
             # Tests
             model_name = type(model).__name__

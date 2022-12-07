@@ -8,7 +8,7 @@ from amplo.automl import Sequencer
 
 class TestSequence:
     def test_init(self):
-        assert Sequencer(), "Class initiation failed"
+        assert Sequencer(target="target"), "Class initiation failed"
 
     def test_numpy_none(self):
         # Parameters
@@ -22,8 +22,8 @@ class TestSequence:
         # Iterate scenarios
         for forward in [[1], [5]]:
             # Sequence
-            sequence = Sequencer(back=back, forward=forward)
-            seq_x, seq_y = sequence.convert(x, y, flat=False)
+            sequence = Sequencer(back=back, forward=forward, target="target")
+            seq_x, seq_y = sequence._convert_numpy(x, y, flat=False)
 
             # Test
             assert len(seq_x.shape) == 3, "seq_x is no tensor"
@@ -52,7 +52,7 @@ class TestSequence:
         for forward in [[1], [5]]:
             # Sequence
             sequence = Sequencer(back=back, forward=forward, diff="diff")
-            seq_x, seq_y = sequence.convert(x, y, flat=False)
+            seq_x, seq_y = sequence._convert_numpy(x, y, flat=False)
 
             # Tests
             assert len(seq_x.shape) == 3, "seq_x is not a tensor"
@@ -78,7 +78,7 @@ class TestSequence:
         for forward in [[1], [5]]:
             # Sequence
             sequence = Sequencer(back=back, forward=forward, diff="log_diff")
-            seq_x, seq_y = sequence.convert(x, y, flat=False)
+            seq_x, seq_y = sequence._convert_numpy(x, y, flat=False)
 
             # Tests
             assert len(seq_x.shape) == 3, "seq_x is not a tensor"
@@ -108,7 +108,7 @@ class TestSequence:
 
         # Without differencing
         sequence = Sequencer(back=back, forward=forward, diff="none")
-        seq_x, seq_y = sequence.convert(x, y, flat=False)
+        seq_x, seq_y = sequence._convert_numpy(x, y, flat=False)
         # Test
         assert (
             seq_x.shape[0] == seq_y.shape[0]
@@ -122,9 +122,10 @@ class TestSequence:
 
         # With differencing
         sequence = Sequencer(back=back, forward=forward, diff="diff")
-        seq_x, seq_y = sequence.convert(x, y, flat=False)
+        seq_x, seq_y = sequence._convert_numpy(x, y, flat=False)
         revert = sequence.revert(seq_y, y[back - 1 : back - 1 + max(forward)])
         # Tests
+        assert revert is not None
         assert (
             seq_x.shape[0] == seq_y.shape[0]
         ), "seq_x and seq_y have inconsistent samples"
@@ -133,35 +134,6 @@ class TestSequence:
             revert[0, : forward[0] - forward[-1]], y[back - 1 : forward[0] - forward[1]]
         )
         assert np.allclose(revert[1], y[back - 1 :])
-
-    def test_pandas_tensor(self):
-        # Parameters
-        features = 5
-        length = 500
-        back = np.random.randint(1, 50)
-        x, y = np.random.randint(0, 50, (length, features)), np.random.randint(
-            0, 50, length
-        )
-        x, y = pd.DataFrame(x), pd.Series(y)
-
-        # Iterate scenarios
-        for forward in [[1], [5]]:
-            # Sequence
-            sequence = Sequencer(back=back, forward=forward)
-            seq_x, seq_y = sequence.convert(x, y, flat=False)
-
-            # Tests
-            assert len(seq_x.shape) == 3, "seq_x is no tensor"
-            assert seq_x.shape[1] == back, "seq_x step dimension incorrect"
-            assert seq_x.shape[2] == features, "seq_x feature dimension incorrect"
-            assert (
-                seq_x.shape[0] == seq_y.shape[0]
-            ), "seq_x and seq_y have inconsistent samples"
-            for i in range(seq_x.shape[0]):
-                assert np.allclose(seq_x[i], x[i : i + back]), "seq_x samples incorrect"
-                assert np.allclose(
-                    seq_y[i], y[i + back + forward[0] - 1]
-                ), "seq_y samples incorrect"
 
     def test_reconstruction(self):
         # Parameters
@@ -178,7 +150,7 @@ class TestSequence:
         for diff in ["diff", "log_diff"]:
             # Sequence
             seq = Sequencer(back=back, forward=forward, diff=diff)
-            seq_x, seq_y = seq.convert(x, y, flat=False)
+            seq_x, seq_y = seq._convert_numpy(x, y, flat=False)
 
             # Tests
             assert len(seq_x.shape) == 3, "seq_x is not a tensor"
@@ -188,4 +160,5 @@ class TestSequence:
                 seq_x.shape[0] == seq_y.shape[0]
             ), "seq_x and seq_y inconsistent samples"
             revert = seq.revert(seq_y, y[back - 1 : back - 1 + forward[0]])
+            assert revert is not None
             assert np.allclose(revert, y[back - 1 :]), "reverted seq_y incorrect"

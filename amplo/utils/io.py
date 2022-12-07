@@ -52,6 +52,10 @@ class NpEncoder(json.JSONEncoder):
             return float(obj)
         if isinstance(obj, np.ndarray):
             return obj.tolist()
+        if isinstance(obj, pd.Series):
+            return obj.to_list()
+        if isinstance(obj, pd.DataFrame):
+            obj.to_json()
         return super(NpEncoder, self).default(obj)
 
 

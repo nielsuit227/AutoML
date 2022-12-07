@@ -2,28 +2,9 @@
 
 import pandas as pd
 import pytest
-from sklearn.datasets import make_classification, make_regression
 
 from amplo.automl import Modeller
 from tests import rmtree
-
-
-@pytest.fixture(scope="class", params=["classification", "regression"])
-def make_mode(request):
-    mode = request.param
-    if mode == "classification":
-        x, y = make_classification()
-        objective = "neg_log_loss"
-    elif mode == "regression":
-        x, y = make_regression()  # type: ignore
-        objective = "r2"
-    else:
-        raise ValueError("Invalid mode")
-    request.cls.mode = mode
-    request.cls.objective = objective
-    request.cls.x = pd.DataFrame(x)
-    request.cls.y = pd.Series(y)
-    yield
 
 
 @pytest.fixture(scope="class", autouse=True)
@@ -37,12 +18,11 @@ class TestModelling:
     folder = "tmp/"
     mode: str
     objective: str
-    x: pd.DataFrame
-    y: pd.Series
+    data: pd.DataFrame
 
     def test_modeller(self):
-        mod = Modeller(mode=self.mode, objective=self.objective, folder=self.folder)
-        mod.fit(self.x, self.y)
+        mod = Modeller(target="target", mode=self.mode, objective=self.objective)
+        mod.fit(self.data)
         # Tests
         assert isinstance(
             mod.results, pd.DataFrame

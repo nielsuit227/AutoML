@@ -11,21 +11,30 @@ References
 The ML test score: A rubric for ML production readiness and technical debt
 reduction. 1123-1132. 10.1109/BigData.2017.8258038.
 """
+from __future__ import annotations
+
 from copy import deepcopy
 
 import numpy as np
+import pandas as pd
 from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.metrics import get_scorer
+from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.neighbors import KernelDensity
 
+from amplo.base import BaseEstimator
 from amplo.classification import PartialBoostingClassifier
-from amplo.observation._base import PipelineObserver, _report_obs
+from amplo.observation._base import BaseObserver, _report_obs
 from amplo.regression import PartialBoostingRegressor
+from amplo.utils.logging import get_root_logger
 from amplo.utils.sys import getsize
 
 __all__ = ["ModelObserver"]
 
+logger = get_root_logger().getChild("ModelObserver")
 
-class ModelObserver(PipelineObserver):
+
+class ModelObserver(BaseObserver):
     """
     Model observer before putting to production.
 
@@ -43,17 +52,27 @@ class ModelObserver(PipelineObserver):
         7. TODO: The model is tested for considerations of inclusion.
     """
 
+    CLASSIFICATION = "classification"
+    REGRESSION = "regression"
     _obs_type = "model_observer"
 
-    def observe(self):
-        self.check_model_size()
-        self.check_better_than_linear()
-        self.check_noise_invariance()
-        self.check_slice_invariance()
-        self.check_boosting_overfit()
+    def observe(
+        self,
+        model: BaseEstimator,
+        data: pd.DataFrame,
+        target: str,
+        mode: str,
+    ) -> list[dict[str, str | bool]]:
+        model = deepcopy(model)
+        self.check_model_size(model)
+        self.check_better_than_linear(model, data, target, mode)
+        self.check_noise_invariance(model, data, target, mode)
+        self.check_slice_invariance(model, data, target, mode)
+        self.check_boosting_overfit(model, data, target, mode)
+        return self.observations
 
     @_report_obs
-    def check_model_size(self, threshold=20e6):
+    def check_model_size(self, model: BaseEstimator, threshold=20e6):
         """
         Check the RAM of the model. If it's bigger than 20MB, something is wrong.
 
@@ -69,7 +88,8 @@ class ModelObserver(PipelineObserver):
         message : str
             A brief description of the observation and its results.
         """
-        ram = getsize(self.model)
+        logger.info("Checking model size.")
+        ram = getsize(model)
 
         status_ok = ram < threshold
         message = (
@@ -79,7 +99,9 @@ class ModelObserver(PipelineObserver):
         return status_ok, message
 
     @_report_obs
-    def check_better_than_linear(self):
+    def check_better_than_linear(
+        self, model: BaseEstimator, data: pd.DataFrame, target: str, mode: str
+    ):
         """
         Checks whether the model exceeds a linear model.
 
@@ -99,19 +121,29 @@ class ModelObserver(PipelineObserver):
         message : str
             A brief description of the observation and its results.
         """
+        logger.info("Checking whether the model exceeds a linear model.")
+
         # Make score for linear model
-        if self.mode == self.CLASSIFICATION:
+        if mode == self.CLASSIFICATION:
             linear_model = LogisticRegression()
-        elif self.mode == self.REGRESSION:
+            objective = "neg_log_loss"
+        elif mode == self.REGRESSION:
             linear_model = LinearRegression()
+            objective = "neg_mean_squared_error"
         else:
             raise AssertionError("Invalid mode detected.")
-        linear_model.fit(self.xt, self.yt)
-        linear_model_score = self.scorer(linear_model, self.xv, self.yv)
 
-        # Make score for model to observe
-        obs_model_score = self.scorer(self.fitted_model, self.xv, self.yv)
+        # Split data
+        y = data[target]
+        x = data.drop(target, axis=1)
 
+        # Score
+        linear_model_score = np.mean(
+            cross_val_score(linear_model, x, y, scoring=objective)
+        )
+        obs_model_score = np.mean(cross_val_score(model, x, y, scoring=objective))
+
+        # Determine status
         status_ok = obs_model_score > linear_model_score
         message = (
             "Performance of a linear model should not exceed the "
@@ -122,7 +154,9 @@ class ModelObserver(PipelineObserver):
         return status_ok, message
 
     @_report_obs
-    def check_noise_invariance(self):
+    def check_noise_invariance(
+        self, model: BaseEstimator, data: pd.DataFrame, target: str, mode: str
+    ):
         """
         This checks whether the model performance is invariant to noise in the data.
 
@@ -137,19 +171,24 @@ class ModelObserver(PipelineObserver):
         message : str
             A brief description of the observation and its results.
         """
+        logger.info("Checking model for noise invariance.")
+
+        # Set scorer
+        scorer = self.get_scorer_(mode)
+
         # Train model
-        model = self.model
-        model.fit(self.x, self.y)
+        xt, xv, yt, yv = self.get_train_test_(data, target)
+        model.fit(xt, yt)
 
         # Inject noise
-        signal_noise_ratio = 20
-        xn = deepcopy(self.xv)
-        for key in self.xv.keys():
-            signal_energy = sum(self.xv[key] ** 2)
+        signal_noise_ratio = 5  # This threshold is not super optimized
+        xn = deepcopy(xv)
+        for key in xv.keys():
+            signal_energy = sum(xn[key].values ** 2)  # type: ignore
             noise = np.random.normal(0, 1, len(xn))
             noise_energy = sum(noise**2)
             xn[key] = (
-                self.xv[key]
+                xn[key]
                 + np.sqrt(signal_energy / noise_energy * signal_noise_ratio) * noise
             )
 
@@ -162,15 +201,22 @@ class ModelObserver(PipelineObserver):
         )
 
         # Compare performance
-        baseline = self._pipe.scorer(model, self.xv, self.yv)
-        comparison = self._pipe.scorer(model, xn, self.yv)
+        baseline = scorer(model, xv, yv)
+        comparison = scorer(model, xn, yv)
+        # These thresholds may be optimize
         if comparison / baseline < 0.9 or comparison / baseline > 1.1:
             status_ok = False
 
         return status_ok, message
 
     @_report_obs
-    def check_slice_invariance(self):
+    def check_slice_invariance(
+        self,
+        model: BaseEstimator,
+        data: pd.DataFrame,
+        target: str,
+        mode: str,
+    ):
         """
         Model performance should be invariant to data slicing.
 
@@ -187,6 +233,8 @@ class ModelObserver(PipelineObserver):
         message : str
             A brief description of the observation and its results.
         """
+        logger.info("Checking model for slice invariance.")
+
         # Arrange message
         status_ok = True
         message = (
@@ -196,7 +244,8 @@ class ModelObserver(PipelineObserver):
         )
 
         # Normalize
-        x = deepcopy(self.x)
+        y = data[target]
+        x = data.drop(target, axis=1)
         x = (x - x.mean()) / x.std()
 
         # Fit Kernel Density Estimation & get probabilities
@@ -206,33 +255,39 @@ class ModelObserver(PipelineObserver):
         probabilities = np.exp(log_probabilities)
 
         # Select smallest slice (10%) (selects per class to avoid imbalance)
-        if self.mode == "classification":
+        if mode == self.CLASSIFICATION:
             slice_indices = []
-            for yc in self.y.unique():
-                yc_ind = np.where(self.y == yc)[0]
+            for yc in y.unique():
+                yc_ind = np.where(y == yc)[0]
                 samples = int(np.ceil(len(yc_ind) // 10))  # Ceils (to avoid 0)
                 slice_indices.extend(
                     yc_ind[np.argpartition(probabilities[yc_ind], samples)[:samples]]
                 )
+            objective = "neg_log_loss"
         else:
             slice_indices = np.argpartition(probabilities, int(np.ceil(len(x) // 10)))[
                 : int(np.ceil(len(x) // 10))
             ]
+            objective = "neg_mean_squared_error"
+        scorer = get_scorer(objective)
         train_indices = [i for i in range(len(x)) if i not in slice_indices]
-        xt, xv = self.x.iloc[train_indices], self.x.iloc[slice_indices]
-        yt, yv = self.y.iloc[train_indices], self.y.iloc[slice_indices]
+        xt, xv = x.iloc[train_indices], x.iloc[slice_indices]
+        yt, yv = y.iloc[train_indices], y.iloc[slice_indices]  # type: ignore
 
         # Train and check performance
-        model = self.model
+        scores = cross_val_score(model, x, y, scoring=objective)
+        best_score = np.mean(scores) - np.std(scores)
         model.fit(xt, yt)
-        score = self._pipe.scorer(model, xv, yv)
-        if score < self._pipe.best_score:
+        score = scorer(model, xv, yv)
+        if score < best_score:
             status_ok = False
 
         return status_ok, message
 
     @_report_obs
-    def check_boosting_overfit(self):
+    def check_boosting_overfit(
+        self, model: BaseEstimator, data: pd.DataFrame, target: str, mode: str
+    ):
         """
         Checks whether boosting models are overfitted.
 
@@ -249,28 +304,37 @@ class ModelObserver(PipelineObserver):
         message : str
             A brief description of the observation and its results.
         """
+
         # Check if a boosting model has been selected
-        if type(self.model).__name__ not in [
+        if type(model).__name__ not in [
             *PartialBoostingClassifier._SUPPORTED_MODELS,
             *PartialBoostingRegressor._SUPPORTED_MODELS,
         ]:
             return True, ""
 
-        if self.mode == "classification":
+        logger.info("Checking boosting model for overfitting.")
+
+        # Get scorer
+        if mode == self.CLASSIFICATION:
             PartialBooster = PartialBoostingClassifier
         else:
             PartialBooster = PartialBoostingRegressor
+        scorer = self.get_scorer_(mode)
+
+        # Split data
+        xt, xv, yt, yv = self.get_train_test_(data, target)
+
+        # Fit model
+        model.fit(xt, yt)
 
         # Determine steps & initiate results
-        steps = np.ceil(np.linspace(0, PartialBooster.n_estimators(self.model), 7))[
-            1:-1
-        ]
+        steps = np.ceil(np.linspace(0, PartialBooster.n_estimators(model), 7))[1:-1]
         scores = []
         for step in steps:
             # Can directly use scorer, as no training is involved at all
-            booster = PartialBooster(self.model, step)
+            booster = PartialBooster(model, step)
             booster._is_fitted = True
-            scores.append(self.scorer(booster, self.xv, self.yv))
+            scores.append(scorer(booster, xv, yv))
 
         # Now, the check fails if there has been a decrease in performance
         status_ok = all(np.diff(scores) / np.max(np.abs(scores)) > 0.001)
@@ -279,3 +343,19 @@ class ModelObserver(PipelineObserver):
             f"Estimators: {steps}, Scores: {scores}"
         )
         return status_ok, message
+
+    @staticmethod
+    def get_scorer_(mode: str):
+        if mode == "classification":
+            objective = "neg_log_loss"
+        else:
+            objective = "neg_mean_squared_error"
+        return get_scorer(objective)
+
+    @staticmethod
+    def get_train_test_(
+        data: pd.DataFrame, target: str
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+        y = data[target]
+        x = data.drop(target, axis=1)
+        return train_test_split(x, y)  # type: ignore

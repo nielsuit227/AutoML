@@ -27,6 +27,10 @@ def get_model(model_str, **kwargs):
     # Import here to prevent ImportError (due to circular import)
     from amplo.automl.modelling import Modeller
 
+    if "stacking" in model_str.lower():
+        # TODO: Implement stacking model
+        raise NotImplementedError("Stacking models are not yet implemented.")
+
     models = Modeller(**kwargs).return_models()
     model = [m for m in models if type(m).__name__ == model_str]
 

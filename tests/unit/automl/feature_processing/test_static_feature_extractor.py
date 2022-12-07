@@ -17,10 +17,12 @@ class TestStaticFeatureExtractor:
     def test_mode_and_settings(self, mode, make_x_y):
         x, y = make_x_y
         x = x.iloc[:, :5]  # for speed up
-        fe = StaticFeatureExtractor(mode=mode)
+        data = pd.DataFrame(x).copy()
+        data["target"] = y
+        fe = StaticFeatureExtractor(target="target", mode=mode)
 
         # Test output
-        out1 = fe.fit_transform(x, y)
+        out1 = fe.fit_transform(data)
         out2 = fe.transform(x)
         assert set(out1) == set(fe.features_), "`features_` doesn't match output."
         assert all(out1 == out2), "`fit_transform` and `transform` don't match."

@@ -38,6 +38,7 @@ class CatBoostClassifier(BaseClassifier):
         # Set up model
         default_model_params = {
             "n_estimators": 1000,
+            "auto_class_weights": "Balanced",
             "allow_writing_files": False,
             "early_stopping_rounds": 100,
             "use_best_model": True,

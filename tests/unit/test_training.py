@@ -13,9 +13,7 @@ from amplo.training import DEFAULT_PIPE_KWARGS, _set_default_pipe_kwargs
 def test_default_pipe_kwargs():
     with warnings.catch_warnings(record=True) as warns:
         Pipeline(**DEFAULT_PIPE_KWARGS)
-    assert not any(
-        isinstance(w.message, UserWarning) for w in warns
-    ), "Unexpected pipe kwarg"
+    assert not any(isinstance(w.message, UserWarning) for w in warns), warns
 
 
 def test_set_default_pipe_kwargs():

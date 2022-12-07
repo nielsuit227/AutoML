@@ -1,25 +1,22 @@
 #  Copyright (c) 2022 by Amplo.
-
 from copy import deepcopy
-from warnings import warn
 
 import numpy as np
+import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
-    confusion_matrix,
     f1_score,
     log_loss,
     max_error,
     mean_absolute_error,
     mean_absolute_percentage_error,
     mean_squared_error,
-    precision_score,
     r2_score,
     roc_auc_score,
 )
-from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.model_selection import BaseCrossValidator, cross_val_predict
 
-from amplo.base import LoggingMixin
+from amplo.base import BasePredictor, LoggingMixin
 
 __all__ = ["ModelValidator"]
 
@@ -38,12 +35,12 @@ class ModelValidator(LoggingMixin):
         Verbosity for logging.
     """
 
-    def __init__(self, cv_splits=5, cv_shuffle=True, verbose=1):
+    def __init__(self, target: str, cv: BaseCrossValidator, verbose: int = 1):
         super().__init__(verbose=verbose)
-        self.cv_splits = cv_splits
-        self.cv_shuffle = cv_shuffle
+        self.target = target
+        self.cv = cv
 
-    def validate(self, model, x, y, mode):
+    def validate(self, model: BasePredictor, data: pd.DataFrame, mode: str):
         """
         Validate model and return performance metrics.
 
@@ -51,10 +48,8 @@ class ModelValidator(LoggingMixin):
         ----------
         model :
             Model to be validated.
-        x : array_like
+        data : pd.DataFrame
             Training data for validation.
-        y : array_like
-            Target data for validation.
         mode : {"classification", "regression"}
             Model mode.
 
@@ -63,8 +58,9 @@ class ModelValidator(LoggingMixin):
         metrics : dict
             Cross validated model performance metrics.
         """
-        x = np.asarray(x)
-        y = np.asarray(y)
+        model = deepcopy(model)
+        y = data[self.target]
+        x = data.drop(self.target, axis=1)
 
         # Calculate metrics
         if mode == "classification":
@@ -72,27 +68,29 @@ class ModelValidator(LoggingMixin):
         elif mode == "regression":
             metrics = self._validate_regression(model, x, y)
         else:
-            warn("Invalid mode for validation.", UserWarning)
-            metrics = {}
+            raise NotImplementedError("Invalid mode for validation.")
 
         # Logging
-        for name, values in metrics.items():
+        for name, value in metrics.items():
             # We expect a mean and std value
-            if not isinstance(values, list) or np.array(values).size != 2:
+            if not isinstance(value, float):
                 continue
-
             name = f"{name.replace('_', ' ').title()}:".ljust(20)
-            self.logger.info(f"{name} {values[0]:.2f} \u00B1 {values[1]:.2f}")
+            self.logger.info(f"{name} {value:.5f}")
 
-        cm = np.array(metrics.get("confusion_matrix", []))
-        if mode == "classification" and cm.shape == (2, 2):
-            for line in [
-                "Confusion Matrix:",
-                "Predicted \ actual  |    Positive    |    Negative    |",
-                f"          Positive  |  {f'{cm[1][1]}'.rjust(12)}  |  {f'{cm[0][1]}'.rjust(12)}  |",
-                f"          Negative  |  {f'{cm[1][0]}'.rjust(12)}  |  {f'{cm[0][0]}'.rjust(12)}  |",
-            ]:
-                self.logger.info(line)
+        if mode == "classification":
+            self.logger.info(
+                """Confusion Matrix: 
+            Predicted / actual  |    Positive    |    Negative    |
+            Positive            |  {}  |  {}  |
+            Negative            |  {}  |  {}  |
+            """.format(
+                    f"{metrics.get('true_positives')}".rjust(12),
+                    f"{metrics.get('false_positives')}".rjust(12),
+                    f"{metrics.get('false_negatives')}".rjust(12),
+                    f"{metrics.get('true_negatives')}".rjust(12),
+                )
+            )
 
         return metrics
 
@@ -114,80 +112,36 @@ class ModelValidator(LoggingMixin):
         metrics : dict
             Cross validated performance metrics of model.
         """
-
         labels = np.unique(y)
-        is_binary = labels.size == 2
-
-        # Initialize metrics
-        accuracy = []
-        precision = []
-        f1 = []
-        cm = []
-        log_loss_ = []
-
-        # Binary metrics
-        roc_auc = []
-        sensitivity = []
-        specificity = []
+        log_loss_ = None
 
         # Modelling
-        cv = StratifiedKFold(
-            n_splits=self.cv_splits, shuffle=self.cv_shuffle, random_state=38234
-        )
-        for t, v in cv.split(x, y):
-            xt, yt = x[t], y[t].reshape(-1)
-            xv, yv = x[v], y[v].reshape(-1)
-            cv_model = deepcopy(model)
-            cv_model.fit(xt, yt)
-            yv_pred = cv_model.predict(xv).reshape(-1)
-
-            # Metrics
-            accuracy.append(accuracy_score(yv, yv_pred))
-            cm.append(confusion_matrix(yv, yv_pred, labels=labels))
-            if hasattr(cv_model, "predict_proba"):
-                log_loss_.append(log_loss(yv, cv_model.predict_proba(xv)))
-
-            if is_binary:
-                roc_auc.append(roc_auc_score(yv, yv_pred, labels=labels))
-                tn, fp, fn, tp = cm[-1].ravel()
-                if tp + fp > 0:
-                    precision.append(precision_score(yv, yv_pred, labels=labels))
-                if tp + fn > 0:
-                    sensitivity.append(tp / (tp + fn))
-                if tn + fp > 0:
-                    specificity.append(tn / (tn + fp))
-                if tp + fp > 0 and tp + fn > 0:
-                    f1.append(f1_score(yv, yv_pred, labels=labels))
-            else:
-                precision.append(
-                    precision_score(yv, yv_pred, labels=labels, average="weighted")
-                )
-                f1.append(f1_score(yv, yv_pred, labels=labels, average="weighted"))
+        if hasattr(model, "predict_proba"):
+            yp = cross_val_predict(model, x, y, cv=self.cv, method="predict_proba")
+            log_loss_ = log_loss(y, yp)
+            assert isinstance(yp, np.ndarray) and yp.shape == (len(y), len(labels))
+            yp = np.argmax(yp, axis=1)
+        else:
+            yp = cross_val_predict(model, x, y, cv=self.cv)
 
         # Summarize metrics
-        metrics = {}
-        for name, values in [
-            ("accuracy", accuracy),
-            ("precision", precision),
-            ("sensitivity", sensitivity),
-            ("specificity", specificity),
-            ("f1_score", f1),
-            ("log_loss", log_loss_),
-        ]:
-            if len(values) == 0:
-                # Skip empty values (for multi-class)
-                continue
-            metrics[name] = [np.mean(values), np.std(values)]
-
-        # Add confusion matrix metrics
-        cm_total = np.sum(cm, axis=0)
-        metrics["confusion_matrix"] = cm_total
-
-        if is_binary:
-            metrics["true_positives"] = cm_total[0, 0]
-            metrics["false_positives"] = cm_total[0, 1]
-            metrics["true_negatives"] = cm_total[1, 1]
-            metrics["false_negatives"] = cm_total[1, 0]
+        tp = np.sum(np.logical_and(y == 1, yp == 1))
+        fp = np.sum(np.logical_and(y == 0, yp == 1))
+        tn = np.sum(np.logical_and(y == 0, yp == 0))
+        fn = np.sum(np.logical_and(y == 1, yp == 0))
+        metrics = {
+            "log_loss": log_loss_,
+            "roc_auc": roc_auc_score(y, yp, labels=labels),
+            "true_positives": tp,
+            "false_positives": fp,
+            "true_negatives": tn,
+            "false_negatives": fn,
+            "accuracy": accuracy_score(y, yp),
+            "precision": tp / (tp + fp),
+            "sensitivity_": tp / (tp + fn),
+            "specificity": tn / (tn + fp),
+            "f1_score": f1_score(y, yp, labels=labels, average="weighted"),
+        }
 
         return metrics
 
@@ -209,39 +163,16 @@ class ModelValidator(LoggingMixin):
         metrics : dict
             Cross validated performance metrics of model.
         """
-
-        # Initialize metrics
-        mae = []
-        mse = []
-        r2 = []
-        max_error_ = []
-        mean_rel_error = []
-
         # Modelling
-        cv = KFold(n_splits=self.cv_splits, shuffle=self.cv_shuffle, random_state=29283)
-        for t, v in cv.split(x, y):
-            xt, yt = x[t], y[t].reshape(-1)
-            xv, yv = x[v], y[v].reshape(-1)
-            cv_model = deepcopy(model)
-            cv_model.fit(xt, yt)
-            yv_pred = cv_model.predict(xv).reshape(-1)
-
-            # Metrics
-            mae.append(mean_absolute_error(yv, yv_pred))
-            mse.append(mean_squared_error(yv, yv_pred))
-            r2.append(r2_score(yv, yv_pred))
-            max_error_.append(max_error(yv, yv_pred))
-            mean_rel_error.append(mean_absolute_percentage_error(yv, yv_pred))
+        yp = cross_val_predict(model, x, y)
 
         # Summarize metrics
-        metrics = {}
-        for name, values in [
-            ("mean_absolute_error", mae),
-            ("mean_squared_error", mse),
-            ("r2_score", r2),
-            ("max_error", max_error_),
-            ("mean_relative_error", mean_rel_error),
-        ]:
-            metrics[name] = [np.mean(values), np.std(values)]
+        metrics = {
+            "mean_relative_error": mean_absolute_percentage_error(y, yp),
+            "r2_score": r2_score(y, yp),
+            "mean_absolute_error": mean_absolute_error(y, yp),
+            "mean_squared_error": mean_squared_error(y, yp),
+            "max_error": max_error(y, yp),
+        }
 
         return metrics

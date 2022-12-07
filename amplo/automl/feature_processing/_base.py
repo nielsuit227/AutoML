@@ -3,14 +3,17 @@
 """
 Implements the basic behavior of feature processing.
 """
+
+
 from __future__ import annotations
 
 from abc import ABCMeta
 from copy import deepcopy
-from typing import List
+from typing import Any, cast
 from warnings import warn
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
@@ -25,7 +28,7 @@ __all__ = [
 ]
 
 
-def sanitize_series(series):
+def sanitize_series(series: pd.Series) -> pd.Series:
     """
     Sanitizes series data.
 
@@ -44,6 +47,8 @@ def sanitize_series(series):
         Sanitized data.
     """
     dtype = series.dtype
+    dtype = cast(npt.DTypeLike, dtype)  # type hint
+
     if pd.api.types.is_datetime64_any_dtype(series) or not np.issubdtype(
         dtype, np.number
     ):
@@ -57,13 +62,13 @@ def sanitize_series(series):
     else:
         raise TypeError(f"Invalid dtype for series data: {series.dtype}")
     # Sanitize
-    lower = max(info.min, -1e12)
-    upper = min(info.max, 1e12)
+    lower = max(info.min, -1e12)  # type: ignore
+    upper = min(info.max, 1e12)  # type: ignore
     series = series.fillna(0).clip(lower, upper).astype(info.dtype)
     return series
 
 
-def sanitize_dataframe(frame):
+def sanitize_dataframe(frame: pd.DataFrame) -> pd.DataFrame:
     """
     Sanitizes each column.
 
@@ -86,17 +91,19 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin, metaclass=ABCMeta):
 
     Parameters
     ----------
-    mode : str, optional, default: "notset"
-        Model mode: {"classification", "regression", "notset"}.
+    target : str, default: "target"
+        Target column that must be present in data.
+    mode : str, optional, default: None
+        Model mode: {"classification", "regression", None}.
     verbose : int
         Verbosity for logger.
     """
 
-    def __init__(self, mode="notset", verbose=0):
+    def __init__(self, target: str = "target", mode: str | None = None, verbose=0):
         BaseTransformer.__init__(self)
         LoggingMixin.__init__(self, verbose=verbose)
 
-        check_dtypes("mode", mode, (str, type(None)))
+        check_dtypes(("target", target, str), ("mode", mode, (str, type(None))))
 
         if isinstance(mode, str):
             mode = mode.lower()
@@ -109,9 +116,10 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin, metaclass=ABCMeta):
             raise ValueError("Invalid `mode` argument.")
 
         self.mode = mode
+        self.target = target
 
     @staticmethod
-    def _check_x(x, copy=True, sanitize=True):
+    def _check_x(x: pd.DataFrame, copy=True, sanitize=True) -> pd.DataFrame:
         """
         Check and sanitize x data.
 
@@ -131,9 +139,9 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin, metaclass=ABCMeta):
 
         # Stringify names
         x, _ = clean_column_names(x)
-        assert not [  # important for `raw_features_` attribute to work properly
-            col for col in x.columns if "__" in col
-        ], "Cleaned column names should not have double underscores in it."
+        if [col for col in x.columns if "__" in col]:
+            # important for `raw_features_` attribute to work properly
+            raise ValueError("Column names cannot contain '__' (double underscores).")
         if any(x.columns.duplicated()):
             raise ValueError("Feature column names are not unique.")
 
@@ -142,7 +150,7 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin, metaclass=ABCMeta):
         return x_checked
 
     @staticmethod
-    def _check_y(y, copy=True, sanitize=True):
+    def _check_y(y: pd.Series, copy=True, sanitize=True) -> pd.Series:
         """
         Check and sanitize x data.
 
@@ -166,7 +174,9 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin, metaclass=ABCMeta):
         return y_checked
 
     @staticmethod
-    def _check_x_y(x, y, copy=True, sanitize=True):
+    def _check_x_y(
+        x: pd.DataFrame, y: pd.Series, copy=True, sanitize=True
+    ) -> tuple[pd.DataFrame, pd.Series]:
 
         # Pre-check
         x = BaseFeatureProcessor._check_x(x=x, copy=copy, sanitize=sanitize)
@@ -174,7 +184,7 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin, metaclass=ABCMeta):
 
         # Check integrity
         if len(x) != len(y):
-            raise ValueError("Length of `x` and `y` data does not match.")
+            raise ValueError("Length of x and y data does not match.")
         if not all(x.index == y.index):
             warn(
                 "Indices of x and y data do not match. Setting x index as default.",
@@ -184,53 +194,18 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin, metaclass=ABCMeta):
 
         return x, y
 
-    def _fit_transform(self, x, y=None, **fit_params):
-        """
-        Fit and transform data.
+    def _check_data(
+        self, data: pd.DataFrame, copy=True, sanitize=True, require_y=True
+    ) -> tuple[pd.DataFrame, pd.Series]:
 
-        It's faster calling this function instead of `_fit` and `_transform` separately.
-
-        Parameters
-        ----------
-        x : numpy.ndarray or pandas.DataFrame
-            Checked feature data to fit.
-        y : numpy.ndarray or pandas.Series
-            Checked target data to fit.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Transformed version of x.
-        """
-        raise NotImplementedError("Abstract method.")
-
-    def fit(self, x, y=None, **fit_params):
-        # Feature processors always have to transform the data in order to fit. So it
-        # just makes sense to wrap the main behavior in the fit_transform function and
-        # call that in here.
-        self.fit_transform(x=x, y=y, **fit_params)
-        return self
-
-    def fit_transform(self, x, y=None, **fit_params) -> pd.DataFrame:
-        # This is an optimized version for BaseFeatureProcessor's fit_transform.
-
-        # If fit is called, estimator is reset, including fitted state
-        self.reset()
-
-        # Pass to inner fit
-        x_out = self._fit_transform(x, y, **fit_params)
-        if not isinstance(x_out, pd.DataFrame):
-            msg = (
-                "The '_fit' function of classes that inherit from BaseFeatureProcessor "
-                "must output a DataFrame. If other behavior is desired, please adjust "
-                "the `fit_transform` accordingly."
-            )
-            raise ValueError(msg)
-
-        # This should happen last: fitted state is set to True
-        self._is_fitted = True
-
-        return x_out
+        x = data.drop(self.target, axis=1, errors="ignore")
+        if not require_y:
+            x = self._check_x(x, copy=copy, sanitize=sanitize)
+            y = pd.Series(index=x.index, dtype="float64", name=self.target)  # dummy
+            return x, y
+        else:
+            y = data[self.target]
+            return self._check_x_y(x, y, copy=copy, sanitize=sanitize)
 
 
 class BaseFeatureExtractor(BaseFeatureProcessor, metaclass=ABCMeta):
@@ -242,8 +217,10 @@ class BaseFeatureExtractor(BaseFeatureProcessor, metaclass=ABCMeta):
 
     Parameters
     ----------
-    mode : str, optional
-        Model mode: {"classification", "regression"}.
+    target : str, default: "target"
+        Target column that must be present in data.
+    mode : str, optional, default: None
+        Model mode: {"classification", "regression", None}.
     verbose : int
         Verbosity for logger.
 
@@ -258,14 +235,14 @@ class BaseFeatureExtractor(BaseFeatureProcessor, metaclass=ABCMeta):
 
     _add_to_settings = ["features_", *BaseFeatureProcessor._add_to_settings]
 
-    def __init__(self, mode="notset", verbose=0):
-        super().__init__(mode=mode, verbose=verbose)
+    def __init__(self, target: str = "target", mode: str | None = None, verbose=0):
+        super().__init__(target=target, mode=mode, verbose=verbose)
 
-        self.features_: List[str] = []
+        self.features_: list[str] = []
         self._validation_model = None
         self._baseline_scores = None
 
-    def set_features(self, features):
+    def set_features(self, features: Any[str]) -> None:
         """
         (Re-)set the features_ attribute.
 
@@ -280,7 +257,7 @@ class BaseFeatureExtractor(BaseFeatureProcessor, metaclass=ABCMeta):
         # Apply
         self.features_ = sorted(features)
 
-    def add_features(self, features):
+    def add_features(self, features: Any[str]) -> None:
         """
         Add items to the features_ attribute.
 
@@ -296,7 +273,7 @@ class BaseFeatureExtractor(BaseFeatureProcessor, metaclass=ABCMeta):
         self.features_.extend(features)
         self.features_ = sorted(set(self.features_))
 
-    def remove_features(self, features):
+    def remove_features(self, features: Any[str]) -> None:
         """
         Remove items in the features_ attribute.
 
@@ -317,7 +294,7 @@ class BaseFeatureExtractor(BaseFeatureProcessor, metaclass=ABCMeta):
         # Apply
         self.features_ = [x for x in self.features_ if x not in features]
 
-    def _set_validation_model(self):
+    def _set_validation_model(self) -> None:
         """
         Set the validation model for feature scoring.
         """
@@ -334,7 +311,9 @@ class BaseFeatureExtractor(BaseFeatureProcessor, metaclass=ABCMeta):
                 random_state=19483,
             )
 
-    def _calc_feature_scores(self, feature, y):
+    def _calc_feature_scores(
+        self, feature: pd.Series, y: pd.Series
+    ) -> npt.NDArray[np.floating]:
         """
         Analyses and scores a feature.
 
@@ -354,8 +333,9 @@ class BaseFeatureExtractor(BaseFeatureProcessor, metaclass=ABCMeta):
         #  Note that we do not make a train-test split. In this case, it makes sense as
         #  we only fit a shallow tree (max_depth=3). Because of that the model cannot
         #  really overfit.
-        feature = feature.to_frame()
-        self._validation_model.fit(feature, y)
+        feature_df = feature.to_frame()
+        assert self._validation_model
+        self._validation_model.fit(feature_df, y)
 
         # Score
         if self.mode == "classification":
@@ -366,23 +346,23 @@ class BaseFeatureExtractor(BaseFeatureProcessor, metaclass=ABCMeta):
             )
             if len(classes) > 2:
                 scores = [
-                    self._validation_model.score(feature, y, y == c)
+                    self._validation_model.score(feature_df, y, y == c)
                     if c in self._validation_model.classes_
                     else 0.0
                     for c in classes
                 ]  # weighted score
             else:
-                scores = [self._validation_model.score(feature, y)]  # average score
+                scores = [self._validation_model.score(feature_df, y)]  # average score
 
         elif self.mode == "regression":
-            scores = [self._validation_model.score(feature, y)]  # average score
+            scores = [self._validation_model.score(feature_df, y)]  # average score
 
         else:
             raise AttributeError("Invalid mode.")
 
         return np.array(scores)
 
-    def _init_feature_baseline_scores(self, x, y):
+    def _init_feature_baseline_scores(self, x: pd.DataFrame, y: pd.Series):
         """
         Initializes the baseline score of the given features.
 
@@ -393,15 +373,16 @@ class BaseFeatureExtractor(BaseFeatureProcessor, metaclass=ABCMeta):
         y : pd.Series
             Target data.
         """
-        baseline_scores = x.apply(self._calc_feature_scores, y=y, axis=0)
-        self._baseline_scores = baseline_scores.max(1).values.tolist()
+        baseline_scores = x.apply(self._calc_feature_scores, y=y, axis=0)  # type: ignore
+        baseline_scores = cast(pd.DataFrame, baseline_scores)
+        self._baseline_scores = baseline_scores.max(1).to_list()
 
         if self.mode == "classification":
             self.classes_ = sorted(y.unique())
 
         self.logger.debug(f"Initialized the baseline score to {self._baseline_scores}")
 
-    def _update_feature_baseline_scores(self, scores):
+    def _update_feature_baseline_scores(self, scores: pd.DataFrame):
         """
         Update the baseline scores.
 
@@ -411,9 +392,9 @@ class BaseFeatureExtractor(BaseFeatureProcessor, metaclass=ABCMeta):
             Scores where each column contains the scores for the given feature.
         """
         scores = pd.concat([scores, pd.Series(self._baseline_scores)], axis=1)
-        self._baseline_scores = scores.max(1).values.tolist()
+        self._baseline_scores = list(scores.max(1).values)
 
-    def accept_feature(self, scores):
+    def accept_feature(self, scores: npt.NDArray[np.floating]):
         """
         Decides whether to accept a new feature.
 
@@ -431,7 +412,9 @@ class BaseFeatureExtractor(BaseFeatureProcessor, metaclass=ABCMeta):
             warn("No baseline score is set. Output will be false", UserWarning)
         return any(scores >= 0.95 * np.array(self._baseline_scores))
 
-    def select_scores(self, scores, best_n_per_class=50, update_baseline=False):
+    def select_scores(
+        self, scores: pd.DataFrame, best_n_per_class=50, update_baseline=False
+    ) -> pd.DataFrame:
         """
         Scores and selects each feature column.
 
