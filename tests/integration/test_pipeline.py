@@ -116,10 +116,12 @@ class TestPipeline:
         pipeline = Pipeline(
             n_grid_searches=0, extract_features=False, interval_analyse=True
         )
-        pipeline.fit(data_dir)
+        pipeline.fit(data_dir, target="DummyLabel_0")
 
         # Check if IntervalAnalyser is fitted
-        assert pipeline.interval_analyser.is_fitted, "IntervalAnalyser was not fitted"
+        assert (
+            pipeline.interval_analyser and pipeline.interval_analyser.is_fitted_
+        ), "IntervalAnalyser was not fitted"
 
         # Remove dummy data
         rmtree(data_dir, must_exist=True)
@@ -145,12 +147,8 @@ class TestPipeline:
 
     def test_backwards_compatibility(self):
         # Set up pipeline
-        model = joblib.load("tests/files/Model.joblib")
-        settings = json.load(open("tests/files/Settings.json", "r"))
         pipeline = Pipeline(main_dir="tests/files/")
         pipeline.load()
-        pipeline.load_settings(settings)
-        pipeline.load_model(model)
 
         # Predict
         np.random.seed(100)

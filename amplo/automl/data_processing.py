@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
-import warnings
+from warnings import warn
 
 import numpy as np
 import pandas as pd
 from sklearn.exceptions import NotFittedError
 from sklearn.preprocessing import LabelEncoder
 
+from amplo.base import LoggingMixin
 from amplo.utils.util import check_dtypes, clean_column_names, clean_feature_name
 
 __all__ = ["clean_feature_name", "DataProcessor"]
 
 
-class DataProcessor:
+class DataProcessor(LoggingMixin):
     def __init__(
         self,
         target: str | None = None,
@@ -26,7 +27,7 @@ class DataProcessor:
         outlier_removal: str = "clip",
         z_score_threshold: int = 4,
         version: int = 1,
-        verbosity: int = 1,
+        verbose: int = 1,
     ):
         """
         Preprocessing Class. Cleans a dataset into a workable format.
@@ -53,10 +54,10 @@ class DataProcessor:
             If outlier_removal="z-score", the threshold is adaptable
         version : int
             Versioning the output files
-        verbosity : int
+        verbose : int
             How much to print
         """
-
+        super().__init__(verbose=verbose)
         # Type checks
         check_dtypes(
             ("target", target, (type(None), str)),
@@ -68,7 +69,7 @@ class DataProcessor:
             ("z_score_threshold", z_score_threshold, int),
             ("drop_duplicate_rows", drop_duplicate_rows, bool),
             ("version", version, int),
-            ("verbosity", verbosity, int),
+            ("verbose", verbose, int),
         )
 
         # Integrity checks
@@ -95,7 +96,6 @@ class DataProcessor:
         self.z_score_threshold = z_score_threshold
         self.drop_constants = drop_constants
         self.drop_duplicate_rows = drop_duplicate_rows
-        self.verbosity = verbosity
 
         # Fitted Settings
         self.num_cols_ = []
@@ -244,7 +244,7 @@ class DataProcessor:
         }
         return settings
 
-    def load_settings(self, settings: dict) -> None:
+    def load_settings(self, settings: dict):
         """
         Loads settings from dictionary and recreates a fitted object
         """
@@ -270,6 +270,7 @@ class DataProcessor:
                 setattr(self, key, pd.read_json(getattr(self, key), typ="series"))
         self.dummies_ = settings.get("dummies_", settings.get("dummies", {}))
         self.is_fitted_ = True
+        return self
 
     def infer_data_types(self, data: pd.DataFrame) -> pd.DataFrame:
         """
@@ -338,7 +339,7 @@ class DataProcessor:
                     continue
 
             # Else not found
-            warnings.warn(f"Couldn't identify feature: {key}")
+            warn(f"Couldn't identify feature: {key}")
         return data
 
     def convert_data_types(
@@ -375,7 +376,7 @@ class DataProcessor:
         )
 
         if self.date_cols_ and self.drop_datetime:
-            warnings.warn(
+            warn(
                 f"Data contains datetime columns but are removed: '{self.date_cols_}'",
                 UserWarning,
             )
@@ -709,9 +710,7 @@ class DataProcessor:
             return data
 
         # It's probably a regression task, thus no encoding needed
-        warnings.warn(
-            UserWarning("Labels are probably for regression. No encoding happened...")
-        )
+        warn(UserWarning("Labels are probably for regression. No encoding happened..."))
         return data
 
     def decode_labels(self, data: np.ndarray) -> pd.Series:
@@ -769,7 +768,7 @@ class DataProcessor:
 
         # Warn
         if len(to_impute) > 0:
-            warnings.warn(f"Imputed {len(to_impute)} missing columns! {to_impute}")
+            warn(f"Imputed {len(to_impute)} missing columns! {to_impute}")
         return data
 
     def prune_features(self, features: list):

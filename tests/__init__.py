@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from amplo.automl import Modeller
 from amplo.base import BaseEstimator
@@ -15,6 +16,7 @@ __all__ = [
     "rmfile",
     "get_all_modeller_models",
     "find_first_warning_of_type",
+    "create_test_folders",
     "RandomPredictor",
     "OverfitPredictor",
     "DelayedRandomPredictor",
@@ -62,6 +64,33 @@ def find_first_warning_of_type(typ, record):
         if issubclass(item.category, typ):
             return item
     raise ValueError(f"No warning of type {typ} found in warnings record.")
+
+
+def create_data_frames(n_samples, n_features):
+    dim = (int(n_samples / 2), n_features)
+    columns = [f"Feature_{i}" for i in range(n_features)]
+    df1 = pd.DataFrame(
+        columns=columns,
+        data=np.vstack((np.random.normal(0, 1, dim), np.random.normal(100, 1, dim))),
+    )
+    df2 = pd.DataFrame(
+        columns=columns,
+        data=np.vstack((np.random.normal(0, 1, dim), np.random.normal(-100, 1, dim))),
+    )
+    return df1, df2
+
+
+def create_test_folders(directory: Path | str, n_samples, n_features):
+    directory = Path(directory)
+    # Make directories
+    for sub_folder in ("Class_1", "Class_2"):
+        (directory / sub_folder).mkdir(exist_ok=True, parents=True)
+
+    # Create and save dataframes
+    for i in range(140):
+        df1, df2 = create_data_frames(n_samples, n_features)
+        df1.to_csv(directory / f"Class_1/Log_{i}.csv", index=False)
+        df2.to_csv(directory / f"Class_2/Log_{i}.csv", index=False)
 
 
 # ----------------------------------------------------------------------

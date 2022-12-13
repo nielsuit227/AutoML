@@ -28,7 +28,6 @@ __all__ = [
     "NpEncoder",
     "read_pandas",
     "get_file_metadata",
-    "merge_folders",
     "merge_logs",
 ]
 
@@ -144,11 +143,63 @@ def get_file_metadata(file_path: str | Path) -> dict[str, str | float]:
     }
 
 
+def _get_api_clients(
+    azure: tuple[str, str] | bool = False,
+    platform: tuple[str, str] | bool | None = None,
+):
+    """
+    Gathers the api clients for merge_logs
+    """
+    from amplo.api.platform import AmploPlatformAPI
+
+    if not azure:
+        blob_api = None
+    else:
+        azure = azure if not isinstance(azure, bool) else tuple()
+        blob_api = AzureBlobDataAPI.from_os_env(*azure)
+
+    # Mirror azure parameter when platform is not set
+    if platform is None:
+        platform = bool(azure)
+    # Get amplo platform client
+    if not platform:
+        platform_api = None
+    else:
+        platform = platform if not isinstance(platform, bool) else tuple()
+        platform_api = AmploPlatformAPI.from_os_env(*platform)
+    return blob_api, platform_api
+
+
+def _get_folders(
+    parent_folder: str | Path,
+    blob_api: AzureBlobDataAPI | None = None,
+    more_folders: list[str | Path] | None = None,
+) -> list[Path]:
+    """
+    Lists folders for merge_logs
+    """
+    if not Path(parent_folder).exists():
+        raise ValueError(f"{parent_folder} directory does not exist.")
+    if not blob_api:
+        folders = [
+            folder for folder in Path(parent_folder).iterdir() if folder.is_dir()
+        ]
+    else:
+        folders = blob_api.ls_folders(parent_folder)
+
+    # Add more_folders
+    if more_folders:
+        folders += more_folders
+
+    return [Path(f) for f in folders]
+
+
 def _read_files_in_folders(
     folders: Iterable[str | Path],
+    target: str,
     blob_api: AzureBlobDataAPI | None = None,
     logger: Logger | None = None,
-) -> tuple[list[str], list[pd.DataFrame], list[dict[str, str | float]]]:
+) -> tuple[list[str], list[pd.DataFrame], dict[str, dict]]:
     """
     Use pandas to read all non-hidden and non-empty files into a DataFrame.
 
@@ -156,6 +207,8 @@ def _read_files_in_folders(
     ----------
     folders : iterable of (str or Path)
         Directory names.
+    target : str
+        Target column & directory name
     blob_api : AzureBlobDataAPI or None, optional, default: None
         If None, tries to read data from local folder, else from Azure
     logger : Logger or None, optional, default: None
@@ -175,11 +228,10 @@ def _read_files_in_folders(
     """
 
     # Map folders to pathlib.Path object
-    folders = list(map(Path, folders))
-    folders = cast(list[Path], folders)  # type hint
+    folders = [Path(f) for f in folders]
 
     # Initialize
-    file_names, data, metadata = [], [], []
+    file_names, data, metadata = [], [], {}
     last_time_logged = time()
     for folder_count, folder in enumerate(sorted(folders)):
 
@@ -210,27 +262,39 @@ def _read_files_in_folders(
             continue
 
         # Read files
-        for file in sorted(files):
+        for file_ in sorted(files):
 
             # read_pandas() may raise an EmptyDataError when the file has no content.
             # The try...except catches such errors and warns the user instead.
             try:
                 if blob_api:
-                    datum = blob_api.read_pandas(file)
-                    metadatum = blob_api.get_metadata(file)
+                    datum = blob_api.read_pandas(file_)
+                    metadatum = blob_api.get_metadata(file_)
                 else:
-                    datum = read_pandas(file)
-                    metadatum = get_file_metadata(file)
+                    datum = read_pandas(file_)
+                    metadatum = get_file_metadata(file_)
             except pd.errors.EmptyDataError:
-                warn(f"Empty file detected and thus skipped: '{file}'")
+                warn(f"Empty file detected and thus skipped: '{file_}'")
                 continue
 
+            # Convert to dataframe
             if isinstance(datum, pd.Series):
                 datum = datum.to_frame()
 
-            file_names.append(str(file))
+            # Set multi-index
+            datum = datum.set_index(
+                pd.MultiIndex.from_product(
+                    [[str(file_)], datum.index.values], names=["log", "index"]
+                )
+            )
+
+            # Add target
+            datum[target] = (folder.name == target) * 1
+
+            # Append
+            file_names.append(str(file_))
             data.append(datum)
-            metadata.append(metadatum)
+            metadata[str(file_)] = metadatum
 
         if logger and time() - last_time_logged > 90:
             last_time_logged = time()
@@ -298,10 +362,8 @@ def _map_datalogs_to_file_names(
 
 
 def _mask_intervals(
-    datalogs: list[dict],
-    data: list[pd.DataFrame],
-    metadata: list[dict[str, str | float]],
-) -> tuple[list[pd.DataFrame], list[dict[str, str | float]]]:
+    datalogs: list[dict], data: list[pd.DataFrame]
+) -> list[pd.DataFrame]:
     """
     Masks the data with the intervals given by the datalogs.
 
@@ -318,8 +380,6 @@ def _mask_intervals(
     -------
     data_out : list of pd.DataFrame
         Selected data.
-    metadata_out : list of dict of {str : str or float}
-        Same metadata but duplicated for every split.
 
     Warnings
     --------
@@ -330,9 +390,8 @@ def _mask_intervals(
 
     # Initialize
     data_out = []
-    metadata_out = []
 
-    for datalog, datum, metadatum in zip(datalogs, data, metadata):
+    for datalog, datum in zip(datalogs, data):
         # Get intervals and timestamp column from datalog
         intervals = datalog.get("selected", [])
         ts_col = datalog.get("datetime_col", "")
@@ -340,26 +399,20 @@ def _mask_intervals(
         # If no interval is to be selected, append the whole datum
         if not intervals or not ts_col:
             data_out.append(datum)
-            metadata_out.append(metadatum)
 
         # Prevent a KeyError when ts_col column is not present
         elif ts_col not in datum.columns:
             warn(f"Cannot select intervals as the column '{ts_col}' is not present.")
             data_out.append(datum)
-            metadata_out.append(metadatum)
 
         # Else, select and append each interval of the datum
         else:
             # Extract unix timestamps
-            ts = datum[ts_col]
-            if not pd.api.types.is_datetime64_any_dtype(ts):
-                ts = pd.to_datetime(ts)
-            ts = ts.astype(int) / 10**9  # convert to unix format
+            ts = pd.to_datetime(datum[ts_col]).astype(int) / 10**9
 
             # Extract intervals
-            for interval in intervals:
+            for ts_first, ts_last in intervals:
                 # Find closest timestamps
-                ts_first, ts_last = interval
                 first = (ts - ts_first).abs().argmin()
                 last = (ts - ts_last).abs().argmin()
 
@@ -371,146 +424,26 @@ def _mask_intervals(
                     warn(
                         f"Could not find a timestamp close enough to {ts_first=} or "
                         f"{ts_last=}. Using the whole datum for the file "
-                        f"'{metadatum.get('file_name', 'unknown')}' instead."
+                        f"'{datalog.get('filename', 'unknown')}' instead."
                     )
                     data_out.append(datum)
-                    metadata_out.append(metadatum)
-                    continue
+                    break
 
                 # Select interval
                 data_out.append(datum.iloc[first : last + 1])
-                metadata_out.append(metadatum)
+            else:
+                continue
 
-    return data_out, metadata_out
-
-
-def _make_multiindex(
-    data: list[pd.DataFrame],
-    metadata: list[dict[str, str | float]],
-    target_col: str = "labels",
-) -> tuple[pd.DataFrame, dict[int, dict[str, str | float]]]:
-    """
-    Merge list of dataframes into one multiindexed one.
-
-    Parameters
-    ----------
-    data : list of pd.DataFrame
-        Data to be merged.
-    metadata : list of dict of {str : str or float}
-        Metadata of data.
-    target_col : str, optional
-        Target column name. Values are depicted by the folder name, by default "labels"
-
-    Returns
-    -------
-    data : pd.DataFrame
-        All files of the folders merged into one multi-indexed DataFrame.
-    metadata : dict of {int : dict of {str : str or float}}
-        Metadata of merged data.
-        The first index level values of the data correspond to the keys in the metadata.
-
-    Raises
-    ------
-    ValueError
-        When any file already has a column named after target_col and its values are not
-        equal to the folder name.
-    """
-
-    # Initialize
-    index_count = 0
-    data_out = []
-    metadata_out = {}
-
-    for datum, metadatum in zip(data, metadata):
-
-        # Get file and folder name
-        full_path = str(metadatum["full_path"])
-        folder_name = Path(full_path).parent.name
-
-        # Set label column
-        if target_col in datum.columns and any(datum[target_col] != folder_name):
-            raise ValueError(
-                f"The column '{target_col}' already exists in the file '{full_path}'."
-            )
-        else:
-            datum[target_col] = folder_name
-
-        # Set multiindex
-        index = pd.MultiIndex.from_product(
-            [[index_count], datum.index.values], names=["log", "index"]
-        )
-        datum.set_index(index, inplace=True)
-
-        # Add data and metadata, and increment
-        data_out.append(datum)
-        metadata_out[index_count] = metadatum
-        index_count += 1
-
-    # Finish: concatenate data
-    return pd.concat(data_out), metadata_out
-
-
-def merge_folders(
-    folders: Iterable[str | Path],
-    target_col: str = "labels",
-    blob_api: AzureBlobDataAPI | None = None,
-    platform_api: AmploPlatformAPI | None = None,
-    logging: bool = False,
-) -> tuple[pd.DataFrame, dict[int, dict[str, str | float]]]:
-    """
-    Combine log files from given directories into a multiindexed DataFrame.
-
-    Parameters
-    ----------
-    folders : iterable of (str or Path)
-        Directory paths to read data from.
-    target_col : str, optional, default: "labels"
-        Target column name. Values are depicted by the folder name
-    blob_api : AzureBlobDataAPI or None, optional, default: None
-        Azure api when not reading from local
-    platform_api : AmploPlatformAPI or None, optional default: None
-        Platform api for selecting intervals
-    logging : bool, default: False
-        Whether to show logging info.
-
-    Returns
-    -------
-    data : pd.DataFrame
-        All files of the folders merged into one multi-indexed DataFrame.
-    metadata : dict of {int : dict of {str : str or float}}
-        Metadata of merged data.
-        The first index level values of the data correspond to the keys in the metadata.
-    """
-
-    logger = get_root_logger() if logging else None
-
-    # Pandas read files
-    logger.info("Reading files") if logger else None
-    fnames, data, metadata = _read_files_in_folders(folders, blob_api, logger)
-
-    # Select intervals when datalogs are available
-    logger.info("Reading datalogs from platform") if logger else None
-    datalogs = _map_datalogs_to_file_names(fnames, platform_api, logger)
-    if datalogs:
-        logger.info("Masking intervals from datalogs") if logger else None
-        data, metadata = _mask_intervals(datalogs, data, metadata)
-
-    # Concatenate data and make it multiindexed
-    logger.info("Making multiindexed data") if logger else None
-    data, metadata = _make_multiindex(data, metadata, target_col)
-
-    return data, metadata
+    return data_out
 
 
 def merge_logs(
-    parent_folder: str | Path,
-    target_col: str = "labels",
-    *,
+    parent: str | Path,
+    target: str,
     more_folders: list[str | Path] | None = None,
     azure: tuple[str, str] | bool = False,
     platform: tuple[str, str] | bool | None = None,
-    logging: bool = False,
-) -> tuple[pd.DataFrame, dict[int, dict[str, str | float]]]:
+) -> tuple[pd.DataFrame, dict[str, dict]]:
     """
     Combine log files of all subdirectories into a multi-indexed DataFrame.
 
@@ -538,8 +471,10 @@ def merge_logs(
     ----------
     parent_folder : str or Path
         Directory that contains subdirectories with tabular data files.
-    target_col : str
+    target_col : str, default: target
         Target column name. Values are depicted by the folder name.
+    target_is_dir : bool
+        Whether the target is a directory, used to create binary classification
     more_folders : list of str or Path, optional
         Additional folder names with tabular data files to append.
     azure : (str, str) or bool, default: False
@@ -553,8 +488,8 @@ def merge_logs(
         If False, no datalogs information will be used.
         If True, the AmploPlatformAPI is initialized with default OS env variables.
         Otherwise, it will use the tuple to initialize the api.
-    logging : bool, default: False
-        Whether to show logging info.
+    verbose : int, default = 1
+
 
     Returns
     -------
@@ -564,41 +499,33 @@ def merge_logs(
     metadata : dict of {int : dict of {str : str or float}}
         Metadata of merged data.
     """
-
-    from amplo.api.platform import AmploPlatformAPI
     from amplo.utils import check_dtypes
 
-    check_dtypes("parent_folder", parent_folder, (str, Path))
-    check_dtypes("target_col", target_col, str)
-    check_dtypes("more_folders", more_folders, (type(None), list))
+    logger = get_root_logger()
+    check_dtypes(
+        ("parent_folder", parent, (str, Path)),
+        ("target_col", target, str),
+        ("more_folders", more_folders, (type(None), list)),
+    )
 
     # Get azure blob client
-    if not azure:
-        blob_api = None
-    else:
-        azure = azure if not isinstance(azure, bool) else tuple()
-        blob_api = AzureBlobDataAPI.from_os_env(*azure)
-
-    # Mirror azure parameter when platform is not set
-    if platform is None:
-        platform = bool(azure)
-    # Get amplo platform client
-    if not platform:
-        platform_api = None
-    else:
-        platform = platform if not isinstance(platform, bool) else tuple()
-        platform_api = AmploPlatformAPI.from_os_env(*platform)
+    blob_api, platform_api = _get_api_clients(azure, platform)
 
     # Get child folders
-    if not blob_api:
-        folders = [
-            folder for folder in Path(parent_folder).iterdir() if folder.is_dir()
-        ]
-    else:
-        folders = blob_api.ls_folders(parent_folder)
+    folders = _get_folders(parent, blob_api)
+    if target not in [f.name for f in folders]:
+        raise ValueError(f"Target {target} not present in folders.")
 
-    # Add more_folders
-    if more_folders:
-        folders += more_folders
+    # Pandas read files
+    logger.info("Reading files")
+    fnames, data, metadata = _read_files_in_folders(folders, target, blob_api, logger)
 
-    return merge_folders(folders, target_col, blob_api, platform_api, logging)
+    # Masking data
+    if platform_api:
+        logger.info("Reading datalogs from platform")
+        datalogs = _map_datalogs_to_file_names(fnames, platform_api, logger)
+        if datalogs:
+            logger.info("Masking intervals from datalogs")
+            data = _mask_intervals(datalogs, data)
+
+    return pd.concat(data, axis=0), metadata

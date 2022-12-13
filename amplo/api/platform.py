@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
 from warnings import warn
@@ -404,7 +403,7 @@ class PlatformSynchronizer:
                 if isinstance(existing_models, str):
                     ValueError("Could not transform response.")
             except json.decoder.JSONDecodeError as err:
-                warnings.warn(f"Could not decode GET response - {err}")
+                warn(f"Could not decode GET response - {err}")
                 # Set default value of ``existing_models`` to list of (empty) dict
                 existing_models = list(dict())
 
@@ -422,7 +421,7 @@ class PlatformSynchronizer:
 
         # POST when model yet doesn't exist
         if not model_exists(data["name"]):
-            warnings.warn(
+            warn(
                 f"Model {data['name']} did not yet exist. POST-ing a new model to the "
                 f"platform..."
             )

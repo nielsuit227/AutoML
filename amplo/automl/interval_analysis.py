@@ -1,29 +1,20 @@
 #  Copyright (c) 2022 by Amplo.
 from __future__ import annotations
 
-import warnings
-from pathlib import Path
-
 import faiss
 import numpy as np
 import pandas as pd
 
-from amplo.automl import DataProcessor
-from amplo.automl.feature_processing import FeatureProcessor
-from amplo.utils.data import check_dataframe_quality, check_pearson_correlation
-from amplo.utils.io import merge_logs
-from amplo.utils.logging import get_root_logger
-
-logger = get_root_logger().getChild("IntervalAnalyser")
+from amplo.base import LoggingMixin
 
 
-class IntervalAnalyser:
+class IntervalAnalyser(LoggingMixin):
 
     noise = -1
 
     def __init__(
         self,
-        target: str | None = None,
+        target: str,
         norm: str = "euclidean",  # TODO: implement functionality
         min_length: int = 1000,
         n_neighbors: int | None = None,
@@ -37,20 +28,14 @@ class IntervalAnalyser:
 
         Uses Facebook's FAISS for K-Nearest Neighbors approximation.
 
-        ** IMPORTANT **
-        To use this interval analyser, make sure that your logs are located in a
-        folder of their label, with one parent folder with all labels, e.g.:
-        +-- Parent Folder
-        |   +-- Label_1
-        |       +-- Log_1.*
-        |       +-- Log_2.*
-        |   +-- Label_2
-        |       +-- Log_3.*
+        NOTE: This should no longer be used as a standalone module, and should be used
+        with the Pipeline. It can still be used as as a standalone module, but it needs
+        to take normalized, multi-indexed data.
 
         Parameters
         ----------
         target : str
-            Target column name
+            Target column name, must be a folder in the parent folder!
         norm : str
             Optimization metric for K-Nearest Neighbors
             NOTE: This option has no effect, yet!
@@ -61,12 +46,14 @@ class IntervalAnalyser:
         n_trees : int
             Quantity of trees
         """
+        super().__init__(verbose=verbose)
         # Test
         self.available_norms = ["euclidean", "manhattan", "angular", "hamming", "dot"]
         if norm not in self.available_norms:
             raise ValueError(f"Unknown norm, pick from {self.available_norms}")
+
         # Parameters
-        self.target = target or "labels"
+        self.target = target
         self.min_length = min_length
         self.norm = norm
         self.n_trees = n_trees
@@ -74,222 +61,87 @@ class IntervalAnalyser:
         self.verbose = verbose
 
         # Initializers
-        self._labels = None
-        self._features = None
-        self._metadata = None  # optional metadata from `merge_logs`
-        # self._mins = pd.DataFrame(index=[0])
-        # self._maxs = pd.DataFrame(index=[0])
         self._engine = None
-        self._distributions = None
-        self._noise_indices = None
-        self.avg_samples = None
-        self.n_samples = None
-        self.n_columns = None
-        self.n_files = None
-        self.n_folders = None
+        self.distributions_ = None
+        self.noise_indices_ = None
+        self.n_samples_ = None
+        self.n_columns_ = None
+        self.n_files_ = None
+        self.n_folders_ = None
 
         # Flags
-        self.is_fitted = False
+        self.is_fitted_ = False
 
-    @property
-    def orig_data(self):
-        """
-        Returns
-        -------
-        pd.DataFrame
-            Original data containing both, feature and label columns
-        """
-        return pd.concat([self._features, self._labels], axis=1)
-
-    @property
-    def data_with_noise(self):
-        """
-        Returns
-        -------
-        pd.DataFrame
-            Original data where noise is labelled as ``self.noise``
-
-        Notes
-        -----
-        Depending on the dtype of the noise attribute, the dtype of the labels' column
-        will be affected.
-        """
-        data = self.orig_data
-        data.loc[self._noise_indices, self.target] = self.noise
-        return data
-
-    @property
-    def data_without_noise(self):
-        """
-        Returns
-        -------
-        pd.DataFrame
-            Original data but without noise rows
-        """
-        return self.orig_data.drop(self._noise_indices)
-
-    def fit_transform(
-        self, data_or_path: pd.DataFrame | str | Path, labels: pd.Series | None = None
-    ):
+    def fit_transform(self, data: pd.DataFrame):
         """
         Function that runs the K-Nearest Neighbors and returns a dataframe with the
         sensitivities.
 
         Parameters
         ----------
-        data_or_path : pd.DataFrame or str or Path
+        data : pd.DataFrame
             Multi-indexed dataset containing feature (and target) columns
             or path to folder that is correctly structured (see Notes)
         labels : pd.Series, optional
             Multi-indexed dataset containing target columns.
 
-        Notes
-        -----
-        In case you provide a path-like argument to ``features_or_path``,
-        make sure that each protocol is located in a sub folder whose name represents
-        the respective label.
-
-        A directory structure example:
-            |   ``path_to_folder``
-            |   ``├─ Label_1``
-            |   ``│   ├─ Log_1.*``
-            |   ``│   └─ Log_2.*``
-            |   ``├─ Label_2``
-            |   ``│   └─ Log_3.*``
-            |   ``└─ ...``
-
         Returns
         -------
         pd.DataFrame
-            Estimation of correlation strength
+            Data with noise filtered
         """
-
-        # Parse data
-        features, labels = self._parse_data(data_or_path, labels)
+        # Validate data
+        data = self._validate_data(data)
+        self._set_data_attr(data)
 
         # Set up Annoy Engine (only now that n_keys is known)
-        self._build_engine(features)
+        self._build_engine(data)
 
         # Make distribution
-        self._make_distribution(features, labels)
+        self.is_fitted_ = True
+        return self.transform(data)
 
-        # Filter dataset
-        self._set_noise_indices()
-
-        # Set flags
-        self.is_fitted = True
-
-        return self.data_with_noise
-
-    def _parse_data(
-        self, data_or_path: pd.DataFrame | str | Path, labels: pd.Series | None = None
-    ):
+    def transform(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Parse data for interval analysis and store it internally
-
-        Parameters
-        ----------
-        data_or_path : pd.DataFrame or str or Path
-            Multi-indexed dataset containing feature (and target) columns
-            or path to folder that is correctly structured (see Notes)
-        labels : pd.Series, optional
-            Multi-indexed dataset containing target columns
+        Filters out noise for the provided data frame.
         """
-        # Verbose
-        if self.verbose > 0:
-            logger.info("Parsing data for interval analyser.")
+        if not self.is_fitted_:
+            raise ValueError("Object not fitted yet.")
 
-        # Parse data
-        if isinstance(data_or_path, (str, Path)):
-            # Read from path
-            features, metadata = merge_logs(data_or_path, self.target)
-            labels = features.pop(self.target)
-            # Store metadata in self
-            self._metadata = metadata
-        else:
-            if not isinstance(data_or_path, pd.DataFrame):
-                raise ValueError("Invalid data_or_path type.")
-            # Check if target in `data_or_path`
-            if self.target in data_or_path.columns:
-                features = data_or_path.drop(self.target, axis=1)
-                labels = data_or_path.loc[:, self.target]
-            else:
-                if not isinstance(labels, pd.Series):
-                    raise ValueError("Invalid labels data type.")
-                features = data_or_path
+        data = self._validate_data(data)
+        self._make_distribution(data)
+        return self._filter_noise(data)
 
-        # Tests
-        if list(features.index.names) != ["log", "index"]:
-            raise ValueError("Invalid multi-indexed data detected.")
-        if not all(features.index == labels.index):
-            raise ValueError(
-                "Indices mismatch: Features and labels cannot be concatenated."
-            )
-        if len(features) != len(labels):
-            raise ValueError(
-                "Length mismatch: Features and labels cannot be concatenated."
-            )
-        if self.target in features.columns:
-            raise ValueError("Target column is present in feature data.")
-
-        # Check data quality
-        if not check_dataframe_quality(features):
-            # Warn & clean
-            warnings.warn("Data quality is insufficient, starting DataProcessor.")
-            features = DataProcessor().fit_transform(features)
-
-        # Check collinearity
-        if not check_pearson_correlation(features, labels):
-            warnings.warn("Data is correlated, starting FeatureProcessor.")
-            # Remove collinear features and pick Random Forest Increment
-            fp = FeatureProcessor(
-                mode="classification", extract_features=False, target=self.target
-            )
-            features[self.target] = labels
-            features = fp.fit_transform(features)
-            if self.target in features:
-                features = features.drop(self.target, axis=1)
-
-        # Set name of labels
-        if self.target != labels.name:
-            warnings.warn(
-                "Expected target name does not match the actual name. "
-                f"Name will be fixed from {labels.name} to {self.target}."
-            )
-            labels.name = self.target
-
-        # Remove datetime columns
-        _date_cols = [
-            col
-            for col in features.columns
-            if pd.api.types.is_datetime64_any_dtype(features[col])
-        ]
-        if len(_date_cols) != 0:
-            features.drop(_date_cols, axis=1, inplace=True)
-
-        # Normalize
-        self._mins, self._maxs = features.min(), features.max()
-        features = (features - features.min()) / (features.max() - features.min())
+    def _validate_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Validates the data and sets certain attributes.
+        """
+        # Validate data
+        if not self.target in data:
+            raise ValueError(f"Target column {self.target} not in dataframe.")
+        if len(data.index.names) != 2:
+            raise ValueError(f"Dataframe needs to have a multi-index.")
+        if data.max().max() > 10 or data.min().min() < -10:
+            raise ValueError("Data needs to be normalized.")
 
         # Assert that all dtypes are of dtype float32
         #  See: https://github.com/facebookresearch/faiss/issues/461
-        for col in features.select_dtypes(exclude=["float32"]).columns:
-            features[col] = features[col].astype("float32")
+        for col in data.select_dtypes(exclude=["float32"]).columns:
+            data[col] = data[col].astype("float32")
 
-        # Store data in self
-        self._features = features
-        self._labels = labels
+        return data
 
-        # Set sizes
-        self.n_folders = labels.nunique()
-        self.n_files = features.index.get_level_values(0).nunique()
-        self.n_samples, self.n_columns = features.shape
+    def _set_data_attr(self, data: pd.DataFrame):
+        """
+        Sets data specific class attributes
+        """
+        self.n_folders_ = data[self.target].nunique()
+        self.n_files_ = data.index.get_level_values(0).nunique()
+        self.n_samples_, self.n_columns_ = len(data), len(data.keys()) - 1
         if self.n_neighbors is None:
-            self.n_neighbors = min(3 * self.n_samples // self.n_files, 5000)
+            self.n_neighbors = min(3 * self.n_samples_ // self.n_files_, 5000)
 
-        return features, labels
-
-    def _build_engine(self, features: pd.DataFrame):
+    def _build_engine(self, data: pd.DataFrame):
         """
         Builds the ANNOY engine.
 
@@ -299,17 +151,14 @@ class IntervalAnalyser:
             Multi-indexed dataset containing feature columns
         """
         # Create engine
-        if self.verbose > 0:
-            logger.info("Building interval analyser engine.")
-        engine = faiss.IndexFlatL2(self.n_columns)
+        self.logger.info("Building interval analyser engine.")
+        self._engine = faiss.IndexFlatL2(self.n_columns_)
 
         # Add the data to ANNOY
-        engine.add(np.ascontiguousarray(features.values))  # noqa
+        data = data.drop(self.target, axis=1)
+        self._engine.add(np.ascontiguousarray(data.values))  # type: ignore
 
-        # Set class attribute
-        self._engine = engine
-
-    def _make_distribution(self, features: pd.DataFrame, labels: pd.Series):
+    def _make_distribution(self, data: pd.DataFrame):
         """
         Given a build K-Nearest Neighbors, returns the label distribution
 
@@ -320,22 +169,25 @@ class IntervalAnalyser:
         labels : pd.Series
             Multi-indexed dataset containing target columns
         """
-        if self.verbose > 0:
-            logger.info("Calculating interval within-class distributions.")
+        assert self._engine and self.n_neighbors
+        self.logger.info("Calculating interval within-class distributions.")
+        labels = data[self.target]
+        data = data.drop(self.target, axis=1)
 
         # Search nearest neighbors for all samples - has to be iterative for large files
         distribution = []
-        for i, row in features.iterrows():
-            _, neighbors = self._engine.search(
-                np.ascontiguousarray(row.values.reshape((1, -1))), int(self.n_neighbors)
+        for i, row in data.iterrows():
+            _, neighbors = self._engine.search(  # type: ignore
+                np.ascontiguousarray(np.array(row.values).reshape((1, -1))),
+                self.n_neighbors,
             )
-            match_mask = labels.iloc[neighbors.reshape(-1)] == labels.loc[i]
-            distribution.append(pd.Series(match_mask).sum() / self.n_neighbors)
+            match_mask = labels.iloc[neighbors.reshape(-1)] == labels.loc[i]  # type: ignore
+            distribution.append(pd.Series(match_mask).sum() / self.n_neighbors)  # type: ignore
 
         # Parse into list of lists
-        self._distributions = pd.Series(distribution, index=self._labels.index)
+        self.distributions_ = pd.Series(distribution, index=labels.index)
 
-    def _set_noise_indices(self):
+    def _filter_noise(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         This function selects samples given the calculated distributions. It only
         removes samples from logs which are longer (> min_length), and only the samples
@@ -344,81 +196,29 @@ class IntervalAnalyser:
         One could come up with a fancier logic, using the total dataset samples, the
         class-balance & sample redundancy.
         """
+        assert self.distributions_ is not None
         # Verbose
-        if self.verbose > 0:
-            logger.info("Creating filtered dataset")
-
-        # Get in-class means and number of samples for each label
-        # label_means = self._get_label_means(labels, self._distributions)
-        # label_samples = labels.value_counts()
+        self.logger.info("Creating filtered dataset")
 
         # Initialize
-        data_index = self._features.index
         noise_indices = []
 
         # Iterate through labels and see if we should remove values
-        for file_id in range(self.n_files):
-
-            # Check length and continue if short
-            if sum(data_index.get_level_values(0) == file_id) < self.min_length:
-                continue
+        for log in self.distributions_.index.get_level_values(0):
 
             # Check distribution and find cut-off
-            dist = self._distributions[file_id]
-            ind_remove_label = [(file_id, j) for j in np.where(dist < dist.mean())[0]]
+            dist = self.distributions_[log]
+            ind_remove_label = [(log, j) for j in np.where(dist < dist.mean())[0]]
+
             # Extend list to keep track
             noise_indices.extend(ind_remove_label)
 
             # Verbose
-            if len(noise_indices) > 0 and self.verbose > 1:
-                filename = (
-                    self._metadata[file_id]["file"]
-                    if isinstance(self._metadata, dict)
-                    else None
-                )
-                logger.info(
-                    f"Removing {len(ind_remove_label)} samples from "
-                    f"`{filename or file_id}`"
-                )
+            self.logger.info(
+                f"Removing {len(ind_remove_label)} samples from " f"`{log}`"
+            )
 
         # Set noise indices
-        self._noise_indices = noise_indices
-
-    # @staticmethod
-    # def _get_label_means(labels, dists):
-    #     # Init
-    #     label_means = {k: [] for k in labels.unique()}
-    #
-    #     # Append distributions
-    #     for i, d in enumerate(dists):
-    #         # Skip failed reads
-    #         if i not in labels:
-    #             continue
-    #
-    #         # Extend distribution
-    #         label_means[labels[(i, 0)]].extend(d)
-    #
-    #     # Return means
-    #     return {k: np.mean(v) for k, v in label_means.items()}
-
-    # --- Deprecation Properties ---
-
-    @property
-    def samples(self):
-        warnings.warn(
-            DeprecationWarning(
-                "This pseudo-attribute will be removed in a future version. "
-                "Consider using `n_samples` instead."
-            )
-        )
-        return self.n_samples
-
-    @property
-    def n_keys(self):
-        warnings.warn(
-            DeprecationWarning(
-                "This pseudo-attribute will be removed in a future version. "
-                "Consider using `n_columns` instead."
-            )
-        )
-        return self.n_columns
+        self.noise_indices_ = noise_indices
+        data = data.drop(self.noise_indices_, axis=0)
+        return data

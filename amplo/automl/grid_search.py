@@ -4,8 +4,8 @@ from __future__ import annotations
 import copy
 import re
 import time
-import warnings
 from datetime import datetime
+from warnings import warn
 
 import numpy as np
 import optuna
@@ -46,7 +46,7 @@ def warn_at_extreme(params: dict[str, int | float | str], samples: int):
     for param, value in params.items():
         if param in ["depth", "max_depth"]:
             if value == MIN_DEPTH or value == max_depth(samples):
-                warnings.warn(
+                warn(
                     f"Parameter {param} (={value}) at the edge of search space: ({MIN_DEPTH}, {max_depth(samples)})"
                 )
         if params in [
@@ -67,12 +67,12 @@ def warn_at_extreme(params: dict[str, int | float | str], samples: int):
             "lambda_l1",
         ]:
             if value == MIN_REGULARIZATION or value == MAX_REGULARIZATION:
-                warnings.warn(
+                warn(
                     f"Parameter {param} (={value}) at the edge of search space: ({MIN_REGULARIZATION}, {MAX_REGULARIZATION})"
                 )
         if param in ["max_iter", "n_estimators"]:
             if value == MIN_BOOSTERS or value == MAX_BOOSTERS:
-                warnings.warn(
+                warn(
                     f"Parameter {param} (={value}) at the edge of search space: ({MIN_BOOSTERS}, {MAX_BOOSTERS})"
                 )
         if param in [
@@ -84,12 +84,12 @@ def warn_at_extreme(params: dict[str, int | float | str], samples: int):
             "subsample",
         ]:
             if value == MIN_SPLIT or value == MAX_SPLIT:
-                warnings.warn(
+                warn(
                     f"Parameter {param} (={value}) at the edge of search space: ({MIN_SPLIT}, {MAX_SPLIT})"
                 )
         if param in ["leaf_size", "min_data_in_leaf", "min_samples_leaf"]:
             if value == MIN_LEAF_SIZE or value == max_leaf_size(samples):
-                warnings.warn(
+                warn(
                     f"Parameter {param} (={value}) at the edge of search space: ({MIN_LEAF_SIZE}, {max_leaf_size(samples)})"
                 )
 
@@ -134,7 +134,7 @@ class OptunaGridSearch(LoggingMixin):
 
         # Input tests
         if hasattr(model, "is_fitted") and model.is_fitted:
-            warnings.warn(
+            warn(
                 "The model is already fitted but Amplo's grid search will re-fit.",
                 UserWarning,
             )
@@ -151,13 +151,11 @@ class OptunaGridSearch(LoggingMixin):
         # Set attributes
         self.binary_ = None
         self.samples_ = None
+        self.trial_count_ = -1
 
         # Model specific settings
         if type(self.model).__name__ == "LinearRegression":
             self.n_trials = 1
-
-        # Counter to keep track of number of trials
-        self.trial_count = -1
 
     def _get_hyper_params(
         self, trial: optuna.Trial
@@ -576,7 +574,7 @@ class OptunaGridSearch(LoggingMixin):
             pruner=_BadTrialPruner(2.0, 15),
         )
         study.optimize(
-            self.objective,
+            self._objective,
             n_trials=self.n_trials,
             timeout=self.timeout,
             callbacks=[
@@ -598,14 +596,14 @@ class OptunaGridSearch(LoggingMixin):
                 "time": optuna_results["user_attrs_time"],
             }
         ).sort_values("score", ascending=False)
-        self.trial_count = len(study.trials)
+        self.trial_count_ = len(study.trials)
 
         # Warn against edge params
         warn_at_extreme(results.iloc[0]["params"], self.samples_)
 
         return results
 
-    def objective(self, trial: optuna.Trial) -> float:
+    def _objective(self, trial: optuna.Trial) -> float:
         # Make a copy
         model_copy = copy.deepcopy(self.model)
 

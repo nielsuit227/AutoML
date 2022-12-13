@@ -6,62 +6,42 @@ import numpy as np
 import pandas as pd
 
 from amplo.automl import IntervalAnalyser
-from amplo.utils.testing import make_interval_data
-from tests import rmtree
-
-
-def create_data_frames(n_samples, n_features):
-    dim = (int(n_samples / 2), n_features)
-    columns = [f"Feature_{i}" for i in range(n_features)]
-    df1 = pd.DataFrame(
-        columns=columns,
-        data=np.vstack((np.random.normal(0, 1, dim), np.random.normal(100, 1, dim))),
-    )
-    df2 = pd.DataFrame(
-        columns=columns,
-        data=np.vstack((np.random.normal(0, 1, dim), np.random.normal(-100, 1, dim))),
-    )
-    return df1, df2
-
-
-def create_test_folders(directory: Path, n_samples, n_features):
-    # Make directories
-    for sub_folder in ("Class_1", "Class_2"):
-        (directory / sub_folder).mkdir(exist_ok=True, parents=True)
-
-    # Create and save dataframes
-    for i in range(140):
-        df1, df2 = create_data_frames(n_samples, n_features)
-        df1.to_csv(directory / f"Class_1/Log_{i}.csv", index=False)
-        df2.to_csv(directory / f"Class_2/Log_{i}.csv", index=False)
+from tests import create_data_frames, rmtree
 
 
 class TestIntervalAnalyser:
     @classmethod
     def setup_class(cls):
-        cls.n_samples = 50
-        cls.n_features = 25
-        cls.ia_folder = Path("IA")
-        rmtree(cls.ia_folder)  # type: ignore
-        create_test_folders(cls.ia_folder, cls.n_samples, cls.n_features)
-
-    @classmethod
-    def teardown_class(cls):
-        rmtree(cls.ia_folder)  # type: ignore
+        log_files = [f"log_{i}" for i in range(20)]
+        index = pd.MultiIndex.from_product([log_files, range(100)])
+        dfs = []
+        labels = []
+        for i in range(10):
+            df1, df2 = create_data_frames(n_samples=100, n_features=5)
+            dfs.extend([df1, df2])
+            labels.extend([1] * 100)
+            labels.extend([0] * 100)
+        df = pd.concat(dfs, axis=0)
+        df = df.set_index(index, drop=True)
+        df = (df - df.min()) / (df.max() - df.min())
+        df["target"] = labels
+        cls.df = df
 
     def test_all(self):
-        # Set up IntervalAnalyser
-        ia = IntervalAnalyser(min_length=10)
-        ia.fit_transform(self.ia_folder)
+        # Normal run
+        ia = IntervalAnalyser(min_length=10, target="target")
+        data_no_noise = ia.fit_transform(self.df)
 
         # Attribute tests
-        assert ia.n_folders == 2
-        assert ia.n_files == 280
+        assert ia.n_samples_ == 2000
+        assert ia.n_columns_ == 5
+        assert ia.n_folders_ == 2
+        assert ia.n_files_ == 20
 
         # Functional tests
-        assert ia._distributions is not None
-        for i in range(ia.n_files):
-            dist = ia._distributions[i].values
+        assert ia.distributions_ is not None
+        for log in ia.distributions_.index.get_level_values(0):
+            dist = np.array(ia.distributions_[log].values)
             assert all(
                 v < 0.8 for v in dist[: int(len(dist) / 2)]
             ), "Noise with high percentage of neighbors"
@@ -70,68 +50,15 @@ class TestIntervalAnalyser:
             ), "Information with low percentage of neighbors"
 
         # Data tests
-        data_no_noise = ia.data_without_noise
-        data_full = ia.data_with_noise
-        assert ia.n_samples is not None and ia._features is not None
         assert (
-            len(data_full) == ia.n_samples and len(data_no_noise) == ia.n_samples // 2
+            len(self.df) == ia.n_samples_ and len(data_no_noise) * 2 == ia.n_samples_
         ), "Incorrect number of samples"
         assert (
-            data_full.index.get_level_values(0).nunique() == ia.n_files
+            self.df.index.get_level_values(0).nunique() == ia.n_files_
         ), "Files skipped"
-        assert (
-            len(ia._features.columns) <= self.n_features
+        assert len(self.df.keys()) == len(
+            data_no_noise.keys()
         ), "Incorrect number of features"
-
-    def test_parse_data(self):
-        # Test receiving dataframe and receiving directory
-        for test in ("dataframe", "single_dataframe", "directory"):
-            ia = IntervalAnalyser(target="labels")
-
-            if test == "dataframe":
-                # Create dummy data
-                features = make_interval_data(
-                    directory=None, target=ia.target, cat_choices=False
-                )
-                assert features is not None and ia.target in features
-                labels = features.pop(ia.target)
-                # Set parse arguments
-                parse_args = (features, labels)
-            elif test == "single_dataframe":
-                # Create dummy data
-                data = make_interval_data(
-                    directory=None, target=ia.target, cat_choices=False
-                )
-                # Set parse arguments
-                parse_args = (data,)
-            elif test == "directory":
-                # Create dummy data
-                make_interval_data(
-                    directory=self.ia_folder, target=ia.target, cat_choices=False
-                )
-                # Set parse arguments
-                parse_args = (self.ia_folder, None)
-            else:
-                raise NotImplementedError()
-
-            # Read data
-            _, _ = ia._parse_data(*parse_args)  # type: ignore
-
-            # Data checks
-            assert all(
-                isinstance(data, (pd.Series, pd.DataFrame))
-                for data in (ia._labels, ia._features, ia.orig_data)
-            ), "Data should not be empty"
-            assert (
-                len(ia._features.select_dtypes(include=["datetime64"]).columns) == 0  # type: ignore
-            ), "Date-time columns should have been eliminated, internally"
-            assert (
-                len(ia._features.select_dtypes(include=["float64"]).columns) == 0  # type: ignore
-            ), "Dtype float64 columns should have been converted to float32"
-
-            # Other checks
-            assert not ia.is_fitted, "IntervalAnalyser should not yet be fitted"
-            assert ia._noise_indices is None, "No noise indices should be set yet"
 
     # TODO test correlation warning
     # TODO test data quality warning

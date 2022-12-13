@@ -29,6 +29,7 @@ from amplo.automl.grid_search import OptunaGridSearch
 from amplo.automl.interval_analysis import IntervalAnalyser
 from amplo.automl.modelling import Modeller
 from amplo.automl.sequencing import Sequencer
+from amplo.automl.standardization import Standardizer
 from amplo.base import BasePredictor
 from amplo.base.objects import LoggingMixin
 from amplo.observation import DataObserver, ModelObserver
@@ -170,7 +171,7 @@ class Pipeline(LoggingMixin):
         feature_timeout: int = 3600,
         use_wavelets: bool = False,
         # Interval analysis
-        interval_analyse: bool = True,
+        interval_analyse: bool = False,
         # Sequencing
         sequence: bool = False,
         seq_back: int | list[int] = 1,
@@ -213,13 +214,17 @@ class Pipeline(LoggingMixin):
         if not 0 < information_threshold < 1:
             raise ValueError("Information threshold must be within (0, 1) interval.")
 
-        # Warn unused parameters
+        # Input checks: advices
         if kwargs:
             warn(f"Got unexpected keyword arguments that are not handled: {kwargs}")
-
-        # Input checks: advices
         if include_output and not sequence:
             warn("It is strongly advised NOT to include output without sequencing.")
+        if interval_analyse and not standardize:
+            warn(
+                "Data needs to be normalized for the interval analyser, setting "
+                "standardize = True."
+            )
+            standardize = True
 
         # Main settings
         self.main_dir = f"{Path(main_dir)}/"  # assert backslash afterwards
@@ -285,23 +290,11 @@ class Pipeline(LoggingMixin):
             self.scorer = None
 
         # Required sub-classes
-        self.data_processor = DataProcessor(
-            target=self.target,
-            drop_datetime=True,
-            include_output=True,
-            missing_values=self.missing_values,
-            outlier_removal=self.outlier_removal,
-            z_score_threshold=self.z_score_threshold,
-        )
-        self.data_sequencer = Sequencer(
-            target=self.target,
-            back=self.sequence_back,
-            forward=self.sequence_forward,
-            shift=self.sequence_shift,
-            diff=self.sequence_diff,
-        )
-        self.interval_analyser = IntervalAnalyser(target=self.target)
+        self.data_processor = None
+        self.data_sequencer = None
+        self.interval_analyser = None
         self.feature_processor = None
+        self.standardizer = None
 
         # Instance initiating
         self.samples_: int | None = None
@@ -363,9 +356,12 @@ class Pipeline(LoggingMixin):
         self.best_score_ = settings.get("best_score")
         self.best_features_ = settings.get("features")
         self.best_feature_set_ = settings.get("feature_set")
-        self.data_processor.load_settings(settings["data_processing"])
+        self.data_processor = DataProcessor().load_settings(settings["data_processing"])
         self.feature_processor = FeatureProcessor().load_settings(
             settings["feature_processing"]
+        )
+        self.standardizer = Standardizer().load_settings(
+            settings.get("standardizing", {})
         )
 
     def load_model(self, model: BasePredictor):
@@ -381,7 +377,7 @@ class Pipeline(LoggingMixin):
         data_or_path: np.ndarray | pd.DataFrame | str | Path,
         target: np.ndarray | pd.Series | str | None = None,
         *,
-        metadata: dict[int, dict[str, str | float]] | None = None,
+        metadata: dict[str, dict] | None = None,
         model: str | list[str] | None = None,
         feature_set: str | list[str] | None = None,
     ):
@@ -420,7 +416,16 @@ class Pipeline(LoggingMixin):
 
         # Detect mode (classification / regression)
         self._mode_detector(data)
-        assert self.mode and self.objective
+        self._set_subclasses()
+        assert (
+            self.mode
+            and self.objective
+            and self.data_processor
+            and self.data_sequencer
+            and self.interval_analyser
+            and self.feature_processor
+            and self.standardizer
+        )
 
         # Preprocess Data
         data = self.data_processor.fit_transform(data)
@@ -429,35 +434,21 @@ class Pipeline(LoggingMixin):
         if self.sequence:
             data = self.data_sequencer.fit_transform(data)
 
+        # Extract and select features
+        data = self.feature_processor.fit_transform(data)
+        self.feature_sets_ = self.feature_processor.feature_sets_
+
+        # Standardize
+        if self.standardize:
+            data = self.standardizer.fit_transform(data)
+
         # Interval-analyze data
         if (
             self.use_interval_analyser
             and len(data.index.names) == 2
             and self.mode == "classification"
         ):
-            data = self.interval_analyser.fit_transform(
-                data.drop(self.target, axis=1), data[self.target]
-            )
-
-        # Extract and select features
-        self.feature_processor = FeatureProcessor(
-            target=self.target,
-            mode=self.mode,
-            is_temporal=None,
-            use_wavelets=self.use_wavelets,
-            extract_features=self.extract_features,
-            collinear_threshold=self.information_threshold,
-            verbose=self.verbose,
-        )
-        data = self.feature_processor.fit_transform(data)
-        self.feature_sets_ = self.feature_processor.feature_sets_
-
-        # Standardize
-        # Standardizing assures equal scales, equal gradients and no clipping.
-        # Therefore, it needs to be after sequencing & feature processing, as this
-        # alters scales
-        if self.standardize:
-            data = self.fit_transform_standardize(data)
+            data = self.interval_analyser.fit_transform(data)
 
         # Model Training #
         ##################
@@ -474,7 +465,7 @@ class Pipeline(LoggingMixin):
             ).fit(feature_data)
             results_["feature_set"] = feature_set
             self.results_ = pd.concat([results_, self.results_])
-        self.results_ = self._sort_results_(self.results_)
+        self.results_ = self.sort_results_(self.results_)
 
         # Optimize Hyper parameters
         for model, feature_set in self.grab_grid_search_iterations():
@@ -495,7 +486,7 @@ class Pipeline(LoggingMixin):
                 verbose=self.verbose,
             ).fit(data)
             self.results_ = pd.concat([self.results_, results_], ignore_index=True)
-        self.results_ = self._sort_results_(self.results_)
+        self.results_ = self.sort_results_(self.results_)
 
         # Storing model
         self.store_best(data)
@@ -523,7 +514,13 @@ class Pipeline(LoggingMixin):
     def store_best(self, data: pd.DataFrame):
         # TODO implement models limitations
         assert (
-            self.feature_sets_ and self.scorer and self.mode and self.feature_processor
+            self.feature_sets_
+            and self.scorer
+            and self.mode
+            and self.data_processor
+            and self.data_sequencer
+            and self.feature_processor
+            and self.standardizer
         )
 
         # Gather best results_
@@ -556,6 +553,8 @@ class Pipeline(LoggingMixin):
         self.settings["features"] = self.best_features_
         self.settings["data_processing"] = self.data_processor.get_settings()
         self.settings["feature_processing"] = self.feature_processor.get_settings()
+        if self.standardize:
+            self.settings["standardizing"] = self.standardizer.get_settings()
         self.settings["best_score"] = self.best_score_
         self.settings["amplo_version"] = (
             amplo.__version__ if hasattr(amplo, "__version__") else "dev"  # type: ignore
@@ -587,14 +586,14 @@ class Pipeline(LoggingMixin):
     def transform(self, data: pd.DataFrame) -> pd.DataFrame:
         if not self.is_fitted_:
             raise ValueError("Pipeline not yet fitted.")
-        assert self.feature_processor
+        assert self.data_processor and self.feature_processor and self.standardizer
 
         # Process data
         data = self.data_processor.transform(data)
 
         # Sequence
         if self.sequence:
-            self.logger.warn("Sequencer is temporarily disabled.", DeprecationWarning)
+            warn("Sequencer is temporarily disabled.", DeprecationWarning)
 
         # Convert Features
         data = self.feature_processor.transform(
@@ -603,7 +602,7 @@ class Pipeline(LoggingMixin):
 
         # Standardize
         if self.standardize:
-            data = self.transform_standardize(data)
+            data = self.standardizer.transform(data)
 
         # Output
         if not self.include_output and self.target in data:
@@ -623,9 +622,8 @@ class Pipeline(LoggingMixin):
             Data to do prediction on.
         """
         start_time = time.time()
-        assert self.is_fitted_, "Pipeline not yet fitted."
-
-        # Print
+        if not self.is_fitted_:
+            raise ValueError("Pipeline not yet fitted.")
         self.logger.info(
             f"Predicting with {type(self.best_model_).__name__}, v{self.version}"
         )
@@ -639,8 +637,10 @@ class Pipeline(LoggingMixin):
 
         # Convert
         if self.mode == "regression" and self.standardize:
-            predictions = self._inverse_standardize(predictions)
+            assert self.standardizer
+            predictions = self.standardizer.reverse(predictions, column=self.target)
         elif self.mode == "classification":
+            assert self.data_processor
             predictions = self.data_processor.decode_labels(predictions)
 
         # Stop timer
@@ -661,15 +661,14 @@ class Pipeline(LoggingMixin):
             Data to do prediction on.
         """
         start_time = time.time()
-        assert self.is_fitted_, "Pipeline not yet fitted."
-        assert (
-            self.mode == "classification"
-        ), "Predict_proba only available for classification"
-        assert hasattr(
-            self.best_model_, "predict_proba"
-        ), f"{type(self.best_model_).__name__} has no attribute predict_proba"
-
-        # Logging
+        if not self.is_fitted_:
+            raise ValueError("Pipeline not yet fitted.")
+        if self.mode != "classification":
+            raise ValueError("Predict_proba only available for classification")
+        if not hasattr(self.best_model_, "predict_proba"):
+            raise ValueError(
+                f"{type(self.best_model_).__name__} has no attribute predict_proba"
+            )
         self.logger.info(
             f"Predicting with {type(self.best_model_).__name__}, v{self.version}"
         )
@@ -692,9 +691,9 @@ class Pipeline(LoggingMixin):
     def _read_data(
         self,
         data_or_path: np.ndarray | pd.DataFrame | str | Path,
-        target: np.ndarray | pd.Series | str | None = None,
+        target: list | tuple | np.ndarray | pd.Series | str | Path | None = None,
         *,
-        metadata: dict[int, dict[str, str | float]] | None = None,
+        metadata: dict[str, dict] | None = None,
     ) -> pd.DataFrame:
         """
         Read and validate data.
@@ -711,12 +710,17 @@ class Pipeline(LoggingMixin):
         name as the ``target`` parameter indicates or ``target`` must also be an
         array-like object with the same length as ``data_or_path``.
 
+        Note: There's three combinations of data_or_path and target
+        1. if data_or_path = pd.DataFrame, target = pd.Series | None | str
+        2. if data_or_path = np.ndarray, target = np.ndarray | pd.Series
+        3. if data_or_path = path | str, target = path | str | None
+
         Parameters
         ----------
         data_or_path : np.ndarray or pd.DataFrame or str or Path
             Data or path to data.
         target : np.ndarray or pd.Series or str
-            Target data or column name.
+            Target data or column name or directory name
         *
         metadata : dict of {int : dict of {str : str or float}}, optional
             Metadata.
@@ -726,18 +730,71 @@ class Pipeline(LoggingMixin):
         Pipeline
             The same object but with injected data.
         """
+        # 1. if data_or_path = pd.DataFrame, target = ArrayLike | str | None
+        if isinstance(data_or_path, pd.DataFrame):
+            data = data_or_path
+            # If it's a series, we check index and take the name
+            if isinstance(target, pd.Series):
+                if not all(data.index == target.index):
+                    warn(
+                        "Indices of data and target don't match. Target index will be "
+                        "overwritten by data index."
+                    )
+                    target.index = data.index
+                if target.name and self.target != target.name:
+                    warn(
+                        "Provided target series has a different name than initialized "
+                        "target. Using series name."
+                    )
+                    self.target = str(target.name)
+            # Then for arraylike, we check length and make sure target is not in data
+            if isinstance(target, (list, tuple, pd.Series, np.ndarray)):
+                if len(data) != len(target):
+                    raise ValueError("Length of target and data don't match.")
+                if self.target in data and (data[self.target] != target).any():
+                    raise ValueError(
+                        f"The column '{self.target}' column already exists in `data` "
+                        f"but has different values."
+                    )
+                data[self.target] = target
+            # If it's a string, we check its presence and update self.target
+            elif isinstance(target, str):
+                if target not in data:
+                    raise ValueError("Provided target column not present in data.")
+                self.target = target
+            # If it's none, self.target is taken from __init__
+            elif isinstance(target, type(None)):
+                if self.target not in data:
+                    raise ValueError("Initialized target column not present in data.")
+            else:
+                raise NotImplementedError(
+                    "When data_or_path is a DataFrame, target needs to "
+                    "be a Series, str or None"
+                )
 
-        # Allow target name to be set via __init__
-        target_name = (
-            (target if isinstance(target, str) else None) or self.target or "target"
-        )
-        clean_target_name = utils.clean_feature_name(target_name)
+        # 2. if data_or_path = np.ndarray, target = ArrayLike
+        elif isinstance(data_or_path, np.ndarray):
+            if not isinstance(target, (np.ndarray, pd.Series, list, tuple)):
+                raise NotImplementedError(
+                    "If data is ndarray, target should be ArrayLike."
+                )
+            if len(data_or_path) != len(target):
+                raise ValueError("Length of target and data don't match.")
+            if isinstance(target, pd.Series):
+                data = pd.DataFrame(data_or_path, index=target.index)
+                if target.name:
+                    self.target = str(target.name)
+            else:
+                data = pd.DataFrame(data_or_path)
+            data[self.target] = target
 
-        # Read / set data
-        if isinstance(data_or_path, (str, Path)):
-            if not isinstance(target, (type(None), str)):
+        # 3. if data_or_path = path | str, target = path | str | None
+        elif isinstance(data_or_path, (str, Path)):
+            if isinstance(target, (str, Path)):
+                self.target = str(target)
+            elif not isinstance(target, type(None)):
                 raise ValueError(
-                    "Parameter `target` must be a string when `data_or_path` is a "
+                    "Target must be string | Path | None when `data_or_path` is a "
                     "path-like object."
                 )
             if metadata:
@@ -745,55 +802,21 @@ class Pipeline(LoggingMixin):
                     "Parameter `metadata` is ignored when `data_or_path` is a "
                     "path-like object."
                 )
+            data, metadata = utils.io.merge_logs(
+                parent=data_or_path, target=self.target
+            )
 
-            data, metadata = utils.io.merge_logs(data_or_path, target_name)
-
-        elif isinstance(data_or_path, (np.ndarray, pd.DataFrame)):
-            data = pd.DataFrame(data_or_path)
-
+        # 4. Error.
         else:
-            raise ValueError(f"Invalid type for `data_or_path`: {type(data_or_path)}")
+            raise NotImplementedError(
+                "Supported data_or_path types: pd.DataFrame | np.ndarray | Path | str"
+            )
+        assert isinstance(data, pd.DataFrame)
 
-        # Validate target
-        if target is None or isinstance(target, str):
-            if target_name not in data:
-                raise ValueError(f"Target column '{target_name}' not found in data.")
-
-        elif isinstance(target, (np.ndarray, pd.Series)):
-
-            if len(data) != len(target):
-                raise ValueError("Length of target and data don't match.")
-            elif not isinstance(target, pd.Series):
-                target = pd.Series(target, index=data.index)
-            elif not all(data.index == target.index):
-                warn(
-                    "Indices of data and target don't match. Target index will be "
-                    "overwritten by data index."
-                )
-                target.index = data.index
-
-            if target_name in data:
-                # Ignore when content is the same
-                if (data[target_name] != target).any():
-                    raise ValueError(
-                        f"The column '{target_name}' column already exists in `data` "
-                        f"but has different values."
-                    )
-            else:
-                data[target_name] = target
-
-        else:
-            raise ValueError("Invalid type for `target`.")
-
-        # We clean the target but not the feature columns since the DataProcessor
-        # does not return the cleaned target name; just the clean feature columns.
-        if clean_target_name != target_name:
-            if clean_target_name in data:
-                msg = f"A '{clean_target_name}' column already exists in `data`."
-                raise ValueError(msg)
-            data = data.rename(columns={target_name: clean_target_name})
-        assert clean_target_name in data, "Internal error: Target not in data."
-        self.target = clean_target_name
+        # Clean target name
+        clean_target = utils.clean_feature_name(self.target)
+        data = data.rename(columns={self.target: clean_target})
+        self.target = clean_target
 
         # Finish
         self.settings["file_metadata"] = metadata or {}
@@ -839,6 +862,40 @@ class Pipeline(LoggingMixin):
             f"Setting mode to {self.mode} & objective to {self.objective}."
         )
 
+    def _set_subclasses(self):
+        """
+        Simple function which sets subclasses. This cannot be done
+        during class initialization due to certain attributes which
+        are data dependent. Data is only known at calling .fit().
+        """
+        assert self.mode
+        self.data_processor = DataProcessor(
+            target=self.target,
+            drop_datetime=True,
+            include_output=True,
+            missing_values=self.missing_values,
+            outlier_removal=self.outlier_removal,
+            z_score_threshold=self.z_score_threshold,
+        )
+        self.data_sequencer = Sequencer(
+            target=self.target,
+            back=self.sequence_back,
+            forward=self.sequence_forward,
+            shift=self.sequence_shift,
+            diff=self.sequence_diff,
+        )
+        self.interval_analyser = IntervalAnalyser(target=self.target)
+        self.feature_processor = FeatureProcessor(
+            target=self.target,
+            mode=self.mode,
+            is_temporal=None,
+            use_wavelets=self.use_wavelets,
+            extract_features=self.extract_features,
+            collinear_threshold=self.information_threshold,
+            verbose=self.verbose,
+        )
+        self.standardizer = Standardizer(target=self.target, mode=self.mode)
+
     # Getter Functions / Properties
     @property
     def cv(self):
@@ -870,126 +927,7 @@ class Pipeline(LoggingMixin):
 
     # Support Functions
     @staticmethod
-    def _read_df(data_path) -> pd.DataFrame:
-        """
-        Read data from given path and set index or multi-index
-
-        Parameters
-        ----------
-        data_path : str or Path
-        """
-        assert Path(data_path).suffix == ".parquet", "Expected a *.parquet path"
-
-        return pd.read_parquet(data_path)
-
-    def _write_df(self, data, data_path):
-        """
-        Write data to given path and set index if needed.
-
-        Parameters
-        ----------
-        data : pd.DataFrame or pd.Series
-        data_path : str or Path
-        """
-        assert Path(data_path).suffix == ".parquet", "Expected a *.parquet path"
-
-        # Set single-index if not already present
-        if len(data.index.names) == 1 and data.index.name is None:
-            data.index.name = "index"
-
-        # Write data
-        if not self.no_dirs:
-            data.to_parquet(data_path)
-
-    def sort_results_(self, results_: pd.DataFrame) -> pd.DataFrame:
-        return self._sort_results_(results_)
-
-    def fit_transform_standardize(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Fits a standardization parameters and returns the transformed data
-        """
-        # Fit Input
-        cat_cols = [k for lst in self.data_processor.dummies_.values() for k in lst]
-        features = [
-            k
-            for k in data.keys()
-            if k not in self.data_processor.date_cols_ and k not in cat_cols
-        ]
-        means_ = data[features].mean(axis=0)
-        stds_ = data[features].std(axis=0)
-        stds_[stds_ == 0] = 1
-        settings: dict[str, dict[str, list | float]] = {
-            "input": {
-                "features": features,
-                "means": means_.to_list(),
-                "stds": stds_.to_list(),
-            }
-        }
-
-        # Fit Output
-        if self.mode == "regression":
-            if self.target not in data:
-                raise ValueError("Target missing in data")
-            y = data[self.target]
-            std = y.std()
-            settings.update(
-                output={
-                    "mean": y.mean(),
-                    "std": std if std != 0 else 1,
-                }
-            )
-
-        self.settings["standardize"] = settings
-
-        return self.transform_standardize(data)
-
-    def transform_standardize(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Standardizes the input and output with values from settings.
-
-        Parameters
-        ----------
-        x [pd.DataFrame]: Input data
-        y [pd.Series]: Output data
-        """
-        # Input
-        assert self.settings["standardize"], "Standardize settings not found."
-
-        # Pull from settings
-        features = self.settings["standardize"]["input"]["features"]
-        means = self.settings["standardize"]["input"]["means"]
-        stds = self.settings["standardize"]["input"]["stds"]
-
-        # Transform Input
-        data[features] = (data[features] - means) / stds
-
-        # Transform output (only with regression)
-        if self.mode == "regression" and self.target in data:
-            data[self.target] = (
-                data[self.target] - self.settings["standardize"]["output"]["mean"]
-            ) / self.settings["standardize"]["output"]["std"]
-
-        return data
-
-    def _inverse_standardize(self, y: pd.Series) -> pd.Series:
-        """
-        For predictions, transform them back to application scales.
-        Parameters
-        ----------
-        y [pd.Series]: Standardized output
-
-        Returns
-        -------
-        y [pd.Series]: Actual output
-        """
-        assert self.settings["standardize"], "Standardize settings not found"
-        return (
-            y * self.settings["standardize"]["output"]["std"]
-            + self.settings["standardize"]["output"]["mean"]
-        )
-
-    @staticmethod
-    def _sort_results_(results_: pd.DataFrame) -> pd.DataFrame:
+    def sort_results_(results_: pd.DataFrame) -> pd.DataFrame:
         return results_.sort_values("worst_case", ascending=False)
 
     def _get_main_predictors(self, data):
@@ -1039,7 +977,7 @@ class Pipeline(LoggingMixin):
                     missing_columns.append(col)
 
             if missing_columns:
-                self.logger.warning(
+                warn(
                     f"Some data column names are missing in the shap feature "
                     f"importance dictionary: {missing_columns}"
                 )

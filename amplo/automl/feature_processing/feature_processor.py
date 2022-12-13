@@ -493,7 +493,7 @@ class FeatureProcessor(BaseFeatureProcessor):
             "Missing datetime and numeric columns don't add up to all missing columns."
         )
         if missing_datetime or missing_numeric:
-            self.logger.warning(f"Imputing {len(missing_cols)} missing column(s).")
+            warn(f"Imputing {len(missing_cols)} missing column(s).")
 
         # Impute missing datetime columns
         if missing_datetime:

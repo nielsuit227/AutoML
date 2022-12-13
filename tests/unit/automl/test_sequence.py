@@ -51,7 +51,9 @@ class TestSequence:
         # Iterate Scenarios
         for forward in [[1], [5]]:
             # Sequence
-            sequence = Sequencer(back=back, forward=forward, diff="diff")
+            sequence = Sequencer(
+                back=back, forward=forward, diff="diff", target="target"
+            )
             seq_x, seq_y = sequence._convert_numpy(x, y, flat=False)
 
             # Tests
@@ -77,7 +79,9 @@ class TestSequence:
         # Iterate Scenarios
         for forward in [[1], [5]]:
             # Sequence
-            sequence = Sequencer(back=back, forward=forward, diff="log_diff")
+            sequence = Sequencer(
+                back=back, forward=forward, diff="log_diff", target="target"
+            )
             seq_x, seq_y = sequence._convert_numpy(x, y, flat=False)
 
             # Tests
@@ -107,7 +111,7 @@ class TestSequence:
         y = np.linspace(1, length, length)
 
         # Without differencing
-        sequence = Sequencer(back=back, forward=forward, diff="none")
+        sequence = Sequencer(back=back, forward=forward, diff="none", target="target")
         seq_x, seq_y = sequence._convert_numpy(x, y, flat=False)
         # Test
         assert (
@@ -121,7 +125,7 @@ class TestSequence:
             ), "seq_y samples are not correct"
 
         # With differencing
-        sequence = Sequencer(back=back, forward=forward, diff="diff")
+        sequence = Sequencer(back=back, forward=forward, diff="diff", target="target")
         seq_x, seq_y = sequence._convert_numpy(x, y, flat=False)
         revert = sequence.revert(seq_y, y[back - 1 : back - 1 + max(forward)])
         # Tests
@@ -149,7 +153,7 @@ class TestSequence:
         # Iterate scenarios
         for diff in ["diff", "log_diff"]:
             # Sequence
-            seq = Sequencer(back=back, forward=forward, diff=diff)
+            seq = Sequencer(back=back, forward=forward, diff=diff, target="target")
             seq_x, seq_y = seq._convert_numpy(x, y, flat=False)
 
             # Tests

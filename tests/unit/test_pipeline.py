@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from amplo import Pipeline
-from tests import get_all_modeller_models
+from tests import create_test_folders, get_all_modeller_models, rmtree
 
 
 class TestPipeline:
@@ -53,38 +53,6 @@ class TestPipeline:
         assert os.path.exists("Auto_ML/Model.joblib")
         assert os.path.exists("Auto_ML/Settings.json")
 
-    def test_read_write_df(self):
-        """
-        Check whether intermediate data is stored and read correctly
-        """
-        # Set path
-        data_path = "test_data.parquet"
-
-        # Test single index
-        data_write = pd.DataFrame(
-            np.random.randint(0, 100, size=(10, 10)),
-            columns=[f"feature_{i}" for i in range(10)],
-            dtype="int64",
-        )
-        data_write.index.name = "index"
-        Pipeline()._write_df(data_write, data_path)
-        data_read = Pipeline._read_df(data_path)
-        assert data_write.equals(
-            data_read
-        ), "Read data should be equal to original data"
-
-        # Test multi-index (cf. IntervalAnalyser)
-        data_write = data_write.set_index(data_write.columns[-2:].to_list())
-        data_write.index.names = ["log", "index"]
-        Pipeline()._write_df(data_write, data_path)
-        data_read = Pipeline._read_df(data_path)
-        assert data_write.equals(
-            data_read
-        ), "Read data should be equal to original data"
-
-        # Remove data
-        os.remove(data_path)
-
     @pytest.mark.parametrize("mode", ["classification"])
     def test_capital_target(self, mode, make_data):
         data = make_data
@@ -92,3 +60,93 @@ class TestPipeline:
         data = data.drop("target", axis=1)
         pipeline = Pipeline(target="TARGET", n_grid_searches=0, extract_features=False)
         pipeline.fit(data)
+
+    def test_read_dir(self):
+        create_test_folders("data", n_samples=100, n_features=5)
+
+        # First multi-class
+        df1 = Pipeline(target="Class_1")._read_data("data")
+        assert "class_1" in df1
+        assert len(df1.keys()) == 6
+        assert isinstance(df1.index, pd.MultiIndex)
+        assert df1.index.get_level_values(0).dtype == "object"
+
+        # Second binary class
+        df2 = Pipeline()._read_data("data", "Class_1")
+        assert (df1.index == df2.index).all()
+        assert "class_1" in df2
+        assert set(df2["class_1"].values) == {0, 1}
+
+        # Trigger errors
+        with pytest.raises(ValueError):
+            Pipeline()._read_data("data", "NoClass")
+        with pytest.raises(ValueError):
+            Pipeline()._read_data("data")
+        with pytest.raises(ValueError):
+            Pipeline()._read_data("NoFolder")
+
+        # Cleanup
+        rmtree("data")
+
+    def test_read_numpy(self):
+        x = np.random.normal(0, 1, (100, 10))
+        y = np.random.normal(0, 1, 100)
+
+        # Normal
+        data = Pipeline(target="tArGeT")._read_data(x, y)
+        assert "target" in data
+        assert len(data.keys()) == 11
+
+        # With series
+        data = Pipeline()._read_data(x, pd.Series(y, name="label"))
+        assert "label" in data
+        assert len(data.keys()) == 11
+
+        # Trigger errors
+        with pytest.raises(NotImplementedError):
+            Pipeline()._read_data(x, None)
+        with pytest.raises(ValueError):
+            Pipeline()._read_data(x, np.random.normal(0, 1, 101))
+
+    def test_read_pandas(self):
+        index = pd.Index(np.linspace(101, 200, 100))
+        x = pd.DataFrame(
+            {
+                "x1": np.random.normal(0, 1, 100),
+                "x2": np.random.normal(0, 1, 100),
+            },
+            index=index,
+        )
+        y = pd.Series(np.random.normal(0, 1, 100), name="target", index=index)
+        data = x.copy()
+        data["tArGeT"] = y
+
+        # Normal
+        d1 = Pipeline()._read_data(x, y)
+        d2 = Pipeline()._read_data(data, "tArGeT")
+        d3 = Pipeline(target="tArGeT")._read_data(data)
+        assert d1.equals(d2) and d1.equals(d3)
+        assert "target" in d1
+        assert len(d1.keys()) == 3
+
+        # Trigger errors
+        with pytest.raises(ValueError):
+            # y too long
+            Pipeline()._read_data(x, pd.Series(np.random.normal(0, 1, 101)))
+        with pytest.warns(Warning):
+            # different index
+            Pipeline()._read_data(x, y.reset_index(drop=True))
+        with pytest.warns(Warning):
+            # different name
+            Pipeline()._read_data(
+                x, pd.Series(np.random.normal(0, 1, 100), index=index, name="label2")
+            )
+        with pytest.raises(NotImplementedError):
+            # wrong type
+            Pipeline()._read_data(x, {"a": 1})  # type: ignore
+        with pytest.raises(ValueError):
+            # Missing target
+            Pipeline()._read_data(data, "label")
+        with pytest.raises(ValueError):
+            data2 = data.rename(columns={"target": "target2"})
+            Pipeline()._read_data(data2)

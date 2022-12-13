@@ -1,22 +1,25 @@
 #  Copyright (c) 2022 by Amplo.
 from __future__ import annotations
 
-import warnings
+from warnings import warn
 
 import numpy as np
 import pandas as pd
 
+from amplo.base import LoggingMixin
 
-class Sequencer:
+
+class Sequencer(LoggingMixin):
     # todo implement fractional differencing
 
     def __init__(
         self,
-        target: str = "target",
+        target: str,
         back: int | list[int] = 1,
         forward: int | list[int] = 1,
         shift=0,
         diff="none",
+        verbose: int = 1,
     ):
         """Sequences and differentiates data.
 
@@ -47,34 +50,37 @@ class Sequencer:
         the output for ``[t, t+1, t+2, t+3]`` and having ``forward=[4]`` will result in
         making a ``t+4`` prediction. The same rules apply to the ``forward`` parameter.
         """
+        super().__init__(verbose=verbose)
         # Tests
-        assert diff in [
+        if diff not in [
             "none",
             "diff",
             "log_diff",
-        ], "Diff needs to be none, diff or log_diff."
+        ]:
+            raise ValueError("Diff needs to be none, diff or log_diff.")
         if isinstance(back, int):
-            assert back > 0, "'back' arg needs to be strictly positive."
+            if back <= 0:
+                raise ValueError("'back' arg needs to be strictly positive.")
         else:
-            assert all(
-                [x >= 0 for x in back]
-            ), "All integers in 'back' need to be positive."
-            assert all(
-                [x > 0 for x in np.diff(back)]
-            ), "All integers in 'back' need to be monotonically increasing."
-        if isinstance(forward, int):
-            assert forward >= 0, "'forward' arg needs to be positive"
-        else:
-            assert all(
-                [x >= 0 for x in forward]
-            ), "All integers in 'forward' need to be positive."
-            assert all(
-                [x > 0 for x in np.diff(forward)]
-            ), "All integers in 'forward' need to be monotonically increasing."
-        if diff != "none" and isinstance(back, int):
-            assert back > 1, "With differencing, back needs to be at least 2."
-        if diff != "none" and isinstance(forward, int):
-            assert forward > 1, "With differencing, forward needs to be at least 2."
+            if not all([x >= 0 for x in back]):
+                raise ValueError("All integers in 'back' need to be positive.")
+            if not all([x > 0 for x in np.diff(back)]):
+                raise ValueError(
+                    "All integers in 'back' need to be monotonically increasing."
+                )
+        if isinstance(forward, int) and forward < 0:
+            raise ValueError("'forward' arg needs to be positive")
+        elif isinstance(forward, list):
+            if not all([x >= 0 for x in forward]):
+                raise ValueError("All integers in 'forward' need to be positive.")
+            if not all([x > 0 for x in np.diff(forward)]):
+                raise ValueError(
+                    "All integers in 'forward' need to be monotonically increasing."
+                )
+        if diff != "none" and isinstance(back, int) and back <= 1:
+            raise ValueError("With differencing, back needs to be at least 2.")
+        if diff != "none" and isinstance(forward, int) and forward <= 1:
+            raise ValueError("With differencing, forward needs to be at least 2.")
 
         # Note static args
         self.target = target
@@ -140,7 +146,8 @@ class Sequencer:
             Whether to return a 2d matrix or 3d
         """
         # Split data
-        assert self.target and self.target in data
+        if self.target not in data:
+            raise ValueError(f"Target column {self.target} missing.")
         y = data[self.target]
         x = data.drop(self.target, axis=1)
 
@@ -227,13 +234,13 @@ class Sequencer:
             if self.diff == "log_diff":
                 if np.min(x) < 1e-3:
                     self.input_constant_ = abs(np.min(x) * 1.001) + 1e-3
-                    warnings.warn(
+                    warn(
                         f"Small or negative input values found, adding a constant "
                         f"{self.input_constant_:.2e} to input"
                     )
                 if np.min(y) < 1e-3:
                     self.output_constant_ = abs(np.min(y) * 1.001) + 1e-3
-                    warnings.warn(
+                    warn(
                         f"Small or negative output values found, adding a constant "
                         f"{self.output_constant_:.2e} to output"
                     )
@@ -274,10 +281,8 @@ class Sequencer:
         :param y_start: Starting vector, always necessary when differentiated.
         :return: y: normal predicted signal, de-sequenced.
         """
-        assert (
-            len(seq_y.shape) == 2 and seq_y.shape[1] == self.n_output_steps_
-        ), "revert() only suitable for output."
-        # assert len(y_start) == self.max_output_step_ + self.shift + 1
+        if not len(seq_y.shape) == 2 and seq_y.shape[1] == self.n_output_steps_:
+            raise ValueError("revert() only suitable for output.")
 
         # Initiate
         y = np.zeros((self.n_output_steps_, len(seq_y) + len(y_start)))

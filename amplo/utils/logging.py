@@ -91,11 +91,12 @@ def _create_logger() -> logging.Logger:
     logging.captureWarnings(True)
     py_warnings_logger = logging.getLogger("py.warnings")
     warnings_formatter = colorlog.ColoredFormatter(
-        "%(white)s%(asctime)s %(log_color)s[%(levelname)s] %(white)s%(message)s",
+        "%(white)s%(asctime)s %(blue)s[%(name)s]%(log_color)s[%(levelname)s] "
+        "%(white)s%(message)s",
         datefmt="%H:%M",
     )
     warnings_handler = logging.StreamHandler()
-    warnings_handler.setLevel("WARNING")
+    warnings_handler.setLevel(logging.WARNING)
     warnings_handler.setFormatter(warnings_formatter)
     warnings_handler.terminator = ""  # suppress unnecessary newline
     _add_filters(warnings_handler)
