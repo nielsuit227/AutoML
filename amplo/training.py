@@ -82,14 +82,14 @@ def _set_default_pipe_kwargs(
 
     # Set params
     pipe_kwargs["name"] = f"{team} - {machine} - {service} - {issue}"
-    pipe_kwargs["target"] = pipe_kwargs.get("target", "target")
+    pipe_kwargs["target"] = issue
     pipe_kwargs["version"] = model_version
 
     return pipe_kwargs
 
 
 def _get_file_delta(
-    metadata: dict[int, dict],
+    metadata: dict[str, dict],
     team: str,
     machine: str,
     service: str,
@@ -155,7 +155,6 @@ def train_locally(
     working_dir: str | Path = "./tmp",
     azure: tuple[str, str] | bool = False,
     platform: tuple[str, str] | bool | None = None,
-    logging: bool = True,
 ) -> bool:
     """
     Locally train a model with given parameters.
@@ -228,22 +227,8 @@ def train_locally(
     else:
         more_folders = [Path(data_dir).parent / "Healthy/Healthy"]
     data, file_metadata = merge_logs(
-        data_dir,
-        target,
-        more_folders=more_folders,
-        azure=azure,
-        platform=platform,
-        logging=logging,
+        data_dir, target, more_folders=more_folders, azure=azure, platform=platform
     )
-
-    # Set data labels
-    mask = data.loc[:, target] == issue
-    data.loc[~mask, target] = 0
-    data.loc[mask, target] = 1
-
-    # Safety check
-    if data[target].nunique() != 2:
-        raise ValueError(f"Number of unique labels is {data[target].nunique()} != 2.")
 
     # --- Training ---
 
@@ -347,8 +332,13 @@ def train_on_cloud(
         team, machine, service, issue, model_version, pipe_kwargs
     )
     check_dtypes(
-        ("model_id", model_id, int),
         ("job_id", job_id, int),
+        ("model_id", model_id, int),
+        ("team", team, str),
+        ("machine", machine, str),
+        ("service", service, str),
+        ("issue", issue, str),
+        ("train_id", train_id, int),
         ("host_os", host_os, (type(None), str)),
         ("access_token_os", access_token_os, (type(None), str)),
     )

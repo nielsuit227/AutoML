@@ -26,15 +26,15 @@ def test_set_default_pipe_kwargs():
     assert {key: pipe_kwargs[key] for key in DEFAULT_PIPE_KWARGS} == DEFAULT_PIPE_KWARGS
     # Test that name, target and version are set
     assert pipe_kwargs["name"] == "1 - 2 - 3 - 4"
-    assert pipe_kwargs["target"] == "target"
+    assert pipe_kwargs["target"] == params["issue"]
     assert pipe_kwargs["version"] == params["model_version"]
 
     # Case 2: kwargs are given and shall not be overwritten
     pipe_kwargs = _set_default_pipe_kwargs(
-        **params, unhandled_pipe_kwargs={"target": "labels", "verbose": 2}
+        **params, unhandled_pipe_kwargs={"issue": "labels", "verbose": 2}
     )
     # Test that given values came through
-    assert pipe_kwargs["target"] == "labels"
+    assert pipe_kwargs["target"] == params["issue"]
     assert pipe_kwargs["verbose"] == 2
     # Test that the other default parameters are not overwritten
     default_pipe_kwargs = DEFAULT_PIPE_KWARGS

@@ -199,7 +199,7 @@ def _read_files_in_folders(
     target: str,
     blob_api: AzureBlobDataAPI | None = None,
     logger: Logger | None = None,
-) -> tuple[list[str], list[pd.DataFrame], dict[str, dict]]:
+) -> tuple[list[str], pd.DataFrame, dict[str, dict]]:
     """
     Use pandas to read all non-hidden and non-empty files into a DataFrame.
 
@@ -216,10 +216,10 @@ def _read_files_in_folders(
 
     Returns
     -------
+    filenames : list of str
     data : pd.DataFrame
         All files of the folders merged into one multi-indexed DataFrame.
     metadata : list of dict of {str : str or float}
-        Metadata of data.
 
     Warnings
     --------
@@ -300,6 +300,15 @@ def _read_files_in_folders(
             last_time_logged = time()
             logger.info(f".. progress: {folder_count / len(folders) * 100:.1f} %")
 
+    # Concatenate data
+    data = pd.concat(data, axis=0)
+
+    # Validate data
+    if target not in data:
+        raise ValueError("Target not in data.")
+    if data[target].nunique() != 2:
+        raise ValueError(f"Number of unique labels is {data[target].nunique()} != 2.")
+
     return file_names, data, metadata
 
 
@@ -307,7 +316,7 @@ def _map_datalogs_to_file_names(
     file_names: list[str],
     platform_api: AmploPlatformAPI | None = None,
     logger: Logger | None = None,
-) -> list[dict]:
+) -> dict:
     """
     Get datalogs for every filename.
 
@@ -327,7 +336,7 @@ def _map_datalogs_to_file_names(
     """
 
     if not platform_api:
-        return []
+        return {}
 
     # It is assumed that the 6th and 5th path position of the (first) filename contains
     # the team and machine name, respectively, if you count from right to left.
@@ -340,10 +349,10 @@ def _map_datalogs_to_file_names(
         team, machine = file_names[0].split("/")[-6:-4]
     except IndexError:
         warn(f"Got an empty list of file names")
-        return []
+        return {}
 
     # Get datalog for each filename
-    datalogs = []
+    datalogs = {}
     last_time_logged = time()
     for file_count, fname in enumerate(file_names):
         try:
@@ -352,7 +361,7 @@ def _map_datalogs_to_file_names(
             # No matching datalog found. Do still append it to preserve the order.
             datalog = {}
 
-        datalogs.append(datalog)
+        datalogs[fname] = datalog
 
         if logger and time() - last_time_logged > 90:
             last_time_logged = time()
@@ -361,9 +370,7 @@ def _map_datalogs_to_file_names(
     return datalogs
 
 
-def _mask_intervals(
-    datalogs: list[dict], data: list[pd.DataFrame]
-) -> list[pd.DataFrame]:
+def _mask_intervals(datalogs: dict, data: pd.DataFrame) -> pd.DataFrame:
     """
     Masks the data with the intervals given by the datalogs.
 
@@ -371,14 +378,12 @@ def _mask_intervals(
     ----------
     datalogs : list of dict
         Datalogs dictionary that should contain the keys 'selected' and 'datetime_col'.
-    data : list of pd.DataFrame
+    data : pd.DataFrame
         Data for splitting.
-    metadata : list of dict of {str : str or float}
-        Metadata of data. For each data split it will be duplicated.
 
     Returns
     -------
-    data_out : list of pd.DataFrame
+    data_out : pd.DataFrame
         Selected data.
 
     Warnings
@@ -387,23 +392,24 @@ def _mask_intervals(
         When no valid match for the start or stop time of the data interval was found,
         i.e. when the time difference is more than 1 second.
     """
-
     # Initialize
     data_out = []
 
-    for datalog, datum in zip(datalogs, data):
+    for filename in data.index.get_level_values("log"):
         # Get intervals and timestamp column from datalog
+        datum = data.loc[filename]
+        datalog = datalogs.get(filename, {})
         intervals = datalog.get("selected", [])
         ts_col = datalog.get("datetime_col", "")
 
         # If no interval is to be selected, append the whole datum
         if not intervals or not ts_col:
-            data_out.append(datum)
+            continue
 
         # Prevent a KeyError when ts_col column is not present
         elif ts_col not in datum.columns:
             warn(f"Cannot select intervals as the column '{ts_col}' is not present.")
-            data_out.append(datum)
+            continue
 
         # Else, select and append each interval of the datum
         else:
@@ -426,15 +432,15 @@ def _mask_intervals(
                         f"{ts_last=}. Using the whole datum for the file "
                         f"'{datalog.get('filename', 'unknown')}' instead."
                     )
-                    data_out.append(datum)
                     break
 
                 # Select interval
-                data_out.append(datum.iloc[first : last + 1])
+                data = data.drop(data.loc[filename, :first, :].index)  # type: ignore
+                data = data.drop(data.loc[filename, last + 1 :, :].index)  # type:ignore
             else:
                 continue
 
-    return data_out
+    return data
 
 
 def merge_logs(
@@ -471,10 +477,8 @@ def merge_logs(
     ----------
     parent_folder : str or Path
         Directory that contains subdirectories with tabular data files.
-    target_col : str, default: target
-        Target column name. Values are depicted by the folder name.
-    target_is_dir : bool
-        Whether the target is a directory, used to create binary classification
+    target : str
+        The target folder.
     more_folders : list of str or Path, optional
         Additional folder names with tabular data files to append.
     azure : (str, str) or bool, default: False
@@ -528,4 +532,4 @@ def merge_logs(
             logger.info("Masking intervals from datalogs")
             data = _mask_intervals(datalogs, data)
 
-    return pd.concat(data, axis=0), metadata
+    return data, metadata
