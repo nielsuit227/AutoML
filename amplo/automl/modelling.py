@@ -118,7 +118,6 @@ class Modeller(LoggingMixin):
             columns=[
                 "date",
                 "model",
-                "dataset",
                 "params",
                 "score",
                 "worst_case",

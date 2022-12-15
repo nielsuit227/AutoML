@@ -286,6 +286,7 @@ class DataObserver(BaseObserver):
             labels=y.values.astype("int"),
             pred_probs=predicted_probabilities,
             return_indices_ranked_by="self_confidence",
+            n_jobs=1,
         ).tolist()
 
         # Return

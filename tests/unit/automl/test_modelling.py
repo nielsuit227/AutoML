@@ -35,7 +35,6 @@ class TestModelling:
         assert not mod.results["time"].isna().any(), "Time shouldn't contain NaN"
         assert "date" in mod.results.keys()
         assert "model" in mod.results.keys()
-        assert "dataset" in mod.results.keys()
         assert "params" in mod.results.keys()
 
     @pytest.mark.parametrize("n_samples", [100, 100_000])

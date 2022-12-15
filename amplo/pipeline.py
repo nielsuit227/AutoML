@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import warnings
 from inspect import signature
 from pathlib import Path
 from typing import Any
@@ -18,7 +19,6 @@ from sklearn import metrics
 from sklearn.model_selection import KFold, StratifiedKFold
 
 import amplo
-from amplo import utils
 from amplo.automl.data_processing import DataProcessor
 from amplo.automl.feature_processing import FeatureProcessor
 from amplo.automl.feature_processing.feature_processor import (
@@ -33,9 +33,12 @@ from amplo.automl.standardization import Standardizer
 from amplo.base import BasePredictor
 from amplo.base.objects import LoggingMixin
 from amplo.observation import DataObserver, ModelObserver
+from amplo.utils import clean_feature_name, get_model, io, logging
 from amplo.validation import ModelValidator
 
 __all__ = ["Pipeline"]
+
+warnings.filterwarnings("ignore", message="lbfgs failed to converge")
 
 
 class Pipeline(LoggingMixin):
@@ -186,7 +189,7 @@ class Pipeline(LoggingMixin):
         store_models: bool = False,
         # Grid search
         grid_search_timeout: int = 3600,
-        n_grid_searches: int = 3,
+        n_grid_searches: int = 2,
         n_trials_per_grid_search: int = 250,
         # Flags
         process_data: bool = True,
@@ -206,7 +209,7 @@ class Pipeline(LoggingMixin):
         if logging_path is None:
             logging_path = f"{Path(main_dir)}/AutoML.log"
         if logging_to_file:
-            utils.logging.add_file_handler(logging_path)
+            logging.add_file_handler(logging_path)
 
         # Input checks: validity
         if mode not in (None, "regression", "classification"):
@@ -297,10 +300,9 @@ class Pipeline(LoggingMixin):
         self.standardizer = None
 
         # Instance initiating
-        self.samples_: int | None = None
         self.best_model_: BasePredictor | None = None
         self.best_model_str_: str | None = None
-        self.best_params_: dict | None = None
+        self.best_params_: dict[str, Any] | None = None
         self.best_feature_set_: str | None = None
         self.best_score_: float | None = None
         self.feature_sets_: dict[str, list[str]] | None = None
@@ -464,20 +466,19 @@ class Pipeline(LoggingMixin):
                 verbose=self.verbose,
             ).fit(feature_data)
             results_["feature_set"] = feature_set
-            self.results_ = pd.concat([results_, self.results_])
-        self.results_ = self.sort_results_(self.results_)
+            self.results_ = self.sort_results(pd.concat([results_, self.results_]))
 
         # Optimize Hyper parameters
         for model, feature_set in self.grab_grid_search_iterations():
             # TODO: implement models limitations
             assert feature_set in self.feature_sets_
             self.logger.info(
-                f"Starting Hyper Parameter Optimization for {type(model).__name__} on "
-                f"{feature_set} features ({self.samples_} samples, "
+                f"Starting Hyper Parameter Optimization for {model} on "
+                f"{feature_set} features ({len(data)} samples, "
                 f"{len(self.feature_sets_[feature_set])} features)"
             )
             results_ = OptunaGridSearch(
-                utils.get_model(model, mode=self.mode, samples=self.samples_),
+                get_model(model),
                 target=self.target,
                 timeout=self.grid_search_timeout,
                 cv=self.cv,
@@ -485,8 +486,10 @@ class Pipeline(LoggingMixin):
                 scoring=self.objective,
                 verbose=self.verbose,
             ).fit(data)
-            self.results_ = pd.concat([self.results_, results_], ignore_index=True)
-        self.results_ = self.sort_results_(self.results_)
+            results_["feature_set"] = feature_set
+            self.results_ = self.sort_results(
+                pd.concat([self.results_, results_], ignore_index=True)
+            )
 
         # Storing model
         self.store_best(data)
@@ -502,9 +505,9 @@ class Pipeline(LoggingMixin):
         # Finish
         self.is_fitted_ = True
         self.logger.info("All done :)")
-        utils.logging.del_file_handlers()
+        logging.del_file_handlers()
 
-    def grab_grid_search_iterations(self):
+    def grab_grid_search_iterations(self) -> list[tuple[str, str]]:
         iterations = []
         for i in range(self.n_grid_searches):
             row = self.results_.iloc[i]
@@ -528,12 +531,12 @@ class Pipeline(LoggingMixin):
         self.best_model_str_ = self.results_.iloc[0]["model"]
         self.best_feature_set_ = self.results_.iloc[0]["feature_set"]
         self.best_features_ = self.feature_sets_.get(self.best_feature_set_, [])
-        self.best_params_ = utils.io.parse_json(self.results_.iloc[0]["params"])  # type: ignore
+        parsed_params = io.parse_json(self.results_.iloc[0]["params"])
+        assert isinstance(parsed_params, dict)
+        self.best_params_ = parsed_params
 
         # Train model on all training data
-        self.best_model_ = utils.get_model(
-            self.best_model_str_, mode=self.mode, samples=self.samples_
-        )
+        self.best_model_ = get_model(self.best_model_str_)
         self.best_model_.set_params(**self.best_params_)
         self.best_model_.fit(data[self.best_features_], data[self.target])
 
@@ -581,7 +584,7 @@ class Pipeline(LoggingMixin):
         # Save model & settings
         joblib.dump(self.best_model_, self.main_dir + "Model.joblib")
         with open(self.main_dir + "Settings.json", "w") as settings:
-            json.dump(self.settings, settings, indent=4, cls=utils.io.NpEncoder)
+            json.dump(self.settings, settings, indent=4, cls=io.NpEncoder)
 
     def transform(self, data: pd.DataFrame) -> pd.DataFrame:
         if not self.is_fitted_:
@@ -802,9 +805,7 @@ class Pipeline(LoggingMixin):
                     "Parameter `metadata` is ignored when `data_or_path` is a "
                     "path-like object."
                 )
-            data, metadata = utils.io.merge_logs(
-                parent=data_or_path, target=self.target
-            )
+            data, metadata = io.merge_logs(parent=data_or_path, target=self.target)
 
         # 4. Error.
         else:
@@ -814,7 +815,7 @@ class Pipeline(LoggingMixin):
         assert isinstance(data, pd.DataFrame)
 
         # Clean target name
-        clean_target = utils.clean_feature_name(self.target)
+        clean_target = clean_feature_name(self.target)
         data = data.rename(columns={self.target: clean_target})
         self.target = clean_target
 
@@ -927,7 +928,7 @@ class Pipeline(LoggingMixin):
 
     # Support Functions
     @staticmethod
-    def sort_results_(results_: pd.DataFrame) -> pd.DataFrame:
+    def sort_results(results_: pd.DataFrame) -> pd.DataFrame:
         return results_.sort_values("worst_case", ascending=False)
 
     def _get_main_predictors(self, data):

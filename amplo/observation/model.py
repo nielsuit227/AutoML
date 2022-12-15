@@ -22,7 +22,7 @@ from sklearn.metrics import get_scorer
 from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.neighbors import KernelDensity
 
-from amplo.base import BaseEstimator
+from amplo.base import BasePredictor
 from amplo.classification import PartialBoostingClassifier
 from amplo.observation._base import BaseObserver, _report_obs
 from amplo.regression import PartialBoostingRegressor
@@ -58,7 +58,7 @@ class ModelObserver(BaseObserver):
 
     def observe(
         self,
-        model: BaseEstimator,
+        model: BasePredictor,
         data: pd.DataFrame,
         target: str,
         mode: str,
@@ -72,7 +72,7 @@ class ModelObserver(BaseObserver):
         return self.observations
 
     @_report_obs
-    def check_model_size(self, model: BaseEstimator, threshold=20e6):
+    def check_model_size(self, model: BasePredictor, threshold=20e6):
         """
         Check the RAM of the model. If it's bigger than 20MB, something is wrong.
 
@@ -100,7 +100,7 @@ class ModelObserver(BaseObserver):
 
     @_report_obs
     def check_better_than_linear(
-        self, model: BaseEstimator, data: pd.DataFrame, target: str, mode: str
+        self, model: BasePredictor, data: pd.DataFrame, target: str, mode: str
     ):
         """
         Checks whether the model exceeds a linear model.
@@ -155,7 +155,7 @@ class ModelObserver(BaseObserver):
 
     @_report_obs
     def check_noise_invariance(
-        self, model: BaseEstimator, data: pd.DataFrame, target: str, mode: str
+        self, model: BasePredictor, data: pd.DataFrame, target: str, mode: str
     ):
         """
         This checks whether the model performance is invariant to noise in the data.
@@ -212,7 +212,7 @@ class ModelObserver(BaseObserver):
     @_report_obs
     def check_slice_invariance(
         self,
-        model: BaseEstimator,
+        model: BasePredictor,
         data: pd.DataFrame,
         target: str,
         mode: str,
@@ -286,7 +286,7 @@ class ModelObserver(BaseObserver):
 
     @_report_obs
     def check_boosting_overfit(
-        self, model: BaseEstimator, data: pd.DataFrame, target: str, mode: str
+        self, model: BasePredictor, data: pd.DataFrame, target: str, mode: str
     ):
         """
         Checks whether boosting models are overfitted.

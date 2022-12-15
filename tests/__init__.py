@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from amplo.automl import Modeller
-from amplo.base import BaseEstimator
+from amplo.base import BasePredictor
 
 __all__ = [
     "rmtree",
@@ -97,7 +97,7 @@ def create_test_folders(directory: Path | str, n_samples, n_features):
 # Dummies
 
 
-class _DummyPredictor(BaseEstimator):
+class _DummyPredictor(BasePredictor):
     """
     Dummy predictor for testing.
 
@@ -136,7 +136,7 @@ class _DummyPredictor(BaseEstimator):
             return self.predictor.classes
 
 
-class _RandomClassifier(BaseEstimator):
+class _RandomClassifier(BasePredictor):
     """
     Dummy classifier for testing.
     """
@@ -158,7 +158,7 @@ class _RandomClassifier(BaseEstimator):
         return proba * (1.0 / proba.sum(1)[:, np.newaxis])  # normalize
 
 
-class _RandomRegressor(BaseEstimator):
+class _RandomRegressor(BasePredictor):
     """
     Dummy regressor for testing.
     """
@@ -179,7 +179,7 @@ class RandomPredictor(_DummyPredictor):
     _dummy_regressor = _RandomRegressor
 
 
-class _OverfitClassifier(BaseEstimator):
+class _OverfitClassifier(BasePredictor):
     """
     Dummy classifier for testing. Returns the class if present in the data, else
     predicts 0

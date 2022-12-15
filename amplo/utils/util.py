@@ -23,21 +23,29 @@ __all__ = [
 ]
 
 
-def get_model(model_str, **kwargs):
-    # Import here to prevent ImportError (due to circular import)
-    from amplo.automl.modelling import Modeller
+def get_model(model_str: str):
+    from sklearn import ensemble, linear_model, svm
 
-    if "stacking" in model_str.lower():
-        # TODO: Implement stacking model
-        raise NotImplementedError("Stacking models are not yet implemented.")
+    from amplo import classification, regression
+    from amplo.base import BasePredictor
 
-    models = Modeller(**kwargs).return_models()
-    model = [m for m in models if type(m).__name__ == model_str]
+    model: BasePredictor
 
-    try:
-        return model[0]
-    except IndexError:
-        raise ValueError("Model not found.")
+    if "RandomForest" in model_str or "Bagging" in model_str:
+        model = getattr(ensemble, model_str)()
+    elif model_str == "SVC":
+        model = svm.SVC(probability=True)  # type: ignore
+    elif model_str == "SVR":
+        model = svm.SVR()  # type: ignore
+    elif "Logistic" in model_str or "Linear" in model_str or "Ridge" in model_str:
+        model = getattr(linear_model, model_str)()
+    elif "Classifier" in model_str:
+        model = getattr(classification, model_str)()
+    elif "Regressor" in model_str:
+        model = getattr(regression, model_str)()
+    else:
+        raise ValueError("Model not recognized.")
+    return model
 
 
 def hist_search(array, value):

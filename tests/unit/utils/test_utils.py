@@ -18,15 +18,12 @@ class TestUtils:
                 )
                 for model_type in all_models:
                     model_name = model_type.__name__
-                    model = get_model(model_name, mode=mode, samples=samples)
+                    model = get_model(model_name)
                     assert type(model) == model_type
 
         # Test invalid model
-        try:
-            get_model("ImaginaryModel", mode="regression", samples=100)
-            raise AssertionError("`get_model` did not raise a ValueError.")
-        except ValueError:
-            pass
+        with pytest.raises(ValueError):
+            get_model("ImaginaryModel")
 
     def test_hist_search(self):
         bin_idx = hist_search(np.arange(100).astype(float), 50)

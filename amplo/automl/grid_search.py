@@ -13,7 +13,7 @@ import pandas as pd
 from sklearn.metrics import get_scorer
 from sklearn.model_selection import BaseCrossValidator, StratifiedKFold, cross_val_score
 
-from amplo.base.objects import BaseEstimator, LoggingMixin
+from amplo.base.objects import BasePredictor, LoggingMixin
 
 __all__ = ["OptunaGridSearch"]
 
@@ -122,7 +122,7 @@ class OptunaGridSearch(LoggingMixin):
 
     def __init__(
         self,
-        model: BaseEstimator,
+        model: BasePredictor,
         target: str,
         n_trials: int = 250,
         timeout: int = -1,
@@ -154,7 +154,10 @@ class OptunaGridSearch(LoggingMixin):
         self.trial_count_ = -1
 
         # Model specific settings
-        if type(self.model).__name__ == "LinearRegression":
+        if (
+            type(self.model).__name__ == "LinearRegression"
+            or type(self.model).__name__ == "LogisticRegression"
+        ):
             self.n_trials = 1
 
     def _get_hyper_params(
@@ -558,7 +561,7 @@ class OptunaGridSearch(LoggingMixin):
             "Hyper parameter tuning not implemented for {}".format(model_name)
         )
 
-    def fit(self, data: pd.DataFrame):
+    def fit(self, data: pd.DataFrame) -> pd.DataFrame:
         assert self.target in data
         self.y = data[self.target]
         self.x = data.drop(self.target, axis=1)
@@ -660,11 +663,9 @@ class _BadTrialPruner(optuna.pruners.BasePruner):
 
     def prune(self, study, trial):
         # Don't prune while startup trials
-        all_trials = study.get_trials(deepcopy=False)
-        n_trials = len(
-            [t for t in all_trials if t.state == optuna.trial.TrialState.COMPLETE]
-        )
-        if n_trials < self._n_startup_trials:
+        if not [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]:
+            return False
+        if len(study.best_trial.intermediate_values) < self._n_startup_trials:
             return False
 
         # Define pruning thresholds

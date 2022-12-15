@@ -59,7 +59,7 @@ def _make_estimator_stack(estimators, add_defaults=True, n_samples=None):
         if model_name in stack:
             # Skip default models
             continue
-        stack[model_name] = get_model(model_name, mode="regression", samples=n_samples)
+        stack[model_name] = get_model(model_name)
 
     return [(key, value) for key, value in stack.items()]
 
