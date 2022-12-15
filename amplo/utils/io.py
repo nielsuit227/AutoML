@@ -178,9 +178,9 @@ def _get_folders(
     """
     Lists folders for merge_logs
     """
-    if not Path(parent_folder).exists():
-        raise ValueError(f"{parent_folder} directory does not exist.")
     if not blob_api:
+        if not Path(parent_folder).exists():
+            raise ValueError(f"{parent_folder} directory does not exist.")
         folders = [
             folder for folder in Path(parent_folder).iterdir() if folder.is_dir()
         ]
