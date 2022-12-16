@@ -7,7 +7,7 @@ import os
 import re
 from pathlib import Path
 from time import time
-from typing import TYPE_CHECKING, Iterable, cast
+from typing import TYPE_CHECKING, Iterable
 from warnings import warn
 
 import numpy as np
@@ -191,7 +191,8 @@ def _get_folders(
     if more_folders:
         folders += more_folders
 
-    return [Path(f) for f in folders]
+    # return [Path(f) for f in folders]
+    return [Path(f) for i, f in enumerate(folders) if i < 3]
 
 
 def _read_files_in_folders(
@@ -392,53 +393,33 @@ def _mask_intervals(datalogs: dict, data: pd.DataFrame) -> pd.DataFrame:
         When no valid match for the start or stop time of the data interval was found,
         i.e. when the time difference is more than 1 second.
     """
-    # Initialize
-    data_out = []
-
-    for filename in data.index.get_level_values("log"):
+    for filename in data.index.get_level_values("log").unique():
         # Get intervals and timestamp column from datalog
-        datum = data.loc[filename]
         datalog = datalogs.get(filename, {})
         intervals = datalog.get("selected", [])
         ts_col = datalog.get("datetime_col", "")
 
-        # If no interval is to be selected, append the whole datum
+        # Validate
         if not intervals or not ts_col:
             continue
-
-        # Prevent a KeyError when ts_col column is not present
-        elif ts_col not in datum.columns:
+        elif ts_col not in data:
             warn(f"Cannot select intervals as the column '{ts_col}' is not present.")
             continue
 
-        # Else, select and append each interval of the datum
-        else:
-            # Extract unix timestamps
-            ts = pd.to_datetime(datum[ts_col]).astype(int) / 10**9
+        # Convert ts_col
+        if not pd.api.types.is_numeric_dtype(data[ts_col]):
+            data[ts_col] = (
+                pd.to_datetime(data[ts_col], errors="coerce").astype(int) / 10**9
+            )
 
-            # Extract intervals
-            for ts_first, ts_last in intervals:
-                # Find closest timestamps
-                first = (ts - ts_first).abs().argmin()
-                last = (ts - ts_last).abs().argmin()
-
-                # Ignore when time difference is too large
-                if (
-                    abs(ts.iloc[first] - ts_first) > 1
-                    or abs(ts.iloc[last] - ts_last) > 1
-                ):
-                    warn(
-                        f"Could not find a timestamp close enough to {ts_first=} or "
-                        f"{ts_last=}. Using the whole datum for the file "
-                        f"'{datalog.get('filename', 'unknown')}' instead."
-                    )
-                    break
-
-                # Select interval
-                data = data.drop(data.loc[filename, :first, :].index)  # type: ignore
-                data = data.drop(data.loc[filename, last + 1 :, :].index)  # type:ignore
-            else:
-                continue
+        # Extract intervals
+        drop_mask = True
+        for interval in intervals:
+            ts_first, ts_last = interval
+            drop_mask = (
+                (data[ts_col] < ts_first) | (data[ts_col] > ts_last)
+            ) & drop_mask
+        data = data.drop(data.loc[(filename, drop_mask), :].index)
 
     return data
 
@@ -519,10 +500,11 @@ def merge_logs(
     folders = _get_folders(parent, blob_api)
     if target not in [f.name for f in folders]:
         raise ValueError(f"Target {target} not present in folders.")
+    logger.info(f"Found {len(folders)} folders.")
 
     # Pandas read files
-    logger.info("Reading files")
     fnames, data, metadata = _read_files_in_folders(folders, target, blob_api, logger)
+    logger.info(f"Found {len(fnames)} files.")
 
     # Masking data
     if platform_api:
