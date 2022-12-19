@@ -60,7 +60,6 @@ class XGBRegressor(BaseRegressor):
         default_model_params = {
             "n_estimators": 100,  # number of boosting rounds
             "random_state": random_state,
-            "use_label_encoder": False,  # is deprecated
             "verbosity": verbose,
         }
         for k, v in default_model_params.items():

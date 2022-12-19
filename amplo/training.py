@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from copy import deepcopy
 from pathlib import Path
@@ -256,10 +257,8 @@ def train_locally(
     # --- Post training ---
 
     # Move training files into target directory
+    print(os.listdir(working_dir))
     shutil.move(working_dir, target_dir)
-
-    # Delete temporary working directory
-    shutil.rmtree(working_dir)
 
     return True
 

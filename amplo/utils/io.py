@@ -192,7 +192,7 @@ def _get_folders(
         folders += more_folders
 
     # return [Path(f) for f in folders]
-    return [Path(f) for i, f in enumerate(folders) if i < 3]
+    return [Path(f) for f in folders]
 
 
 def _read_files_in_folders(
@@ -409,7 +409,7 @@ def _mask_intervals(datalogs: dict, data: pd.DataFrame) -> pd.DataFrame:
         # Convert ts_col
         if not pd.api.types.is_numeric_dtype(data[ts_col]):
             data[ts_col] = (
-                pd.to_datetime(data[ts_col], errors="coerce").astype(int) / 10**9
+                pd.to_datetime(data[ts_col], errors="coerce").view(np.int64) / 10**9
             )
 
         # Extract intervals
@@ -419,7 +419,7 @@ def _mask_intervals(datalogs: dict, data: pd.DataFrame) -> pd.DataFrame:
             drop_mask = (
                 (data[ts_col] < ts_first) | (data[ts_col] > ts_last)
             ) & drop_mask
-        if not drop_mask.loc[filename].any():
+        if isinstance(drop_mask, pd.DataFrame) and not drop_mask.loc[filename].any():
             continue
         data = data.drop(data.loc[(filename, drop_mask), :].index)
 
