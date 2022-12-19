@@ -256,7 +256,7 @@ def train_locally(
     # --- Post training ---
 
     # Move training files into target directory
-    shutil.move(working_dir / "Production" / f"v{pipeline.version}", target_dir)
+    shutil.move(working_dir, target_dir)
 
     # Delete temporary working directory
     shutil.rmtree(working_dir)

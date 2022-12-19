@@ -419,6 +419,8 @@ def _mask_intervals(datalogs: dict, data: pd.DataFrame) -> pd.DataFrame:
             drop_mask = (
                 (data[ts_col] < ts_first) | (data[ts_col] > ts_last)
             ) & drop_mask
+        if not drop_mask.loc[filename].any():
+            continue
         data = data.drop(data.loc[(filename, drop_mask), :].index)
 
     return data

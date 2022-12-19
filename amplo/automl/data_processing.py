@@ -61,7 +61,6 @@ class DataProcessor(LoggingMixin):
         # Type checks
         check_dtypes(
             ("target", target, (type(None), str)),
-            # ignore "int_cols" and "float_cols" as they're deprecated and unused
             ("include_output", include_output, bool),
             ("drop_datetime", drop_datetime, bool),
             ("drop_constants", drop_constants, bool),
@@ -131,40 +130,24 @@ class DataProcessor(LoggingMixin):
         pd.DataFrame
             Cleaned input data
         """
-        # Clean column names and apply renaming
-        data, self.rename_dict_ = clean_column_names(data)
-        if self.target is not None:
-            self.target = self.rename_dict_.get(self.target, None)
+        data = self.clean_column_names(data)
 
-        # Remove target
-        if not self.include_output and self.target is not None and self.target in data:
-            data = data.drop(self.target, axis=1)
-
-        # Remove Duplicates
         data = self.remove_duplicates(data, rows=self.drop_duplicate_rows)
 
-        # Infer data-types
         data = self.infer_data_types(data)
 
-        # Convert data types
         data = self.convert_data_types(data, fit_categorical=True)
 
-        # Remove outliers
         data = self.fit_remove_outliers(data)
 
-        # Remove missing values
         data = self.remove_missing_values(data)
 
-        # Remove Constants
         if self.drop_constants:
             data = self.remove_constants(data)
 
-        # Encode or decode target
         data = self.encode_labels(data, fit=True)
 
-        # Finish
         self.is_fitted_ = True
-
         return data
 
     def transform(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -271,6 +254,19 @@ class DataProcessor(LoggingMixin):
         self.dummies_ = settings.get("dummies_", settings.get("dummies", {}))
         self.is_fitted_ = True
         return self
+
+    def clean_column_names(self, data: pd.DataFrame) -> pd.DataFrame:
+        # Clean column names and apply renaming
+        data, self.rename_dict_ = clean_column_names(data)
+
+        # Update target
+        if self.target is not None:
+            self.target = self.rename_dict_.get(self.target, None)
+
+        # Remove target from data if need be
+        if not self.include_output and self.target is not None and self.target in data:
+            data = data.drop(self.target, axis=1)
+        return data
 
     def infer_data_types(self, data: pd.DataFrame) -> pd.DataFrame:
         """
@@ -399,17 +395,17 @@ class DataProcessor(LoggingMixin):
 
         # Categorical columns
         if fit_categorical:
-            data = self._fit_cat_cols(data)
+            data = self._fit_transform_cat_cols(data)
         else:
             assert self.is_fitted_, (
                 ".convert_data_types() was called with fit_categorical=False, while "
                 "categorical encoder is not yet fitted."
             )
-        data = self._transform_cat_cols(data)
+            data = self._transform_cat_cols(data)
 
         return data
 
-    def _fit_cat_cols(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _fit_transform_cat_cols(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Encoding categorical variables always needs a scheme. This fits the scheme.
 
@@ -424,15 +420,17 @@ class DataProcessor(LoggingMixin):
             Cleaned input data
         """
         for key in self.cat_cols_:
-            # Clean the categorical variables
-            data[key] = data[key].apply(clean_feature_name)
+            # Get dummies & clean
             is_nan = data[key].isna().any()
-
-            # Get dummies, convert & store
             dummies = pd.get_dummies(data[key], prefix=key, dummy_na=is_nan)
+            dummies, _ = clean_column_names(dummies)
+
+            # Store
             self.dummies_[key] = dummies.keys().tolist()
 
-        return data
+            # Adjust data
+            data = pd.concat([data.drop(key, axis=1), dummies], axis=1)
+        return self._remove_duplicate_cols(data)
 
     def _transform_cat_cols(self, data: pd.DataFrame) -> pd.DataFrame:
         """
@@ -449,16 +447,15 @@ class DataProcessor(LoggingMixin):
             Cleaned input data
         """
         for key in self.cat_cols_:
-            # Clean column
-            data[key] = data[key].apply(clean_feature_name)
-
-            # Transform
-            value = self.dummies_[key]
-            dummies = [i[len(key) + 1 :] for i in value]
-            str_values = data[key].astype("str").values
-            data[value] = np.equal.outer(str_values, dummies).astype(np.int64)
-            data = data.drop(key, axis=1)
-        return data
+            dummy_keys = self.dummies_[key]
+            dummy_values = [i[len(key) + 1 :] for i in dummy_keys]
+            str_values = data[key].astype("str").apply(clean_feature_name).values
+            dummies = pd.DataFrame(
+                np.equal.outer(str_values, dummy_values).astype(np.int64),
+                columns=dummy_keys,
+            )
+            data = pd.concat([data.drop(key, axis=1), dummies], axis=1)
+        return self._remove_duplicate_cols(data)
 
     def remove_duplicates(self, data: pd.DataFrame, rows: bool = False) -> pd.DataFrame:
         """
@@ -469,25 +466,36 @@ class DataProcessor(LoggingMixin):
         data : pd.DataFrame
             Input data
         rows : bool
-            Whether to remove duplicate rows --> not desirable to maintain timelines
-
-        Returns
-        -------
-        pd.DataFrame
-            Cleaned input data
+            Whether to remove duplicate rows. This is only recommended with data that
+            has no temporal structure, and only for training data.
         """
         # Note down
         n_rows, n_columns = len(data), len(data.keys())
 
-        # Remove Duplicates
+        # Remove Duplicate rows
         if rows:
             data = data.drop_duplicates()
-        data = data.loc[:, ~data.columns.duplicated()]  # type: ignore
+
+        data = self._remove_duplicate_cols(data)
 
         # Note
         self.removed_duplicate_columns = n_columns - len(data.keys())
         self.removed_duplicate_rows = n_rows - len(data)
 
+        return data
+
+    def _remove_duplicate_cols(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Removes duplicate columns
+
+        Checks whether there is useful information in the second column, and if so,
+        fills the nan from column 1 with values of column 2.
+        """
+        # Merge columns where necessary
+        for key in data.columns[data.columns.duplicated()]:
+            # Check if second column contains values where first is nan
+            if (data[key].iloc[:, 0].isna() & (~data[key].iloc[:, 1].isna())).any():  # type: ignore
+                data[key] = data[key].bfill(axis=1)  # type: ignore
+        data = data.loc[:, ~data.columns.duplicated()]  # type: ignore
         return data
 
     def remove_constants(self, data: pd.DataFrame) -> pd.DataFrame:
