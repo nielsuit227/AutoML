@@ -264,12 +264,14 @@ def _read_files_in_folders(
 
         # Read files
         for file_ in sorted(files):
+            if logger:
+                logger.debug(file_)
 
             # read_pandas() may raise an EmptyDataError when the file has no content.
             # The try...except catches such errors and warns the user instead.
             try:
                 if blob_api:
-                    datum = blob_api.read_pandas(file_)
+                    datum = blob_api.read_pandas(file_, low_memory=False)
                     metadatum = blob_api.get_metadata(file_)
                 else:
                     datum = read_pandas(file_)
@@ -409,7 +411,7 @@ def _mask_intervals(datalogs: dict, data: pd.DataFrame) -> pd.DataFrame:
         # Convert ts_col
         if not pd.api.types.is_numeric_dtype(data[ts_col]):
             data[ts_col] = (
-                pd.to_datetime(data[ts_col], errors="coerce").view(np.int64) / 10**9
+                pd.to_datetime(data[ts_col], errors="coerce").view(int) / 10**9
             )
 
         # Extract intervals
@@ -419,7 +421,7 @@ def _mask_intervals(datalogs: dict, data: pd.DataFrame) -> pd.DataFrame:
             drop_mask = (
                 (data[ts_col] < ts_first) | (data[ts_col] > ts_last)
             ) & drop_mask
-        if isinstance(drop_mask, pd.DataFrame) and not drop_mask.loc[filename].any():
+        if isinstance(drop_mask, pd.Series) and not drop_mask.loc[filename].any():
             continue
         data = data.drop(data.loc[(filename, drop_mask), :].index)
 

@@ -259,6 +259,9 @@ class DataProcessor(LoggingMixin):
         # Clean column names and apply renaming
         data, self.rename_dict_ = clean_column_names(data)
 
+        # Could be that this is introducing duplicate columns, e.g.
+        # when the data is partially cleaned.
+
         # Update target
         if self.target is not None:
             self.target = self.rename_dict_.get(self.target, None)
@@ -266,6 +269,7 @@ class DataProcessor(LoggingMixin):
         # Remove target from data if need be
         if not self.include_output and self.target is not None and self.target in data:
             data = data.drop(self.target, axis=1)
+        self.logger.debug("Cleaned Column Names")
         return data
 
     def infer_data_types(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -336,6 +340,7 @@ class DataProcessor(LoggingMixin):
 
             # Else not found
             warn(f"Couldn't identify feature: {key}")
+        self.logger.debug("Inferred data columns.")
         return data
 
     def convert_data_types(
@@ -403,6 +408,7 @@ class DataProcessor(LoggingMixin):
             )
             data = self._transform_cat_cols(data)
 
+        self.logger.debug("Converted data types.")
         return data
 
     def _fit_transform_cat_cols(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -430,6 +436,8 @@ class DataProcessor(LoggingMixin):
 
             # Adjust data
             data = pd.concat([data.drop(key, axis=1), dummies], axis=1)
+
+        self.logger.debug("Fitted categorical column transformer.")
         return self._remove_duplicate_cols(data)
 
     def _transform_cat_cols(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -455,6 +463,8 @@ class DataProcessor(LoggingMixin):
                 columns=dummy_keys,
             )
             data = pd.concat([data.drop(key, axis=1), dummies], axis=1)
+
+        self.logger.debug("Transformed categorical columns.")
         return self._remove_duplicate_cols(data)
 
     def remove_duplicates(self, data: pd.DataFrame, rows: bool = False) -> pd.DataFrame:
@@ -482,6 +492,7 @@ class DataProcessor(LoggingMixin):
         self.removed_duplicate_columns = n_columns - len(data.keys())
         self.removed_duplicate_rows = n_rows - len(data)
 
+        self.logger.debug("Removed duplicates.")
         return data
 
     def _remove_duplicate_cols(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -492,9 +503,9 @@ class DataProcessor(LoggingMixin):
         """
         # Merge columns where necessary
         for key in data.columns[data.columns.duplicated()]:
-            # Check if second column contains values where first is nan
-            if (data[key].iloc[:, 0].isna() & (~data[key].iloc[:, 1].isna())).any():  # type: ignore
-                data[key] = data[key].bfill(axis=1)  # type: ignore
+            data[key] = data[key].iloc[:, 0].fillna(data[key].iloc[:, 1])  # type: ignore
+
+        # Drop duplicate columns
         data = data.loc[:, ~data.columns.duplicated()]  # type: ignore
         return data
 
@@ -523,6 +534,7 @@ class DataProcessor(LoggingMixin):
         # Note
         self.removed_constant_columns = columns - len(data.keys())
 
+        self.logger.debug("Removed constants.")
         return data
 
     def fit_remove_outliers(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -550,6 +562,7 @@ class DataProcessor(LoggingMixin):
             self.stds_ = data[self.num_cols_].std(skipna=True, numeric_only=True)
             self.stds_[self.stds_ == 0] = 1
 
+        self.logger.debug("Fitted outlier remover.")
         return self.remove_outliers(data)
 
     def remove_outliers(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -596,6 +609,8 @@ class DataProcessor(LoggingMixin):
                 + (data[self.num_cols_] < -1e12).sum().sum()
             ).tolist()
             data[self.num_cols_] = data[self.num_cols_].clip(lower=-1e12, upper=1e12)
+
+        self.logger.debug("Removed outliers.")
         return data
 
     def remove_missing_values(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -651,6 +666,7 @@ class DataProcessor(LoggingMixin):
             # Fill dates
             data = self._interpolate_dates(data)
 
+        self.logger.debug("Removed missing values.")
         return data
 
     def _interpolate_dates(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -674,6 +690,8 @@ class DataProcessor(LoggingMixin):
                 unix[unix < 0] = np.nan  # NaT are -9e10
                 unix = unix.interpolate(method="bfill").interpolate("pad")
                 data[key] = pd.to_datetime(unix, unit="ns")
+
+        self.logger.debug("Interpolated dates.")
         return data
 
     def encode_labels(self, data: pd.DataFrame, fit: bool) -> pd.DataFrame:
@@ -715,6 +733,7 @@ class DataProcessor(LoggingMixin):
 
             # Encode
             data[self.target] = encoder.transform(labels)
+            self.logger.debug("Encoded labels.")
             return data
 
         # It's probably a regression task, thus no encoding needed
@@ -751,6 +770,7 @@ class DataProcessor(LoggingMixin):
         encoder.classes_ = np.array(self.label_encodings_)
 
         # Decode
+        self.logger.debug("Decoded labels.")
         return pd.Series(encoder.inverse_transform(data))  # type: ignore
 
     def _impute_columns(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -777,6 +797,7 @@ class DataProcessor(LoggingMixin):
         # Warn
         if len(to_impute) > 0:
             warn(f"Imputed {len(to_impute)} missing columns! {to_impute}")
+        self.logger.debug("Imputed columns.")
         return data
 
     def prune_features(self, features: list):
@@ -795,3 +816,4 @@ class DataProcessor(LoggingMixin):
         self.num_cols_ = [f for f in self.num_cols_ if f in hash_features]
         self.bool_cols_ = [f for f in self.bool_cols_ if f in hash_features]
         self.cat_cols_ = [f for f in self.cat_cols_ if f in hash_features]
+        self.logger.debug("Pruned dataprocessor features.")
