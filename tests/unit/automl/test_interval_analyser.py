@@ -1,12 +1,10 @@
 #  Copyright (c) 2022 by Amplo.
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 
 from amplo.automl import IntervalAnalyser
-from tests import create_data_frames, rmtree
+from tests import create_data_frames
 
 
 class TestIntervalAnalyser:

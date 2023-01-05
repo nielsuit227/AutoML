@@ -160,14 +160,6 @@ class AzureBlobDataAPI:
         self, path: str | Path, n_retries: int = 1, **kwargs
     ) -> pd.Series | pd.DataFrame:
 
-        from amplo.utils.io import FILE_READERS
-
-        # Check whether a proper file reader exists for the file
-        file_extension = Path(path).suffix
-        pandas_reader = FILE_READERS.get(file_extension)
-        if pandas_reader is None:
-            raise NotImplementedError(f"File format {file_extension} not supported.")
-
         # Read buffered data into pandas
         blob = self.get_blob_client(path)
         try:
@@ -176,7 +168,7 @@ class AzureBlobDataAPI:
             if n_retries > 0:
                 return self.read_pandas(path, n_retries - 1, **kwargs)
             raise err
-        return pandas_reader(file_buffer, **kwargs)
+        return pd.read_parquet(file_buffer)
 
 
 @deprecated("This class won't be updated anymore.")

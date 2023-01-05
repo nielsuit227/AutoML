@@ -32,17 +32,6 @@ __all__ = [
 ]
 
 
-FILE_READERS = {
-    ".csv": pd.read_csv,
-    ".json": pd.read_json,
-    ".xml": pd.read_xml,
-    ".feather": pd.read_feather,
-    ".parquet": pd.read_parquet,
-    ".stata": pd.read_stata,
-    ".pickle": pd.read_pickle,
-}
-
-
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.integer):
@@ -84,22 +73,6 @@ def parse_json(json_string: str | dict) -> str | dict:
         except json.decoder.JSONDecodeError:
             warn(f"Cannot validate, impassable JSON: {json_string}")
             return json_string
-
-
-def read_pandas(path: str | Path) -> pd.DataFrame:
-    """
-    Wrapper for various read functions
-
-    Returns
-    -------
-    pd.DataFrame
-    """
-    file_extension = Path(path).suffix
-    if file_extension not in FILE_READERS:
-        raise NotImplementedError(f"File format {file_extension} not supported.")
-    else:
-        reader = FILE_READERS[file_extension]
-        return reader(path, low_memory=False)
 
 
 def get_file_metadata(file_path: str | Path) -> dict[str, str | float]:
@@ -246,10 +219,6 @@ def _read_files_in_folders(
         hidden_files = [f for f in files if re.match(r"^\..*", f.name)]
         files = list(set(files) - set(hidden_files))
 
-        # Remove unsupported file types
-        unsupported_files = [f for f in files if f.suffix not in FILE_READERS]
-        files = list(set(files) - set(unsupported_files))
-
         # Remove empty files
         if blob_api:
             empty_files = [f for f in files if blob_api.get_size(f) == 0]
@@ -274,7 +243,7 @@ def _read_files_in_folders(
                     datum = blob_api.read_pandas(file_, low_memory=False)
                     metadatum = blob_api.get_metadata(file_)
                 else:
-                    datum = read_pandas(file_)
+                    datum = pd.read_parquet(file_)
                     metadatum = get_file_metadata(file_)
             except pd.errors.EmptyDataError:
                 warn(f"Empty file detected and thus skipped: '{file_}'")
@@ -347,6 +316,7 @@ def _map_datalogs_to_file_names(
 
     # Remove path prefixes, otherwise datalogs will not be found
     file_names = ["/".join(str(fname).split("/")[-6:]) for fname in file_names]
+    
     # Extract team and machine
     try:
         team, machine = file_names[0].split("/")[-6:-4]
@@ -501,7 +471,7 @@ def merge_logs(
     blob_api, platform_api = _get_api_clients(azure, platform)
 
     # Get child folders
-    folders = _get_folders(parent, blob_api)
+    folders = _get_folders(parent, blob_api)[:3]
     if target not in [f.name for f in folders]:
         raise ValueError(f"Target {target} not present in folders.")
     logger.info(f"Found {len(folders)} folders.")

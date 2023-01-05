@@ -151,7 +151,7 @@ def make_interval_data(n_logs=2, n_labels=2, directory=None, target="labels", **
                 # Save in folder / label / log.csv
                 save_dir = Path(directory) / label
                 save_dir.mkdir(parents=True, exist_ok=True)
-                x.to_csv(save_dir / f"{log}.csv", index=False)
+                x.to_parquet(save_dir / f"{log}.parquet", index=False, engine="pyarrow")
             else:
                 # Set multi-index
                 index = pd.MultiIndex.from_arrays(

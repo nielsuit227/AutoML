@@ -89,8 +89,12 @@ def create_test_folders(directory: Path | str, n_samples, n_features):
     # Create and save dataframes
     for i in range(140):
         df1, df2 = create_data_frames(n_samples, n_features)
-        df1.to_csv(directory / f"Class_1/Log_{i}.csv", index=False)
-        df2.to_csv(directory / f"Class_2/Log_{i}.csv", index=False)
+        df1.to_parquet(
+            directory / f"Class_1/Log_{i}.parquet", index=False, engine="pyarrow"
+        )
+        df2.to_parquet(
+            directory / f"Class_2/Log_{i}.parquet", engine="pyarrow", index=False
+        )
 
 
 # ----------------------------------------------------------------------
