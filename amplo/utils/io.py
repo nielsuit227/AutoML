@@ -316,7 +316,7 @@ def _map_datalogs_to_file_names(
 
     # Remove path prefixes, otherwise datalogs will not be found
     file_names = ["/".join(str(fname).split("/")[-6:]) for fname in file_names]
-    
+
     # Extract team and machine
     try:
         team, machine = file_names[0].split("/")[-6:-4]
@@ -471,7 +471,7 @@ def merge_logs(
     blob_api, platform_api = _get_api_clients(azure, platform)
 
     # Get child folders
-    folders = _get_folders(parent, blob_api)[:3]
+    folders = _get_folders(parent, blob_api)
     if target not in [f.name for f in folders]:
         raise ValueError(f"Target {target} not present in folders.")
     logger.info(f"Found {len(folders)} folders.")
