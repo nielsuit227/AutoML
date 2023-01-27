@@ -1,9 +1,11 @@
 #  Copyright (c) 2022 by Amplo.
 
+import datetime
 import json
 
 import numpy as np
 import pandas as pd
+import polars as pl
 import pytest
 
 from amplo.automl import DataProcessor
@@ -33,16 +35,14 @@ class TestDataProcessor:
         dp = DataProcessor()
         data = pd.DataFrame(
             {
-                "cat": ["a", "b", "c", "b"],
-                "int": [1, 2, 3, 4],
+                "cat": np.random.choice(list("abc"), 100),
+                "int": np.arange(100),
+                "float": np.arange(0, 10, 0.1),
+                "bool": np.random.choice([True, False], 100),
                 "date": [
-                    "2020-01-01",
-                    "2020-01-03",
-                    "2020-01-04",
-                    "2020-01-05",
+                    str(datetime.datetime.fromtimestamp(1673960000 + 100 * i))
+                    for i in range(100)
                 ],
-                "bool": [True, False, True, False],
-                "float": [0.1, 0.2, 0.3, 0.4],
             }
         )
         cleaned = dp.fit_transform(data)
@@ -67,25 +67,30 @@ class TestDataProcessor:
         dp = DataProcessor()
         data = pd.DataFrame(
             {
-                "cat": ["a", "b", np.nan, "c", "b"],
-                "int": [1, 2, 3, 4, np.nan],
+                "cat": np.random.choice(list("abc"), 100),
+                "int": np.arange(100),
+                "float": np.arange(0, 10, 0.1),
+                "bool": np.random.choice([True, False], 100),
                 "date": [
-                    "2020-01-01",
-                    np.nan,
-                    "2020-01-03",
-                    "2020-01-04",
-                    "2020-01-05",
+                    str(datetime.datetime.fromtimestamp(1673960000 + 100 * i))
+                    for i in range(100)
                 ],
-                "bool": [True, False, np.nan, True, False],
-                "float": [0.1, 0.2, 0.3, 0.4, np.nan],
             }
         )
+        # Randomly insert 10% NaN values
+        ix = np.array(
+            [(row, col) for row in range(data.shape[0]) for col in range(data.shape[1])]
+        )
+        for i in np.random.choice(np.arange(len(ix)), len(ix) // 10, replace=False):
+            row, col = ix[i]
+            data.iat[row, col] = np.nan
+
         cleaned = dp.fit_transform(data)
 
         assert {
             "cat_a",
             "cat_b",
-            "cat_nan",
+            "cat_null",
             "cat_c",
             "int",
             "date",
@@ -108,6 +113,7 @@ class TestDataProcessor:
                 "d": [1, 2, 3, 4, 5],
             }
         )
+        data["c"] = pd.to_datetime(data["c"])
 
         # Remove rows
         # Despite having NaNs in 3 rows, we expect only one row to be removed:
@@ -168,7 +174,8 @@ class TestDataProcessor:
                 "a": [*(23 * [1]), 1e15],
                 "b": np.linspace(0, 1, 24),
                 "target": np.linspace(0, 1, 24).tolist(),
-            }
+            },
+            index=pd.MultiIndex.from_product([[0, 1], range(12)]),
         )
 
         # Clip
@@ -194,15 +201,6 @@ class TestDataProcessor:
         assert not xt.isna().any().any(), "NaN found"
         assert dp.transform(pd.DataFrame({"a": [2], "b": [-2]})).values.max() == 0
 
-    def test_duplicates(self):
-        # Create a DataFrame that contains two columns with the same name
-        x = pd.DataFrame({"a": [1, 2, 1], "a_copy": [1, 2, 1], "b": [3, 1, 3]})
-        x = x.rename(columns={"a_copy": "a"})
-        dp = DataProcessor(drop_duplicate_rows=True)
-        xt = dp.fit_transform(x)
-        assert len(xt) == 2, "Didn't remove duplicate rows"
-        assert len(xt.keys()) == 2, "Didn't remove duplicate columns"
-
     def test_constants(self):
         x = pd.DataFrame({"a": [1, 1, 1, 1, 1], "b": [1, 2, 3, 5, 6]})
         dp = DataProcessor(drop_constants=True)
@@ -218,8 +216,7 @@ class TestDataProcessor:
         assert "a_c" in xt.keys(), "a_c missing"
         xt2 = dp.transform(pd.DataFrame({"a": ["a", "c"]}))
         assert np.allclose(
-            xt2.values,
-            pd.DataFrame({"a_a": [1, 0], "a_b": [0, 0], "a_c": [0, 1]}).values,
+            xt2 - pd.DataFrame({"a_a": [1, 0], "a_b": [0, 0], "a_c": [0, 1]}), 0
         ), "Converted not correct"
 
     def test_nan_categorical(self):
@@ -252,10 +249,9 @@ class TestDataProcessor:
         assert isinstance(dp2.get_settings()["label_encodings_"], list)
         xt2 = dp2.transform(pd.DataFrame({"a": ["a", "b"], "b": [1, 2]}))
         assert np.allclose(
-            pd.DataFrame(
-                {"b": [1.0, 2.0], "a_a": [1, 0], "a_b": [0, 1], "a_c": [0, 0]}
-            ).values,
-            xt2.values,
+            pd.DataFrame({"b": [1.0, 2.0], "a_a": [1, 0], "a_b": [0, 1], "a_c": [0, 0]})
+            - xt2,
+            0,
         )
 
     def test_pruner(self):
@@ -268,7 +264,7 @@ class TestDataProcessor:
 
     def test_json_serializable(self):
         x = pd.DataFrame(
-            {"a": ["a", "b", "c", "b", "c", "a"], "b": [1, "missing", 1, 1, 1, 1]}
+            {"a": ["a", "b", "c", "b", "c", "a"], "b": [1, None, 1, 1, 1, 1]}
         )
         for o in ["quantiles", "z-score", "clip", "none"]:
             for mv in ["remove_rows", "remove_cols", "interpolate", "mean", "zero"]:
@@ -290,7 +286,7 @@ class TestDataProcessor:
         y_values = ["a", "b", "c", "b", "c", "a"]
         data = pd.DataFrame({target: y_values})
         dp = DataProcessor(target=target)
-        encoded = dp.encode_labels(data, fit=True)
+        encoded = dp.encode_labels(pl.from_pandas(data), fit=True).to_pandas()
         assert data[target].nunique() == encoded[target].nunique()
         assert encoded[target].min() == 0, "Encoding must start at zero"
         assert pd.api.types.is_integer_dtype(

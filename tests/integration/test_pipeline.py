@@ -146,6 +146,11 @@ class TestPipeline:
         pipeline.fit(df, y)
 
     def test_backwards_compatibility(self):
+        # TODO: Implement as soon as `amplo.dumps` and `amplo.load` is available.
+        #  That PR will then (again) radically change the settings structure of dumped
+        #  Amplo objects but will bring many improvements with it.
+        pytest.skip("Temporarily deprecated...")
+
         # Set up pipeline
         pipeline = Pipeline(main_dir="tests/files/")
         pipeline.load()

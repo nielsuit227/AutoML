@@ -10,6 +10,7 @@ import warnings
 from collections.abc import Generator
 
 import pandas as pd
+import polars as pl
 
 __all__ = [
     "get_model",
@@ -118,14 +119,14 @@ def clean_feature_name(feature_name: str | int) -> str:
     return re.sub("[^a-z0-9]+", "_", feature_name.lower()).strip("_")
 
 
-def clean_column_names(data: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
+def clean_column_names(data: pd.DataFrame | pl.DataFrame) -> dict[str, str]:
     """
-    Cleans column names.
+    Cleans column names in place.
 
-    NOTE:
-        This used to take care of duplicate columns after cleaning the feature names.
-        This is no longer the case, and the data processor should take care of duplicate
-        columns.
+    Notes
+    -----
+    This used to take care of duplicate columns after cleaning the feature names which
+    is no longer the case, and the data processor should take care of duplicate columns.
 
     Parameters
     ----------
@@ -140,8 +141,16 @@ def clean_column_names(data: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]
         Dictionary which indicates the renaming.
     """
     # Make first renaming attempt. May create duplicated names.
-    renaming = pd.Series({old: clean_feature_name(old) for old in data.columns})
-    return data.rename(columns=renaming), renaming.to_dict()  # type: ignore
+    rename_dict = {old: clean_feature_name(str(old)) for old in data.columns}
+
+    if isinstance(data, pd.DataFrame):
+        data.rename(columns=rename_dict, inplace=True)
+    elif isinstance(data, pl.DataFrame):
+        data.columns = [rename_dict.get(c, c) for c in data.columns]
+    else:
+        raise TypeError(f"Invalid dtype for argument 'data': {type(data).__name__}")
+
+    return rename_dict
 
 
 def deprecated(reason):

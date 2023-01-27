@@ -877,6 +877,7 @@ class Pipeline(LoggingMixin):
             missing_values=self.missing_values,
             outlier_removal=self.outlier_removal,
             z_score_threshold=self.z_score_threshold,
+            verbose=self.verbose,
         )
         self.data_sequencer = Sequencer(
             target=self.target,
@@ -884,8 +885,11 @@ class Pipeline(LoggingMixin):
             forward=self.sequence_forward,
             shift=self.sequence_shift,
             diff=self.sequence_diff,
+            verbose=self.verbose,
         )
-        self.interval_analyser = IntervalAnalyser(target=self.target)
+        self.interval_analyser = IntervalAnalyser(
+            target=self.target, verbose=self.verbose
+        )
         self.feature_processor = FeatureProcessor(
             target=self.target,
             mode=self.mode,
@@ -895,7 +899,9 @@ class Pipeline(LoggingMixin):
             collinear_threshold=self.information_threshold,
             verbose=self.verbose,
         )
-        self.standardizer = Standardizer(target=self.target, mode=self.mode)
+        self.standardizer = Standardizer(
+            target=self.target, mode=self.mode, verbose=self.verbose
+        )
 
     # Getter Functions / Properties
     @property

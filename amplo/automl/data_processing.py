@@ -2,20 +2,101 @@
 
 from __future__ import annotations
 
-from warnings import warn
+import datetime
+from collections import defaultdict
 
+import dateutil
 import numpy as np
 import pandas as pd
+import polars as pl
 from sklearn.exceptions import NotFittedError
 from sklearn.preprocessing import LabelEncoder
 
 from amplo.base import LoggingMixin
-from amplo.utils.util import check_dtypes, clean_column_names, clean_feature_name
+from amplo.utils.data import pandas_to_polars, polars_to_pandas
+from amplo.utils.util import check_dtypes, clean_feature_name
 
 __all__ = ["clean_feature_name", "DataProcessor"]
 
 
+def _to_datetime(value):
+    if isinstance(value, datetime.datetime):
+        return value
+    elif isinstance(value, str):
+        try:
+            return dateutil.parser.parse(value)  # type: ignore
+        except Exception:
+            return None
+    else:
+        return None
+
+
+def pl_masked_fill(
+    df: pl.DataFrame, mask: pl.DataFrame, replace_value=None
+) -> pl.DataFrame:
+    """
+    Masked fill a DataFrame with 'replace_value'.
+
+    This function only returns columns that were present in the 'mask'.
+
+    Parameters
+    ----------
+    df : pl.DataFrame
+        Data to be manipulated.
+    mask : pl.DataFrame
+        Mask with same or subset of 'df' columns.
+    replace_value : Any, optional
+        Fill value, by default None
+
+    Returns
+    -------
+    pl.DataFrame
+        Mask-filled DataFrame.
+    """
+    out = pl.concat(
+        [df, mask.select(pl.all().suffix("_mask"))],
+        how="horizontal",
+    ).select(
+        [
+            pl.when(pl.col(f"{c}_mask"))
+            .then(replace_value)
+            .otherwise(pl.col(c))
+            .alias(c)
+            for c in mask.columns
+        ]
+    )
+    return out
+
+
 class DataProcessor(LoggingMixin):
+    """
+    Preprocessor. Cleans a dataset into a workable format.
+
+    Deals with outliers, missing values, duplicate rows,
+    data types (numerical, categorical and dates), NaN, and infinities.
+
+    Parameters
+    ----------
+    target : str
+        Column name of target variable
+    include_output : bool
+        Whether to include output in the data
+    drop_datetime : bool
+        Whether to drop datetime columns
+    drop_contstants : bool
+        If False, does not remove constants
+    drop_duplicate_rows : bool
+        If False, does not remove constant columns
+    missing_values : {"remove_rows", "remove_cols", "interpolate", "mean", "zero"}
+        How to deal with missing values.
+    outlier_removal : {"quantiles", "z-score", "clip", "none"}
+        How to deal with outliers.
+    z_score_threshold : int
+        If outlier_removal="z-score", the threshold is adaptable
+    verbose : int
+        How much to print
+    """
+
     def __init__(
         self,
         target: str | None = None,
@@ -26,38 +107,11 @@ class DataProcessor(LoggingMixin):
         missing_values: str = "interpolate",
         outlier_removal: str = "clip",
         z_score_threshold: int = 4,
-        version: int = 1,
         verbose: int = 1,
     ):
-        """
-        Preprocessing Class. Cleans a dataset into a workable format.
-        Deals with Outliers, Missing Values, duplicate rows, data types (floats,
-        categorical and dates), Not a Numbers, Infinities.
 
-        Parameters
-        ----------
-        target : str
-            Column name of target variable
-        include_output : bool
-            Whether to include output in the data
-        drop_datetime : bool
-            Whether to drop datetime columns
-        drop_contstants : bool
-            If False, does not remove constants
-        drop_duplicate_rows : bool
-            If False, does not remove constant columns
-        missing_values : {"remove_rows", "remove_cols", "interpolate", "mean", "zero"}
-            How to deal with missing values.
-        outlier_removal : {"quantiles", "z-score", "clip", "none"}
-            How to deal with outliers.
-        z_score_threshold : int
-            If outlier_removal="z-score", the threshold is adaptable
-        version : int
-            Versioning the output files
-        verbose : int
-            How much to print
-        """
         super().__init__(verbose=verbose)
+
         # Type checks
         check_dtypes(
             ("target", target, (type(None), str)),
@@ -67,7 +121,6 @@ class DataProcessor(LoggingMixin):
             ("drop_duplicate_rows", drop_duplicate_rows, bool),
             ("z_score_threshold", z_score_threshold, int),
             ("drop_duplicate_rows", drop_duplicate_rows, bool),
-            ("version", version, int),
             ("verbose", verbose, int),
         )
 
@@ -84,7 +137,6 @@ class DataProcessor(LoggingMixin):
             )
 
         # Arguments
-        self.version = version
         self.include_output = include_output
         self.drop_datetime = drop_datetime
         self.target = target
@@ -116,9 +168,21 @@ class DataProcessor(LoggingMixin):
         self.imputed_missing_values_ = 0
         self.removed_constant_columns_ = 0
 
+    def fit(self, data: pd.DataFrame):
+        """
+        Fits the data processor.
+
+        Parameters
+        ----------
+        data : pd.DataFrame
+            Data to fit the transformer.
+        """
+        self.transform(data, fit=True)
+        return self
+
     def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Fits this data cleaning module and returns the transformed data.
+        Fits and transforms the data processor.
 
         Parameters
         ----------
@@ -130,64 +194,67 @@ class DataProcessor(LoggingMixin):
         pd.DataFrame
             Cleaned input data
         """
-        data = self.clean_column_names(data)
+        return self.transform(data, fit=True)
 
-        data = self.remove_duplicates(data, rows=self.drop_duplicate_rows)
-
-        data = self.infer_data_types(data)
-
-        data = self.convert_data_types(data, fit_categorical=True)
-
-        data = self.fit_remove_outliers(data)
-
-        data = self.remove_missing_values(data)
-
-        if self.drop_constants:
-            data = self.remove_constants(data)
-
-        data = self.encode_labels(data, fit=True)
-
-        self.is_fitted_ = True
-        return data
-
-    def transform(self, data: pd.DataFrame) -> pd.DataFrame:
+    def transform(self, data: pd.DataFrame, *, fit: bool = False) -> pd.DataFrame:
         """
-        Function that takes existing settings (including dummies), and transforms new
-        data.
+        (Fits and) transforms the data processor.
 
         Parameters
         ----------
         data : pd.DataFrame
             Input data
+        fit : bool, optional
+            Whether to fit the data, by default False
 
         Returns
         -------
         pd.DataFrame
             Cleaned input data
         """
-        if not self.is_fitted_:
-            raise ValueError("Transform only available for fitted objects.")
 
-        # Clean column names and apply renaming
-        data = data.rename(columns=self.rename_dict_)
+        if fit:
+            self.logger.info("Data processor starts fitting and transforming...")
+        elif not self.is_fitted_:
+            raise NotFittedError("Transform only available for fitted objects.")
+        else:
+            self.logger.info("Data processor starts transforming...")
 
-        # Impute columns
-        data = self._impute_columns(data)
+        # Convert to polars
+        self.logger.debug("Convert pandas data to polars.")
+        pl_data, index_names = pandas_to_polars(data, index_prefix="idx_lvl")
+        work_index_names = list(index_names)
 
-        # Convert data types
-        data = self.convert_data_types(data, fit_categorical=False)
+        # Data processing
+        pl_data = self.clean_column_names(pl_data, work_index_names, fit=fit)
 
-        # Remove outliers
-        data = self.remove_outliers(data)
+        if fit:
+            pl_data = self.remove_duplicates(pl_data, rows=self.drop_duplicate_rows)
+            pl_data = self.infer_data_types(pl_data, work_index_names)
+        else:
+            pl_data = self._impute_columns(pl_data)
 
-        # Remove duplicates
-        data = self.remove_duplicates(data)
+        pl_data = self.convert_data_types(
+            pl_data, work_index_names, fit_categorical=fit
+        )
+        pl_data = self.remove_outliers(pl_data, fit=fit)
+        pl_data = self.fill_missing_values(pl_data)
 
-        # Remove missing values
-        data = self.remove_missing_values(data)
+        if fit and self.drop_constants:
+            pl_data = self.remove_constants(pl_data)
 
-        # Encode or drop target
-        data = self.encode_labels(data, fit=False)
+        pl_data = self.encode_labels(pl_data, fit=fit)
+
+        # Convert back to pandas and restore index
+        self.logger.debug("Convert polars data back do pandas.")
+        data = polars_to_pandas(pl_data, index_names)
+
+        # Finish
+        if fit:
+            self.is_fitted_ = True
+            self.logger.info("Data processor finished fitting and transforming.")
+        else:
+            self.logger.info("Data processor finished transforming.")
 
         return data
 
@@ -195,8 +262,11 @@ class DataProcessor(LoggingMixin):
         """
         Get settings to recreate fitted object.
         """
-        assert self.is_fitted_, "Object not yet fitted."
+        if not self.is_fitted_:
+            raise NotFittedError("Object not yet fitted.")
+
         settings = {
+            "target": self.target,
             "include_output": self.include_output,
             "drop_datetime": self.drop_datetime,
             "drop_constants": self.drop_constants,
@@ -231,6 +301,7 @@ class DataProcessor(LoggingMixin):
         """
         Loads settings from dictionary and recreates a fitted object
         """
+        self.target = settings.get("target")
         self.rename_dict_ = settings.get("rename_dict_", {})
         self.num_cols_ = settings.get("num_cols_", settings.get("num_cols", []))
         self.bool_cols_ = settings.get("bool_cols_", settings.get("bool_cols", []))
@@ -255,97 +326,233 @@ class DataProcessor(LoggingMixin):
         self.is_fitted_ = True
         return self
 
-    def clean_column_names(self, data: pd.DataFrame) -> pd.DataFrame:
-        # Clean column names and apply renaming
-        data, self.rename_dict_ = clean_column_names(data)
+    def clean_column_names(
+        self, data: pl.DataFrame, index_cols: list[str], fit: bool = False
+    ) -> pl.DataFrame:
+
+        if fit:
+            return self._fit_clean_column_names(data, index_cols)
+        else:
+            return self._transform_clean_column_names(data, index_cols)
+
+    def _fit_clean_column_names(
+        self, data: pl.DataFrame, index_cols: list[str]
+    ) -> pl.DataFrame:
+        self.logger.debug("Start fitting and cleaning column names.")
+
+        # Transform
+        self.rename_dict_ = {
+            c: clean_feature_name(c)
+            for c in map(str, data.columns)
+            if c not in index_cols  # we don't want to fit the index names
+        }
+        data = self._transform_clean_column_names(data, index_cols)
 
         # Could be that this is introducing duplicate columns, e.g.
         # when the data is partially cleaned.
 
         # Update target
         if self.target is not None:
-            self.target = self.rename_dict_.get(self.target, None)
+            self.target = clean_feature_name(self.target)
 
         # Remove target from data if need be
         if not self.include_output and self.target is not None and self.target in data:
-            data = data.drop(self.target, axis=1)
-        self.logger.debug("Cleaned Column Names")
+            data = data.drop(self.target)
+
+        self.logger.debug("Finished fitting and cleaning column names.")
         return data
 
-    def infer_data_types(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _transform_clean_column_names(
+        self, data: pl.DataFrame, index_cols: list[str]
+    ) -> pl.DataFrame:
+        self.logger.debug("Start cleaning column names.")
+
+        # Polars does not allow having multiple columns with the same name.
+        # Here we invert the rename dictionary to see which introduce duplicates.
+        inv_rename_dict = defaultdict(list)
+        for old_name, new_name in self.rename_dict_.items():
+            inv_rename_dict[new_name].append(old_name)
+
+        # Check out which renamings introduce duplicates (not allowed by polars!)
+        safe_rename_dict = {}
+        duplicated_clean = set()
+        for old_name, new_name in self.rename_dict_.items():
+            if len(inv_rename_dict[new_name]) > 1:
+                duplicated_clean = duplicated_clean.union({new_name})
+            else:
+                safe_rename_dict[old_name] = new_name
+
+        # Warn for duplicate renaming
+        if duplicated_clean:
+            warn_msg = (
+                f"{len(duplicated_clean)} columns need inspection. Cleaning the column "
+                f"names would introduce duplicated column names which is not supported "
+                f"by polars. List of critical columns: {sorted(duplicated_clean)}"
+            )
+            self.logger.warning(warn_msg)
+
+        # Handle safe renaming
+        data = data.rename(safe_rename_dict)
+
+        # Handle duplicate renaming
+        for new_name in duplicated_clean:
+            old_names = inv_rename_dict[new_name]
+
+            # Use first column as base and fill nulls with all other columns
+            expr = pl.col(old_names[0])
+            for old_name in old_names[1:]:
+                expr = expr.fill_null(pl.col(old_name))
+
+            # Apply
+            data = data.with_column(expr.alias(new_name))
+
+        # Clean up: which cols one should keep
+        keep_cols = {*safe_rename_dict.values(), *duplicated_clean}
+        if self.target not in data:
+            keep_cols -= {self.target}
+        data = data[[*index_cols, *keep_cols]]
+
+        self.logger.debug("Finished cleaning column names.")
+        return data
+
+    def remove_duplicates(self, data: pl.DataFrame, rows: bool = False) -> pl.DataFrame:
+        """
+        Removes duplicate columns and rows.
+
+        Parameters
+        ----------
+        data : pl.DataFrame
+            Input data
+        rows : bool
+            Whether to remove duplicate rows. This is only recommended with data that
+            has no temporal structure, and only for training data.
+        """
+        self.logger.debug("Start removing duplicate columns (and rows).")
+
+        # Note down
+        n_rows, n_columns = data.shape
+
+        # Remove duplicate rows
+        if rows:
+            subset = []
+            data = data.unique(
+                subset=subset
+            )  # equivalent of 'pandas.drop_duplicates()'
+
+        # Note
+        self.removed_duplicate_rows = rdr = n_rows - data.shape[0]
+        self.removed_duplicate_columns = rdc = n_columns - data.shape[1]
+        self.logger.debug(f"Finished removing {rdc} duplicate columns and {rdr} rows.")
+
+        return data
+
+    def infer_data_types(
+        self, data: pl.DataFrame, index_names: list[str]
+    ) -> pl.DataFrame:
         """
         In case no data types are provided, this function infers the most likely data
         types
 
         parameters
         ----------
-        data : pd.DataFrame
+        data : pl.DataFrame
+            Data to infer data types.
+        index_names : list[str]
+            Column names of the index columns in order not to drop them.
 
         returns
         -------
-        data : pd.DataFrame
+        data : pl.DataFrame
         """
-        # Iterate through keys
-        for key in data.keys():
+        self.logger.debug("Start inferring data types")
 
-            # Skip target -- we don't want to convert it
+        # Initialize
+        self.num_cols_ = []
+        self.bool_cols_ = []
+        self.date_cols_ = []
+        self.cat_cols_ = []
+
+        # Iterate through keys
+        for key in data.columns:
+
+            # Skip target and index -- we don't want to convert it!
             if key == self.target:
+                self.logger.debug(f"- Skipped target column '{key}'.")
+                continue
+            elif key in index_names:
+                self.logger.debug(f"- Skipped index column '{key}'.")
                 continue
 
-            # Remove NaN for feature identification
+            # Extract column
             f = data[key]
-            f = f[~f.isna()].infer_objects()
+            f_type = None
 
             # Integer and Float
-            if pd.api.types.is_integer_dtype(f) or pd.api.types.is_float_dtype(f):
-                self.num_cols_.append(key)
-                continue
+            if f.dtype in (
+                pl.Float32,
+                pl.Float64,
+                pl.Int8,
+                pl.Int16,
+                pl.Int32,
+                pl.Int64,
+                pl.UInt8,
+                pl.UInt16,
+                pl.UInt32,
+                pl.UInt64,
+            ):
+                f_type = "numerical"
 
             # Datetime
-            elif pd.api.types.is_datetime64_any_dtype(f):
-                self.date_cols_.append(key)
-                continue
+            elif f.dtype in (pl.Date, pl.Datetime):
+                f_type = "datetime"
 
             # Booleans
-            elif pd.api.types.is_bool_dtype(f):
-                self.bool_cols_.append(key)
-                continue
+            elif f.dtype == pl.Boolean:
+                f_type = "boolean"
 
             # Strings / Objects
-            elif pd.api.types.is_object_dtype(f):
+            elif f.dtype in (pl.Object, pl.Utf8):
 
                 # Check numerical
-                numeric = pd.to_numeric(f, errors="coerce", downcast="integer")
-                if numeric.isna().sum() < 0.3 * len(f):
-                    self.num_cols_.append(key)
+                numeric = f.cast(pl.Float32, strict=False)
+                if numeric.null_count() < 0.3 * len(numeric):
+                    f_type = "numerical"
+                    # Update data
+                    data = data.with_column(numeric.alias(key))
 
-                    # Update data and continue
-                    data[key] = numeric
-                    continue
+                # Check categorical
+                elif f.n_unique() < min(max(10, len(data) // 4), 50):
+                    f_type = "categorical"
 
-                # Check date
-                date = pd.to_datetime(
-                    f.astype("str"),
-                    errors="coerce",
-                    infer_datetime_format=True,
-                )
-                if date.isna().sum() < 0.3 * len(f):
-                    self.date_cols_.append(key)
-                    continue
+                # Check datetime/time
+                elif not self.drop_datetime:
+                    datetime = f.apply(_to_datetime)
+                    if datetime.null_count() < 0.3 * len(datetime):
+                        f_type = "datetime"
+                        # Update data
+                        data = data.with_column(datetime.alias(key))
 
-                # Check categorical variable
-                if data[key].nunique() < max(10, len(data) // 4):
-                    self.cat_cols_.append(key)
-                    continue
+            # Report type of feature
+            if f_type == "numerical":
+                self.num_cols_.append(key)
+            elif f_type == "boolean":
+                self.bool_cols_.append(key)
+            elif f_type == "categorical":
+                self.cat_cols_.append(key)
+            elif f_type == "datetime":
+                self.date_cols_.append(key)
+            else:
+                self.logger.warning(f"Couldn't identify type of column '{key}'.")
+                continue
 
-            # Else not found
-            warn(f"Couldn't identify feature: {key}")
-        self.logger.debug("Inferred data columns.")
+            self.logger.debug(f"- Found {f_type} column '{key}'.")
+
+        self.logger.debug("Finished inferring data types.")
         return data
 
     def convert_data_types(
-        self, data: pd.DataFrame, fit_categorical: bool = True
-    ) -> pd.DataFrame:
+        self, data: pl.DataFrame, index_names: list[str], fit_categorical: bool = True
+    ) -> pl.DataFrame:
         """
         Cleans up the data types of all columns.
 
@@ -353,6 +560,8 @@ class DataProcessor(LoggingMixin):
         ----------
         data : pd.DataFrame
             Input data
+        index_names : list[str]
+            Column names of the index columns in order not to drop them.
         fit_categorical : bool
             Whether to fit the categorical encoder
 
@@ -361,387 +570,366 @@ class DataProcessor(LoggingMixin):
         pd.DataFrame
             Cleaned input data
         """
+        self.logger.debug("Converting data types")
+
         # Drop unused columns & datetime columns
-        data = data.drop(
-            [
-                k
-                for k in data.keys()
-                if k
-                not in self.num_cols_
-                + self.date_cols_
-                + self.bool_cols_
-                + self.cat_cols_
-                + [self.target]
-            ],
-            axis=1,
-        )
+        keep_cols = [
+            *index_names,
+            *self.num_cols_,
+            *self.date_cols_,
+            *self.bool_cols_,
+            *self.cat_cols_,
+            self.target,
+        ]
+        data = data.drop([k for k in data.columns if k not in keep_cols])
 
         if self.date_cols_ and self.drop_datetime:
-            warn(
+            self.logger.warning(
                 f"Data contains datetime columns but are removed: '{self.date_cols_}'",
-                UserWarning,
             )
-            data = data.drop(self.date_cols_, axis=1)
-
-        # Or convert to datetime (before done only on subset)
-        elif self.date_cols_:
-            for key in self.date_cols_:
-                data[key] = pd.to_datetime(
-                    data[key], errors="coerce", infer_datetime_format=True
-                )
+            data = data.drop(self.date_cols_)
+        elif self.date_cols_ and not self.drop_datetime:
+            # Convert to datetime format
+            data = data.with_columns(
+                [pl.col(c).apply(_to_datetime) for c in self.date_cols_]
+            )
 
         # Integer columns
-        for key in self.bool_cols_:
-            data[key] = data[key].fillna(False).astype(np.int64)
+        if self.bool_cols_:
+            data = data.with_columns(
+                [pl.col(col).cast(pl.UInt8, strict=False) for col in self.bool_cols_]
+            )
 
         # Float columns
-        for key in self.num_cols_:
-            data[key] = pd.to_numeric(data[key], errors="coerce", downcast="float")
+        if self.num_cols_:
+            data = data.with_columns(
+                [pl.col(col).cast(pl.Float32, strict=False) for col in self.num_cols_]
+            )
 
         # Categorical columns
+        self.logger.debug("(Fit-)Transforming categorical columns")
         if fit_categorical:
             data = self._fit_transform_cat_cols(data)
+        elif self.is_fitted_:
+            data = self._transform_cat_cols(data)
         else:
-            assert self.is_fitted_, (
+            raise NotFittedError(
                 ".convert_data_types() was called with fit_categorical=False, while "
                 "categorical encoder is not yet fitted."
             )
-            data = self._transform_cat_cols(data)
 
-        self.logger.debug("Converted data types.")
+        self.logger.debug("Finished converting data types.")
         return data
 
-    def _fit_transform_cat_cols(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _fit_transform_cat_cols(self, data: pl.DataFrame) -> pl.DataFrame:
         """
         Encoding categorical variables always needs a scheme. This fits the scheme.
 
         Parameters
         ----------
-        data : pd.DataFrame
+        data : pl.DataFrame
             Input data
 
         Returns
         -------
-        pd.DataFrame
+        pl.DataFrame
             Cleaned input data
         """
-        for key in self.cat_cols_:
-            # Get dummies & clean
-            is_nan = data[key].isna().any()
-            dummies = pd.get_dummies(data[key], prefix=key, dummy_na=is_nan)
-            dummies, _ = clean_column_names(dummies)
 
-            # Store
-            self.dummies_[key] = dummies.keys().tolist()
+        # Clean values of cat_cols
+        # Note that 'null' and 'nan' are ignored and thus not stringified
+        cat_data = data[self.cat_cols_].select([pl.all().apply(clean_feature_name)])
+        data = data.with_columns([*cat_data])
 
-            # Adjust data
-            data = pd.concat([data.drop(key, axis=1), dummies], axis=1)
+        # One-hot encode each categorical column, including 'null's
+        self.dummies_: dict[str, list[str]] = {}
+        for col in self.cat_cols_:
+            # Get one-hot encoding (dummies). Note that we have already cleaned it.
+            series = data.drop_in_place(col)  # 'pop' column
+            one_hot = series.to_dummies()
 
-        self.logger.debug("Fitted categorical column transformer.")
-        return self._remove_duplicate_cols(data)
+            # Update data
+            if set(one_hot.columns).intersection(data.columns):
+                raise RuntimeError(
+                    f"One-hot encoding of the column '{col}' introduces duplicated "
+                    f"column names: {set(one_hot.columns).intersection(data.columns)}"
+                )
+            data = data.with_columns([*one_hot])
 
-    def _transform_cat_cols(self, data: pd.DataFrame) -> pd.DataFrame:
+            # Store reference
+            self.dummies_[col] = one_hot.columns
+
+        self.logger.debug("Finished fit-transforming categorical columns")
+        return data
+
+    def _transform_cat_cols(self, data: pl.DataFrame) -> pl.DataFrame:
         """
         Converts categorical variables according to fitted scheme.
 
         Parameters
         ----------
-        data : pd.DataFrame
+        data : pl.DataFrame
             Input data
 
         Returns
         -------
-        pd.DataFrame
+        pl.DataFrame
             Cleaned input data
         """
-        for key in self.cat_cols_:
-            dummy_keys = self.dummies_[key]
-            dummy_values = [i[len(key) + 1 :] for i in dummy_keys]
-            str_values = data[key].astype("str").apply(clean_feature_name).values
-            dummies = pd.DataFrame(
-                np.equal.outer(str_values, dummy_values).astype(np.int64),
-                columns=dummy_keys,
+
+        # Clean values of cat_cols
+        # Note that 'null' and 'nan' are ignored and thus not stringified
+        cat_data = data[self.cat_cols_].select([pl.all().apply(clean_feature_name)])
+        data = data.with_columns([*cat_data])
+
+        # One-hot encode each categorical column. Note that we have already cleaned it.
+        data = data.to_dummies(columns=self.cat_cols_)
+
+        # Insert missing categories
+        missing_categories = [
+            cat
+            for col in self.cat_cols_
+            for cat in self.dummies_[col]
+            if cat not in data.columns
+        ]
+        if missing_categories:
+            data = data.with_columns(
+                # insert new, zero filled column
+                [pl.lit(0).cast(pl.UInt8).alias(cat) for cat in missing_categories]
             )
-            data = pd.concat([data.drop(key, axis=1), dummies], axis=1)
-
-        self.logger.debug("Transformed categorical columns.")
-        return self._remove_duplicate_cols(data)
-
-    def remove_duplicates(self, data: pd.DataFrame, rows: bool = False) -> pd.DataFrame:
-        """
-        Removes duplicate columns and rows.
-
-        Parameters
-        ----------
-        data : pd.DataFrame
-            Input data
-        rows : bool
-            Whether to remove duplicate rows. This is only recommended with data that
-            has no temporal structure, and only for training data.
-        """
-        # Note down
-        n_rows, n_columns = len(data), len(data.keys())
-
-        # Remove Duplicate rows
-        if rows:
-            data = data.drop_duplicates()
-
-        data = self._remove_duplicate_cols(data)
-
-        # Note
-        self.removed_duplicate_columns = n_columns - len(data.keys())
-        self.removed_duplicate_rows = n_rows - len(data)
 
         self.logger.debug("Removed duplicates.")
         return data
 
-    def _remove_duplicate_cols(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Removes duplicate columns
-
-        Checks whether there is useful information in the second column, and if so,
-        fills the nan from column 1 with values of column 2.
-        """
-        # Merge columns where necessary
-        for key in data.columns[data.columns.duplicated()]:
-            data[key] = data[key].iloc[:, 0].fillna(data[key].iloc[:, 1])  # type: ignore
-
-        # Drop duplicate columns
-        data = data.loc[:, ~data.columns.duplicated()]  # type: ignore
-        return data
-
-    def remove_constants(self, data: pd.DataFrame) -> pd.DataFrame:
+    def remove_constants(self, data: pl.DataFrame) -> pl.DataFrame:
         """
         Removes constant columns
 
         Parameters
         ----------
-        data : pd.DataFrame
+        data : pl.DataFrame
             Input data
 
         Returns
         -------
-        pd.DataFrame
+        pl.DataFrame
             Cleaned input data
         """
-        columns = len(data.keys())
+        self.logger.debug("Removing constants.")
 
-        # Remove Constants
-        const_cols = [
-            col for col in data if data[col].nunique() == 1 and col != self.target
-        ]
-        data = data.drop(columns=const_cols)
+        # Find constant columns and make a note
+        constant_columns = [c for c in data.columns if data[c].unique().shape[0] == 1]
+        self.removed_constant_columns_ = len(constant_columns)
 
-        # Note
-        self.removed_constant_columns = columns - len(data.keys())
+        # Remove those columns
+        self.logger.debug(f"Removed {len(constant_columns)} constant columns.")
+        return data.drop(constant_columns)
 
-        self.logger.debug("Removed constants.")
-        return data
-
-    def fit_remove_outliers(self, data: pd.DataFrame) -> pd.DataFrame:
+    def remove_outliers(self, data: pl.DataFrame, fit: bool = False) -> pl.DataFrame:
         """
-        Fits parameters necessary to remove outliers and removes them using remove_outliers method.
+        (Fits and) removes outliers according to `self.outlier_removal`.
 
         Parameters
         ----------
-        data : pd.DataFrame
+        data : pl.DataFrame
             Input data
+        fit : bool
+            Whether to fit the data, by default False
 
         Returns
         -------
-        pd.DataFrame
+        pl.DataFrame
             Cleaned input data
         """
+        self.logger.debug("Removing outliers.")
+
+        num_data = data[self.num_cols_]
+        if num_data.is_empty():
+            return data
+
         # With quantiles
         if self.outlier_removal == "quantiles":
-            self.q1_ = data[self.num_cols_].quantile(0.25)
-            self.q3_ = data[self.num_cols_].quantile(0.75)
+            if fit:
+                q1 = num_data.quantile(0.05)
+                q3 = num_data.quantile(0.95)
+                self.q1_ = q1.to_dicts()
+                self.q3_ = q3.to_dicts()
+            else:
+                q1 = pl.DataFrame(self.q1_)
+                q3 = pl.DataFrame(self.q3_)
 
-        # By z-score
-        elif self.outlier_removal == "z-score":
-            self.means_ = data[self.num_cols_].mean(skipna=True, numeric_only=True)
-            self.stds_ = data[self.num_cols_].std(skipna=True, numeric_only=True)
-            self.stds_[self.stds_ == 0] = 1
-
-        self.logger.debug("Fitted outlier remover.")
-        return self.remove_outliers(data)
-
-    def remove_outliers(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Removes outliers
-
-        Parameters
-        ----------
-        data : pd.DataFrame
-            Input data
-
-        Returns
-        -------
-        pd.DataFrame
-            Cleaned input data
-        """
-        # With Quantiles
-        if self.outlier_removal == "quantiles":
-            self.removed_outliers = (
-                (data[self.num_cols_] > self.q3_).sum().sum()
-                + (data[self.num_cols_] < self.q1_).sum().sum()
-            ).tolist()
-            data[self.num_cols_] = data[self.num_cols_].mask(
-                data[self.num_cols_] < self.q1_
+            # Mark as True where values are below q1 or above q3
+            mask = num_data.select(
+                [(pl.col(c) < q1[c]) | (pl.col(c) > q3[c]) for c in self.num_cols_]
             )
-            data[self.num_cols_] = data[self.num_cols_].mask(
-                data[self.num_cols_] > self.q3_
-            )
+            # Count how many values have been replaced by 'null'
+            self.removed_outliers_ = int(mask.sum().to_numpy().sum())
+            # Apply
+            num_data = pl_masked_fill(num_data, mask, replace_value=None)
+            data = data.with_columns([*num_data])
 
         # With z-score
         elif self.outlier_removal == "z-score":
-            z_score = abs((data[self.num_cols_] - self.means_) / self.stds_)
-            self.removed_outliers = (
-                (z_score > self.z_score_threshold).sum().sum().tolist()  # type: ignore
+            if fit:
+                means = num_data.mean()
+                stds = num_data.std()
+                stds = stds.with_columns(
+                    [
+                        pl.when(pl.col(c) < 0.1).then(0.1).otherwise(pl.col(c)).alias(c)
+                        for c in stds.columns
+                    ]
+                )
+                self.means_ = means.to_dicts()
+                self.stds_ = stds.to_dicts()
+            else:
+                means = pl.DataFrame(self.means_)
+                stds = pl.DataFrame(self.stds_)
+
+            # Mark as True where z_score is above threshold
+            mask = num_data.select(
+                [
+                    (pl.col(c) - means[c]) / stds[c] > self.z_score_threshold
+                    for c in num_data.columns
+                ]
             )
-            data[self.num_cols_] = data[self.num_cols_].mask(
-                z_score > self.z_score_threshold  # type: ignore
-            )
+            # Count how many values have been replaced by 'null'
+            self.removed_outliers_ = int(mask.sum().to_numpy().sum())
+            # Apply
+            num_data = pl_masked_fill(num_data, mask, replace_value=None)
+            data = data.with_columns([*num_data])
 
         # With clipping
         elif self.outlier_removal == "clip":
-            self.removed_outliers = (
-                (data[self.num_cols_] > 1e12).sum().sum()
-                + (data[self.num_cols_] < -1e12).sum().sum()
-            ).tolist()
-            data[self.num_cols_] = data[self.num_cols_].clip(lower=-1e12, upper=1e12)
+            thr = 1e12
+            # Count how many values have been clipped from below/above
+            self.removed_outliers_ = int(
+                pl.concat([num_data < -thr, num_data > thr]).sum().to_numpy().sum()
+            )
+            # Clip values and apply
+            data = data.with_columns(
+                [pl.col(c).clip(-thr, thr) for c in self.num_cols_]
+            )
 
-        self.logger.debug("Removed outliers.")
+        self.logger.debug("Finished removing outliers.")
         return data
 
-    def remove_missing_values(self, data: pd.DataFrame) -> pd.DataFrame:
+    def fill_missing_values(self, data: pl.DataFrame) -> pl.DataFrame:
         """
         Fills missing values (infinities and "not a number"s)
 
         Parameters
         ----------
-        data : pd.DataFrame
+        data : pl.DataFrame
             Input data
 
         Returns
         -------
-        pd.DataFrame
+        pl.DataFrame
             Cleaned input data
         """
+        self.logger.debug("Start filling missing values.")
+
         # Replace infinities
-        data = data.replace([np.inf, -np.inf], np.nan)
+        inf_mask = data.select(([pl.col(c).abs() == np.inf for c in self.num_cols_]))
+        data = data.with_columns([*pl_masked_fill(data, inf_mask, None)])
+        # Replace nan
+        data = data.fill_nan(None)
 
         # Note
-        self.imputed_missing_values = data[self.num_cols_].isna().sum().sum().tolist()
+        self.imputed_missing_values_ = int(data.null_count().to_numpy().sum())
 
         # Removes all rows with missing values
         if self.missing_values == "remove_rows":
-            data.dropna(axis=0, inplace=True)
+            data = data.drop_nulls()
 
         # Removes all columns with missing values
         elif self.missing_values == "remove_cols":
-            data.dropna(axis=1, inplace=True)
+            null_count = data.null_count().to_pandas().iloc[0]
+            null_columns = null_count[null_count > 0].index.to_list()
+            data = data.drop(null_columns)
 
         # Fills all missing values with zero
         elif self.missing_values == "zero":
-            data = data.fillna(0)
+            data = data.fill_null(0)
 
         # Mean and Interpolate require more than 1 value, use zero if less
         elif self.missing_values in ("interpolate", "mean") and len(data) <= 1:
-            data = data.fillna(0)
+            data = data.fill_null(0)
 
         # Linearly interpolates missing values
         elif self.missing_values == "interpolate":
-            # Get all non-date_cols & interpolate
-            non_date = np.setdiff1d(data.keys().to_list(), self.date_cols_)
-            data[non_date] = data[non_date].interpolate(limit_direction="both")
-
-            # Fill rest (date & more missing values cols)
-            data = self._interpolate_dates(data)
+            # Interpolate
+            data = data.interpolate()  # also interpolates dates
+            # Forward and backward fill
+            data = data.fill_null(strategy="forward").fill_null(strategy="backward")
 
         # Fill missing values with column mean
         elif self.missing_values == "mean":
-            non_date = np.setdiff1d(data.keys().to_list(), self.date_cols_)
-            data[non_date] = data[non_date].fillna(data.mean())
+            data = data.fill_null(strategy="mean")
 
-            # Fill dates
-            data = self._interpolate_dates(data)
+        # 'fill_null(0)' has no effect on datetime data
+        if data.height > 1:
+            data = data.fill_null(strategy="mean")
+        else:
+            # Simply drop columns that only have NaNs
+            data = data[[s.name for s in data if s.null_count() != data.height]]
 
-        self.logger.debug("Removed missing values.")
+        self.logger.debug(f"Removed {self.imputed_missing_values_} missing values.")
         return data
 
-    def _interpolate_dates(self, data: pd.DataFrame) -> pd.DataFrame:
+    def encode_labels(self, data: pl.DataFrame, fit: bool) -> pl.DataFrame:
         """
-        Unfortunately pandas does not support this out of the box. PR was made, but
-        closed pre-merged. https://github.com/pandas-dev/pandas/pull/21915
+        En- or decodes target column of `data`
 
         Parameters
         ----------
-        data : pd.DataFrame
-            Input data
-
-        Returns
-        -------
-        pd.DataFrame
-            Cleaned input data
-        """
-        for key in self.date_cols_:
-            if data[key].isna().any():
-                unix = data[key].astype("int64")
-                unix[unix < 0] = np.nan  # NaT are -9e10
-                unix = unix.interpolate(method="bfill").interpolate("pad")
-                data[key] = pd.to_datetime(unix, unit="ns")
-
-        self.logger.debug("Interpolated dates.")
-        return data
-
-    def encode_labels(self, data: pd.DataFrame, fit: bool) -> pd.DataFrame:
-        """En- or decodes target column of `data`
-
-        Parameters
-        ----------
-        data : pd.DataFrame
+        data : pl.DataFrame
             input data
         fit : bool
             Whether to (re)fit the label encoder
 
         Returns
         -------
-        data : pd.DataFrame
+        data : pl.DataFrame
             With the encoded labels
         """
+        self.logger.debug("Encoding labels")
+
         # Get labels and encode / decode
         if not self.target or self.target not in data:
             return data
         if not self.include_output:
-            return data.drop(self.target, axis=1)
+            return data.drop(self.target)
 
         # Split output
         labels = data[self.target]
 
         # Check whether it's classification
-        if labels.dtype == object or labels.nunique() <= labels.size / 2:
-
+        if labels.dtype == pl.Utf8 or labels.n_unique() <= min(labels.len() / 2, 50):
             # Create encoder
             encoder = LabelEncoder()
             if fit is True:
                 encoder.fit(labels)
-                self.label_encodings_ = pd.Series(encoder.classes_).to_list()
+                self.label_encodings_ = list(encoder.classes_)
             elif not self.label_encodings_:
                 raise NotFittedError("Encoder it not yet fitted")
             else:
                 encoder.fit(self.label_encodings_)
 
             # Encode
-            data[self.target] = encoder.transform(labels)
-            self.logger.debug("Encoded labels.")
-            return data
+            enc_labels = pl.Series(encoder.transform(labels)).alias(self.target)
+            return data.with_column(enc_labels)
 
         # It's probably a regression task, thus no encoding needed
-        warn(UserWarning("Labels are probably for regression. No encoding happened..."))
-        return data
+        else:
+            self.logger.warning(
+                "Labels are probably for regression. No encoding happened..."
+            )
+            return data
 
     def decode_labels(self, data: np.ndarray) -> pd.Series:
-        """Decode labels from numerical dtype to original value
+        """
+        Decode labels from numerical dtype to original value
 
         Parameters
         ----------
@@ -759,21 +947,20 @@ class DataProcessor(LoggingMixin):
             When `except_not_fitted` is True and label encoder is not fitted
         """
         # Checks
-        if len(self.label_encodings_) == 0:
+        if not self.label_encodings_:
             raise NotFittedError(
                 "Encoder it not yet fitted. Try first calling `encode_target` "
                 "to set an encoding"
             )
 
         # Create encoder
-        encoder = LabelEncoder()
-        encoder.classes_ = np.array(self.label_encodings_)
+        encoder = LabelEncoder().fit(self.label_encodings_)
 
         # Decode
         self.logger.debug("Decoded labels.")
         return pd.Series(encoder.inverse_transform(data))  # type: ignore
 
-    def _impute_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _impute_columns(self, data: pl.DataFrame) -> pl.DataFrame:
         """
         *** For production ***
         If a dataset is missing certain columns, this function looks at all registered
@@ -782,22 +969,30 @@ class DataProcessor(LoggingMixin):
 
         Parameters
         ----------
-        data : pd.DataFrame
+        data : pl.DataFrame
             Input data
 
         Returns
         -------
-        data : pd.DataFrame
+        data : pl.DataFrame
         """
+        self.logger.debug("Imputing columns")
+
         # Impute
-        keys = self.date_cols_ + self.num_cols_ + self.bool_cols_ + self.cat_cols_
-        to_impute = [k for k in keys if k not in data]
-        data[to_impute] = np.zeros((len(data), len(to_impute)))
+        required_cols = [
+            *self.date_cols_,
+            *self.num_cols_,
+            *self.bool_cols_,
+            *self.cat_cols_,
+        ]
+        missing_cols = [c for c in required_cols if c not in data]
+        data = data.with_columns([pl.lit(0).alias(c) for c in missing_cols])
 
         # Warn
-        if len(to_impute) > 0:
-            warn(f"Imputed {len(to_impute)} missing columns! {to_impute}")
-        self.logger.debug("Imputed columns.")
+        if len(missing_cols) > 0:
+            self.logger.warning(
+                f"Imputed {len(missing_cols)} missing columns! >> {missing_cols}"
+            )
         return data
 
     def prune_features(self, features: list):

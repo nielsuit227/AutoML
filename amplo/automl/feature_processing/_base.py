@@ -138,7 +138,7 @@ class BaseFeatureProcessor(BaseTransformer, LoggingMixin, metaclass=ABCMeta):
         x = deepcopy(x) if copy else x  # make copy
 
         # Stringify names
-        x, _ = clean_column_names(x)
+        clean_column_names(x)
         if [col for col in x.columns if "__" in col]:
             # important for `raw_features_` attribute to work properly
             raise ValueError("Column names cannot contain '__' (double underscores).")
