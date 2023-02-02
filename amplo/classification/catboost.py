@@ -1,5 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
+import numpy as np
+import pandas as pd
 from catboost import CatBoostClassifier as _CatBoostClassifier
 from sklearn.model_selection import train_test_split
 
@@ -25,7 +27,13 @@ class CatBoostClassifier(BaseClassifier):
 
     model: _CatBoostClassifier  # type hint
 
-    def __init__(self, test_size=0.1, random_state=None, verbose=0, **model_params):
+    def __init__(
+        self,
+        test_size: float = 0.1,
+        random_state: int | None = None,
+        verbose=0,
+        **model_params,
+    ):
         # Verify input dtypes and integrity
         check_dtypes(
             ("test_size", test_size, float),
@@ -55,7 +63,7 @@ class CatBoostClassifier(BaseClassifier):
 
         super().__init__(model=model, verbose=verbose)
 
-    def _fit(self, x, y=None, **fit_params):
+    def fit(self, x: pd.DataFrame, y: pd.Series, **fit_params):
         # Split data and fit model
         xt, xv, yt, yv = train_test_split(
             x, y, stratify=y, test_size=self.test_size, random_state=self.random_state
@@ -67,3 +75,6 @@ class CatBoostClassifier(BaseClassifier):
             early_stopping_rounds=self.model.get_params().get("early_stopping_rounds"),
             use_best_model=self.model.get_params().get("use_best_model"),
         )
+        self.is_fitted_ = True
+        self.classes_ = np.unique(y)
+        return self

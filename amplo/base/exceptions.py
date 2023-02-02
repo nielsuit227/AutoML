@@ -34,3 +34,6 @@ class NotFittedError(Exception):
     """
     Object is not fitted.
     """
+
+    def __init__(self, message="Object not yet fitted.") -> None:
+        super().__init__(message)

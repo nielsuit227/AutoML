@@ -3,17 +3,16 @@
 """
 Base class used to build new observers.
 """
-
 import abc
 import warnings
-from typing import TYPE_CHECKING, Dict, List, Union
+from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 
 from amplo.utils import check_dtypes
 
 if TYPE_CHECKING:
-    from amplo import Pipeline
+    from amplo import Pipeline  # type: ignore # noqa
 
 __all__ = ["BaseObserver", "ProductionWarning", "_report_obs"]
 
@@ -40,10 +39,10 @@ class BaseObserver(abc.ABC):
 
     CLASSIFICATION = "classification"
     REGRESSION = "regression"
-    _obs_type = None
+    _obs_type: str | None = None
 
     def __init__(self):
-        self.observations: List[Dict[str, Union[str, bool]]] = []
+        self.observations: list[dict[str, str | bool]] = []
 
     def report_observation(self, typ, name, status_ok, message):
         """
@@ -95,7 +94,7 @@ class BaseObserver(abc.ABC):
         return self._obs_type
 
     @abc.abstractmethod
-    def observe(self):
+    def observe(self, *args, **kwargs):
         """
         Observe the data, model, ...
 
@@ -103,7 +102,7 @@ class BaseObserver(abc.ABC):
         """
 
 
-def _report_obs(func):
+def _report_obs(func: Callable[..., tuple[bool, str]]) -> Callable[..., None]:
     """
     Decorator for checker function in observer class.
 

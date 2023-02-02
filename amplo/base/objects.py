@@ -3,12 +3,18 @@
 """
 Implements base classes.
 """
-
 import importlib
 import inspect
+import json
 import logging
+from abc import ABCMeta, abstractmethod
 from collections import defaultdict
+from dataclasses import dataclass
+from typing import Any
 from warnings import warn
+
+import numpy.typing as npt
+import pandas as pd
 
 from amplo.base.exceptions import NotFittedError
 from amplo.utils.logging import get_root_logger
@@ -17,7 +23,6 @@ __all__ = [
     "BaseObject",
     "BaseEstimator",
     "BaseTransformer",
-    "BasePredictor",
     "LoggingMixin",
 ]
 
@@ -33,7 +38,8 @@ class BaseObject:
         Attribute names to be included in settings.
     """
 
-    _add_to_settings = []
+    _add_to_settings: list[str] = []
+    is_fitted_: bool = False
 
     def get_settings(self, deep=True):
         """
@@ -80,9 +86,9 @@ class BaseObject:
         valid_settings = self.get_settings(deep=True)
 
         if "<init_params>" in settings:
-            self.__init__(**settings.pop("<init_params>"))  # noqa
+            self.__init__(**settings.pop("<init_params>"))  # type: ignore
 
-        nested_settings = defaultdict(dict)  # grouped by prefix
+        nested_settings: dict[str, Any] = defaultdict(dict)  # grouped by prefix
         for key, value in settings.items():
             key, delim, sub_key = key.partition("__")
             if key not in valid_settings:
@@ -107,6 +113,7 @@ class BaseObject:
         for key, sub_params in nested_settings.items():
             valid_settings[key].load_settings(sub_params)
 
+        self.is_fitted_ = True
         return self
 
     @classmethod
@@ -157,11 +164,11 @@ class BaseObject:
         params : dict
             Parameter names mapped to their values.
         """
-        out = dict()
+        out: dict[str, Any] = {}
         for key in self._get_param_names():
             value = getattr(self, key, None)
             if deep and hasattr(value, "get_params"):
-                deep_items = value.get_params().items()
+                deep_items = value.get_params().items()  # type: ignore
                 out.update((key + "__" + k, val) for k, val in deep_items)
             out[key] = value
         return out
@@ -190,7 +197,7 @@ class BaseObject:
             return self
         valid_params = self.get_params(deep=True)
 
-        nested_params = defaultdict(dict)  # grouped by prefix
+        nested_params: dict[str, Any] = defaultdict(dict)  # grouped by prefix
         for key, value in params.items():
             key, delim, sub_key = key.partition("__")
             if key not in valid_params:
@@ -241,12 +248,12 @@ class BaseObject:
             delattr(self, attr)
 
         # run init with a copy of parameters self had at the start
-        self.__init__(**params)  # noqa
+        self.__init__(**params)  # type: ignore
 
         return self
 
 
-class BaseEstimator(BaseObject):
+class BaseEstimator(BaseObject, metaclass=ABCMeta):
     """
     Estimator base class.
 
@@ -254,253 +261,53 @@ class BaseEstimator(BaseObject):
 
     Attributes
     ----------
-    _is_fitted : bool
+    is_fitted_ : bool
         Indicates whether the estimator is fitted.
     """
 
-    _add_to_settings = ["_is_fitted", *BaseObject._add_to_settings]
+    _add_to_settings = ["is_fitted_", *BaseObject._add_to_settings]
 
-    def __init__(self):
-        self._is_fitted = False
+    def __init__(self) -> None:
+        self.model: Any
         super().__init__()
+        self.classes_: npt.NDArray[Any] | None = None
 
-    @property
-    def is_fitted(self):
-        """Whether `fit` has been called."""
-        # Note: for backwards compatibility
-        if hasattr(self, "_is_fitted"):
-            return self._is_fitted
-        else:
-            return True
+    @abstractmethod
+    def fit(self, *arg, **kwargs) -> Any:
+        pass
 
-    def check_is_fitted(self):
-        """
-        Asserts that estimator is fitted.
+    def score(self, x: pd.DataFrame, y: pd.Series | None, *arg, **kwargs) -> Any:
+        return self.model.score(x, y)
 
-        Raises
-        ------
-        NotFittedError
-            When estimator is not fitted.
-        """
-        if not self.is_fitted:
-            raise NotFittedError(
-                f"This instance of {self.__class__.__name__} has not been "
-                f"fitted yet; please call `fit` first."
-            )
+    @abstractmethod
+    def predict(self, *arg, **kwargs) -> Any:
+        pass
 
-    def fit(self, x, y=None, **fit_params):
-        """
-        Fit the estimator to x and optionally to y.
+    def predict_proba(self, x: pd.DataFrame, *args, **kwargs) -> Any:
+        if not self.is_fitted_:
+            raise NotFittedError
+        if not hasattr(self.model, "predict_proba"):
+            raise AttributeError("Model has no attribute `predict_proba`.")
 
-        State change:
-            Changes state to "fitted".
-
-        Writes to self:
-            Sets is_fitted flag to True.
-            Sets fitted model attributes ending in "_".
-
-        Parameters
-        ----------
-        x : numpy.ndarray or pandas.DataFrame
-            Feature data to fit.
-        y : numpy.ndarray or pandas.Series
-            Target data to fit.
-        **fit_params : dict
-            Additional fit parameters.
-
-        Returns
-        -------
-        self : estimator
-            A fitted instance of the estimator.
-        """
-        # If fit is called, estimator is reset, including fitted state
-        self.reset()
-
-        # Pass to inner fit
-        self._fit(x, y, **fit_params)
-
-        # This should happen last: fitted state is set to True
-        self._is_fitted = True
-
-        return self
-
-    def _fit(self, x, y=None, **fit_params):
-        """
-        Fit the estimator to x and optionally to y.
-
-        Parameters
-        ----------
-        x : numpy.ndarray or pandas.DataFrame
-            Checked feature data to fit.
-        y : numpy.ndarray or pandas.Series
-            Checked target data to fit.
-        **fit_params : dict
-            Additional fit parameters.
-
-        Returns
-        -------
-        self : estimator
-            A fitted instance of the transformer.
-        """
-        return self
+        return self.model.predict_proba(x, *args, **kwargs)
 
 
-class BaseTransformer(BaseEstimator):
+class BaseTransformer(BaseObject, metaclass=ABCMeta):
     """
     Transformer base class.
     """
 
-    def transform(self, x, y=None):
-        """
-        Transform data and return it.
+    @abstractmethod
+    def fit(self, data: pd.DataFrame) -> Any:
+        pass
 
-        State required:
-            Requires state to be "fitted".
+    @abstractmethod
+    def transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        pass
 
-        Accesses in self:
-            Fitted model attributes ending in "_".
-            self._is_fitted
-
-        Parameters
-        ----------
-        x : numpy.ndarray or pandas.DataFrame
-            Feature data to transform.
-        y : numpy.ndarray or pandas.Series
-            Additional target data to transform.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Transformed version of x.
-        """
-        # Check whether is fitted
-        self.check_is_fitted()
-
-        # Transform data
-        xt = self._transform(x, y)
-
-        return xt
-
-    def fit_transform(self, x, y=None, **fit_params):
-        """
-        Fit and transform data.
-
-        Parameters
-        ----------
-        x : numpy.ndarray or pandas.DataFrame
-            Feature data to transform.
-        y : numpy.ndarray or pandas.Series
-            Additional target data to transform.
-        **fit_params : dict
-            Additional fit parameters.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Transformed version of x.
-        """
-        # Default, non-optimized version for `fit_transform`. Overwrite, when
-        # can be optimized.
-        return self.fit(x, y, **fit_params).transform(x, y)
-
-    def _transform(self, x, y=None):
-        """
-        Transform data.
-
-        Parameters
-        ----------
-        x : numpy.ndarray or pandas.DataFrame
-            Checked feature data to fit.
-        y : numpy.ndarray or pandas.Series
-            Checked target data to fit.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Transformed version of x.
-        """
-        raise NotImplementedError("Abstract method.")
-
-
-class BasePredictor(BaseEstimator):
-    """
-    Predictor base class.
-    """
-
-    def predict(self, x, y=None, **predict_params):
-        """
-        Transform data and return it.
-
-        State required:
-            Requires state to be "fitted".
-
-        Accesses in self:
-            Fitted model attributes ending in "_".
-            self._is_fitted
-
-        Parameters
-        ----------
-        x : numpy.ndarray or pandas.DataFrame
-            Feature data to transform.
-        y : numpy.ndarray or pandas.Series
-            Additional target data to transform.
-        **predict_params
-            Additional predict parameters.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Prediction for x.
-        """
-        # Check whether is fitted
-        self.check_is_fitted()
-
-        # Transform data
-        xt = self._predict(x, y, **predict_params)
-
-        return xt
-
-    def fit_predict(self, x, y=None, **fit_predict_params):
-        """
-        Fit and predict data.
-
-        Parameters
-        ----------
-        x : numpy.ndarray or pandas.DataFrame
-            Feature data to transform.
-        y : numpy.ndarray or pandas.Series
-            Additional target data to transform.
-        **fit_predict_params : dict
-            Additional fit and predict parameters.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Prediction for x.
-        """
-        # Default, non-optimized version for `fit_predict`. Overwrite, when
-        # can be optimized.
-        return self.fit(x, y, **fit_predict_params).predict(x, **fit_predict_params)
-
-    def _predict(self, x, y=None, **predict_params):
-        """
-        Predict on data.
-
-        Parameters
-        ----------
-        x : numpy.ndarray or pandas.DataFrame
-            Checked feature data to fit.
-        y : numpy.ndarray or pandas.Series
-            Checked target data to fit.
-        **predict_params : dict
-            Additional predict parameters.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Prediction for x.
-        """
-        raise NotImplementedError("Abstract method.")
+    @abstractmethod
+    def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        pass
 
 
 class LoggingMixin:
@@ -520,7 +327,7 @@ class LoggingMixin:
         - verbose=2: debugging info or higher priority
     """
 
-    def __init__(self, verbose=0):
+    def __init__(self, verbose=0) -> None:
         if not isinstance(verbose, (float, int)):
             raise ValueError(f"Invalid dtype for `verbose`: {type(verbose)}.")
 
@@ -542,3 +349,20 @@ class LoggingMixin:
         # per class is therefore not possible.
         self.logger = get_root_logger().getChild(type(self).__name__)
         self.logger.setLevel(logging_level)
+
+
+@dataclass
+class Result:
+    date: str
+    model: str
+    params: dict[str, Any]
+    feature_set: str
+    score: float
+    worst_case: float
+    time: float
+
+    def __lt__(self, other):
+        return self.worst_case < other.worst_case
+
+    def toJson(self):
+        return json.dumps(self, default=lambda o: o.__dict__)

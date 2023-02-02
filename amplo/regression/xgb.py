@@ -76,7 +76,7 @@ class XGBRegressor(BaseRegressor):
 
         super().__init__(model=model, verbose=verbose)
 
-    def _fit(self, x, y=None, **fit_params):
+    def fit(self, x, y=None, **fit_params):
         # Split data and fit model
         xt, xv, yt, yv = train_test_split(
             x, y, test_size=self.test_size, random_state=self.random_state
@@ -84,3 +84,6 @@ class XGBRegressor(BaseRegressor):
         # Note that we have to set `verbose` in `fit`.
         # Otherwise, it will still verbose print the evaluation.
         self.model.fit(xt, yt, eval_set=[(xv, yv)], verbose=bool(self.verbose))
+
+        self.is_fitted_ = True
+        return self

@@ -1,6 +1,4 @@
 #  Copyright (c) 2022 by Amplo.
-from __future__ import annotations
-
 import faiss
 import numpy as np
 import pandas as pd
@@ -62,12 +60,12 @@ class IntervalAnalyser(LoggingMixin):
 
         # Initializers
         self._engine = None
-        self.distributions_ = None
-        self.noise_indices_ = None
-        self.n_samples_ = None
-        self.n_columns_ = None
-        self.n_files_ = None
-        self.n_folders_ = None
+        self.distributions_: pd.Series | None = None
+        self.noise_indices_: list[tuple[str, int]] | None = None
+        self.n_samples_: int | None = None
+        self.n_columns_: int | None = None
+        self.n_files_: int | None = None
+        self.n_folders_: int | None = None
 
         # Flags
         self.is_fitted_ = False
@@ -117,10 +115,10 @@ class IntervalAnalyser(LoggingMixin):
         Validates the data and sets certain attributes.
         """
         # Validate data
-        if not self.target in data:
+        if self.target not in data:
             raise ValueError(f"Target column {self.target} not in dataframe.")
         if len(data.index.names) != 2:
-            raise ValueError(f"Dataframe needs to have a multi-index.")
+            raise ValueError("Dataframe needs to have a multi-index.")
         if data.max().max() > 10 or data.min().min() < -10:
             raise ValueError("Data needs to be normalized.")
 
@@ -138,7 +136,7 @@ class IntervalAnalyser(LoggingMixin):
         self.n_folders_ = data[self.target].nunique()
         self.n_files_ = data.index.get_level_values(0).nunique()
         self.n_samples_, self.n_columns_ = len(data), len(data.keys()) - 1
-        if self.n_neighbors is None:
+        if self.n_neighbors is None and self.n_files_ is not None:
             self.n_neighbors = min(3 * self.n_samples_ // self.n_files_, 5000)
 
     def _build_engine(self, data: pd.DataFrame):
@@ -201,7 +199,7 @@ class IntervalAnalyser(LoggingMixin):
         self.logger.info("Creating filtered dataset")
 
         # Initialize
-        noise_indices = []
+        noise_indices: list[tuple[str, int]] = []
 
         # Iterate through labels and see if we should remove values
         for log in self.distributions_.index.get_level_values(0):

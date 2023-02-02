@@ -1,13 +1,9 @@
 #  Copyright (c) 2022 by Amplo.
 
-from __future__ import annotations
-
 import json
-import os
 import shutil
-from copy import deepcopy
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from warnings import warn
 
 from azure.core.exceptions import ResourceNotFoundError
@@ -20,77 +16,11 @@ from amplo.api.storage import AzureBlobDataAPI
 from amplo.utils import check_dtypes
 from amplo.utils.io import merge_logs
 
-__all__ = ["DEFAULT_PIPE_KWARGS", "train_locally", "train_on_cloud"]
-
-DEFAULT_PIPE_KWARGS = {
-    "interval_analyse": False,
-    "standardize": False,
-    "missing_values": "zero",
-    "grid_search_timeout": 7200,
-    "n_grid_searches": 1,
-    "verbose": 1,
-}
-
-
-def _set_default_pipe_kwargs(
-    team: str,
-    machine: str,
-    service: str,
-    issue: str,
-    model_version: int,
-    unhandled_pipe_kwargs: dict | None = None,
-) -> dict:
-    """
-    Inserts default pipeline arguments if not set already.
-
-    Parameters
-    ----------
-    team : str
-        Name of the team.
-    machine : str
-        Name of the machine.
-    service : str
-        Name of the service (a.k.a. category).
-    issue : str
-        Name of the issue (a.k.a. model).
-    model_version : int
-        Model version.
-    unhandled_pipe_kwargs : dict
-        Unhandled keyword arguments for pipeline.
-
-    Returns
-    -------
-    dict
-        Pipeline keyword arguments with imputed values.
-    """
-
-    if unhandled_pipe_kwargs is None:
-        unhandled_pipe_kwargs = {}
-
-    check_dtypes(
-        ("team", team, str),
-        ("machine", machine, str),
-        ("service", service, str),
-        ("issue", issue, str),
-        ("model_version", model_version, int),
-        ("pipe_kwargs", unhandled_pipe_kwargs, dict),
-    )
-
-    pipe_kwargs = deepcopy(DEFAULT_PIPE_KWARGS)
-
-    # Insert unhandled pipeline keyword arguments
-    pipe_kwargs.update(unhandled_pipe_kwargs)
-
-    # Set params
-    pipe_kwargs["name"] = f"{team} - {machine} - {service} - {issue}"
-    pipe_kwargs["target"] = issue
-    pipe_kwargs["version"] = model_version
-
-    return pipe_kwargs
+__all__ = ["train_locally", "train_on_cloud"]
 
 
 def _get_file_delta(
-    metadata: dict[str, dict],
+    metadata: dict[str, dict[str, Any]],
     team: str,
     machine: str,
     service: str,
@@ -124,7 +54,7 @@ def _get_file_delta(
         )
         try:
             settings = blob_api.read_json(settings_path)
-            settings = cast(dict, settings)  # type hint
+            settings = cast(dict[str, Any], settings)  # type hint
         except ResourceNotFoundError:
             settings = {}
     else:
@@ -149,7 +79,7 @@ def train_locally(
     machine: str,
     service: str,
     issue: str,
-    pipe_kwargs: dict | None = None,
+    pipe_kwargs: dict[str, Any] | None = None,
     model_version: int = 1,
     *,
     healthy_data_dir: str | Path | bool = True,
@@ -207,9 +137,6 @@ def train_locally(
     """
 
     # Input checks
-    pipe_kwargs = _set_default_pipe_kwargs(
-        team, machine, service, issue, model_version, pipe_kwargs
-    )
     check_dtypes(
         ("data_dir", data_dir, (str, Path)),
         ("target_dir", target_dir, (str, Path)),
@@ -257,7 +184,6 @@ def train_locally(
     # --- Post training ---
 
     # Move training files into target directory
-    print(os.listdir(working_dir))
     shutil.move(working_dir, target_dir)
 
     return True
@@ -270,7 +196,7 @@ def train_on_cloud(
     machine: str,
     service: str,
     issue: str,
-    pipe_kwargs: dict | None = None,
+    pipe_kwargs: dict[str, Any] | None = None,
     model_version: int = 1,
     *,
     train_id: int | None = None,
@@ -327,9 +253,6 @@ def train_on_cloud(
         warn("train_id will be a required parameter in the future.", DeprecationWarning)
 
     # Input checks
-    pipe_kwargs = _set_default_pipe_kwargs(
-        team, machine, service, issue, model_version, pipe_kwargs
-    )
     check_dtypes(
         ("job_id", job_id, int),
         ("model_id", model_id, int),
@@ -343,7 +266,7 @@ def train_on_cloud(
     )
 
     # Set up notebook params
-    notebook_params = {
+    notebook_params: dict[str, Any] = {
         "team": team,
         "machine": machine,
         "service": service,

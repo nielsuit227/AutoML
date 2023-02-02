@@ -1,7 +1,5 @@
 #  Copyright (c) 2022 by Amplo.
 
-from __future__ import annotations
-
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -50,7 +48,7 @@ class NameFilter(logging.Filter):
         return True
 
 
-def _add_filters(handler: logging.Handler):
+def _add_filters(handler: logging.Handler) -> None:
     handler.addFilter(TimeFilter())
     handler.addFilter(NameFilter())
 
@@ -105,7 +103,7 @@ def _create_logger() -> logging.Logger:
     return logger
 
 
-def add_file_handler(file_path: str | Path):
+def add_file_handler(file_path: str | Path) -> None:
     """
     Add a file handler to the root logger.
 

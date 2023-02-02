@@ -3,7 +3,7 @@ from functools import lru_cache
 __all__ = ["levenshtein_distance"]
 
 
-def levenshtein_distance(a, b):
+def levenshtein_distance(a: str, b: str) -> int:
     """
     Calculates the levenshtein distance between two words.
 
@@ -20,7 +20,7 @@ def levenshtein_distance(a, b):
     """
 
     @lru_cache(None)  # for memorization
-    def min_dist(s1, s2):
+    def min_dist(s1: int, s2: int) -> int:
 
         # Deal with different lengths
         if s1 == len(a) or s2 == len(b):

@@ -11,8 +11,6 @@ References
 The ML test score: A rubric for ML production readiness and technical debt
 reduction. 1123-1132. 10.1109/BigData.2017.8258038.
 """
-from __future__ import annotations
-
 from copy import deepcopy
 
 import numpy as np
@@ -22,7 +20,7 @@ from sklearn.metrics import get_scorer
 from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.neighbors import KernelDensity
 
-from amplo.base import BasePredictor
+from amplo.base import BaseEstimator
 from amplo.classification import PartialBoostingClassifier
 from amplo.observation._base import BaseObserver, _report_obs
 from amplo.regression import PartialBoostingRegressor
@@ -58,7 +56,7 @@ class ModelObserver(BaseObserver):
 
     def observe(
         self,
-        model: BasePredictor,
+        model: BaseEstimator,
         data: pd.DataFrame,
         target: str,
         mode: str,
@@ -72,7 +70,9 @@ class ModelObserver(BaseObserver):
         return self.observations
 
     @_report_obs
-    def check_model_size(self, model: BasePredictor, threshold=20e6):
+    def check_model_size(
+        self, model: BaseEstimator, threshold=20e6
+    ) -> tuple[bool, str]:
         """
         Check the RAM of the model. If it's bigger than 20MB, something is wrong.
 
@@ -100,8 +100,8 @@ class ModelObserver(BaseObserver):
 
     @_report_obs
     def check_better_than_linear(
-        self, model: BasePredictor, data: pd.DataFrame, target: str, mode: str
-    ):
+        self, model: BaseEstimator, data: pd.DataFrame, target: str, mode: str
+    ) -> tuple[bool, str]:
         """
         Checks whether the model exceeds a linear model.
 
@@ -155,8 +155,8 @@ class ModelObserver(BaseObserver):
 
     @_report_obs
     def check_noise_invariance(
-        self, model: BasePredictor, data: pd.DataFrame, target: str, mode: str
-    ):
+        self, model: BaseEstimator, data: pd.DataFrame, target: str, mode: str
+    ) -> tuple[bool, str]:
         """
         This checks whether the model performance is invariant to noise in the data.
 
@@ -184,7 +184,7 @@ class ModelObserver(BaseObserver):
         signal_noise_ratio = 5  # This threshold is not super optimized
         xn = deepcopy(xv)
         for key in xv.keys():
-            signal_energy = sum(xn[key].values ** 2)  # type: ignore
+            signal_energy = sum(xn[key].values ** 2)
             noise = np.random.normal(0, 1, len(xn))
             noise_energy = sum(noise**2)
             xn[key] = (
@@ -212,11 +212,11 @@ class ModelObserver(BaseObserver):
     @_report_obs
     def check_slice_invariance(
         self,
-        model: BasePredictor,
+        model: BaseEstimator,
         data: pd.DataFrame,
         target: str,
         mode: str,
-    ):
+    ) -> tuple[bool, str]:
         """
         Model performance should be invariant to data slicing.
 
@@ -272,7 +272,7 @@ class ModelObserver(BaseObserver):
         scorer = get_scorer(objective)
         train_indices = [i for i in range(len(x)) if i not in slice_indices]
         xt, xv = x.iloc[train_indices], x.iloc[slice_indices]
-        yt, yv = y.iloc[train_indices], y.iloc[slice_indices]  # type: ignore
+        yt, yv = y.iloc[train_indices], y.iloc[slice_indices]
 
         # Train and check performance
         scores = cross_val_score(model, x, y, scoring=objective)
@@ -286,8 +286,8 @@ class ModelObserver(BaseObserver):
 
     @_report_obs
     def check_boosting_overfit(
-        self, model: BasePredictor, data: pd.DataFrame, target: str, mode: str
-    ):
+        self, model: BaseEstimator, data: pd.DataFrame, target: str, mode: str
+    ) -> tuple[bool, str]:
         """
         Checks whether boosting models are overfitted.
 
@@ -315,10 +315,13 @@ class ModelObserver(BaseObserver):
         logger.info("Checking boosting model for overfitting.")
 
         # Get scorer
+        partial_booster: type[PartialBoostingClassifier] | type[
+            PartialBoostingRegressor
+        ]
         if mode == self.CLASSIFICATION:
-            PartialBooster = PartialBoostingClassifier
+            partial_booster = PartialBoostingClassifier
         else:
-            PartialBooster = PartialBoostingRegressor
+            partial_booster = PartialBoostingRegressor
         scorer = self.get_scorer_(mode)
 
         # Split data
@@ -328,12 +331,12 @@ class ModelObserver(BaseObserver):
         model.fit(xt, yt)
 
         # Determine steps & initiate results
-        steps = np.ceil(np.linspace(0, PartialBooster.n_estimators(model), 7))[1:-1]
+        steps = np.ceil(np.linspace(0, partial_booster.n_estimators(model), 7))[1:-1]
         scores = []
         for step in steps:
             # Can directly use scorer, as no training is involved at all
-            booster = PartialBooster(model, step)
-            booster._is_fitted = True
+            booster = partial_booster(model, step)
+            booster.is_fitted_ = True
             scores.append(scorer(booster, xv, yv))
 
         # Now, the check fails if there has been a decrease in performance
@@ -358,4 +361,4 @@ class ModelObserver(BaseObserver):
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
         y = data[target]
         x = data.drop(target, axis=1)
-        return train_test_split(x, y)  # type: ignore
+        return train_test_split(x, y)

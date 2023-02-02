@@ -1,7 +1,10 @@
 #  Copyright (c) 2022 by Amplo.
-
 from copy import deepcopy
 
+import pandas as pd
+
+from amplo.base.exceptions import NotFittedError
+from amplo.base.objects import BaseEstimator
 from amplo.classification._base import BaseClassifier
 
 
@@ -31,6 +34,7 @@ class PartialBoostingClassifier(BaseClassifier):
 
     def __init__(self, model, step, verbose=0):
         model = deepcopy(model)
+        super().__init__(model=model, verbose=verbose)
 
         model_name = type(model).__name__
         if model_name not in self._SUPPORTED_MODELS:
@@ -38,8 +42,8 @@ class PartialBoostingClassifier(BaseClassifier):
         if model_name in ("AdaBoostClassifier", "GradientBoostingClassifier"):
             model.estimators_ = model.estimators_[:step]
 
-        super().__init__(model=model, verbose=verbose)
         self.step = int(step)
+        self.classes_ = model.classes_
 
     def _get_prediction_kwargs(self):
         model_name = type(self.model).__name__
@@ -54,18 +58,23 @@ class PartialBoostingClassifier(BaseClassifier):
         else:
             raise AttributeError(f"Unsupported model {model_name}")
 
-    def _predict(self, x, y=None, **kwargs):
+    def fit(self, x: pd.DataFrame, y: pd.Series, *args, **kwargs):
+        self.classes_ = y.unique()
+        return self.model.fit(x, y)
+
+    def predict(self, x: pd.DataFrame, y: pd.Series | None = None, **kwargs):
         return self.model.predict(x, **kwargs, **self._get_prediction_kwargs())
 
-    def predict_proba(self, x, **kwargs):
-        self.check_is_fitted()
+    def predict_proba(self, x: pd.DataFrame, *args, **kwargs):
+        if not self.is_fitted_:
+            raise NotFittedError
         return self.model.predict_proba(x, **kwargs, **self._get_prediction_kwargs())
 
-    @classmethod
-    def n_estimators(cls, model):
+    @staticmethod
+    def n_estimators(model: BaseEstimator) -> int:
         model_name = type(model).__name__
         if model_name in ("AdaBoostClassifier", "GradientBoostingClassifier"):
-            return len(model.estimators_)
+            return len(model.estimators_)  # type: ignore
         elif model_name in ("LGBMClassifier", "XGBClassifier"):
             return model.model.n_estimators
         elif model_name == "CatBoostClassifier":

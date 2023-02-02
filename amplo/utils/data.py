@@ -10,7 +10,6 @@ from sklearn.feature_selection import r_regression  # pearson coefficient
 from sklearn.preprocessing import LabelEncoder
 
 from amplo.utils.util import check_dtypes
-
 __all__ = [
     "influx_query_to_df",
     "check_dataframe_quality",
@@ -26,7 +25,9 @@ def influx_query_to_df(result):
         parsed_records = []
         for record in table.records:
             parsed_records.append((record.get_time(), record.get_value()))
-        df.append(pd.DataFrame(parsed_records, columns=["ts", record.get_field()]))
+        df.append(
+            pd.DataFrame(parsed_records, columns=["ts", table.records[0].get_field()])
+        )
     return pd.concat(df).set_index("ts").groupby(level=0).sum()
 
 

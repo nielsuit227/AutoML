@@ -1,7 +1,5 @@
 #  Copyright (c) 2022 by Amplo.
 
-from __future__ import annotations
-
 from lightgbm import LGBMRegressor as _LGBMRegressor
 from sklearn.model_selection import train_test_split
 
@@ -76,7 +74,7 @@ class LGBMRegressor(BaseRegressor):
 
         super().__init__(model=model, verbose=verbose)
 
-    def _fit(self, x, y=None, **fit_params):
+    def fit(self, x, y=None, **fit_params):
         # Set up fitting callbacks
         callbacks = _validate_lightgbm_callbacks(self.callbacks)
 
@@ -87,3 +85,5 @@ class LGBMRegressor(BaseRegressor):
         self.model.fit(
             xt, yt, eval_set=[(xv, yv)], callbacks=callbacks, eval_metric="rmse"
         )
+        self.is_fitted_ = True
+        return self

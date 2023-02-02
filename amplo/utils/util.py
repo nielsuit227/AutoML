@@ -1,50 +1,32 @@
 #  Copyright (c) 2022 by Amplo.
-
 from __future__ import annotations
 
-import functools
-import inspect
 import logging
 import re
 import warnings
-from collections.abc import Generator
+from typing import Any
 
 import pandas as pd
 import polars as pl
 
 __all__ = [
-    "get_model",
     "hist_search",
     "clean_feature_name",
     "clean_column_names",
-    "deprecated",
     "check_dtypes",
+    "unique_ordered_list",
 ]
 
 
-def get_model(model_str: str):
-    from sklearn import ensemble, linear_model, svm
-
-    from amplo import classification, regression
-    from amplo.base import BasePredictor
-
-    model: BasePredictor
-
-    if "RandomForest" in model_str or "Bagging" in model_str:
-        model = getattr(ensemble, model_str)()
-    elif model_str == "SVC":
-        model = svm.SVC(probability=True)  # type: ignore
-    elif model_str == "SVR":
-        model = svm.SVR()  # type: ignore
-    elif "Logistic" in model_str or "Linear" in model_str or "Ridge" in model_str:
-        model = getattr(linear_model, model_str)()
-    elif "Classifier" in model_str:
-        model = getattr(classification, model_str)()
-    elif "Regressor" in model_str:
-        model = getattr(regression, model_str)()
-    else:
-        raise ValueError("Model not recognized.")
-    return model
+def unique_ordered_list(seq: list[Any]):
+    seen = {}
+    result = []
+    for item in seq:
+        if item in seen:
+            continue
+        seen[item] = 1
+        result.append(item)
+    return result
 
 
 def hist_search(array, value):
@@ -141,103 +123,19 @@ def clean_column_names(data: pd.DataFrame | pl.DataFrame) -> dict[str, str]:
         Dictionary which indicates the renaming.
     """
     # Make first renaming attempt. May create duplicated names.
-    rename_dict = {old: clean_feature_name(str(old)) for old in data.columns}
-
-    if isinstance(data, pd.DataFrame):
-        data.rename(columns=rename_dict, inplace=True)
-    elif isinstance(data, pl.DataFrame):
-        data.columns = [rename_dict.get(c, c) for c in data.columns]
-    else:
-        raise TypeError(f"Invalid dtype for argument 'data': {type(data).__name__}")
-
-    return rename_dict
+    renaming = pd.Series({old: clean_feature_name(old) for old in data.columns})
+    return data.rename(columns=renaming), renaming.to_dict()
 
 
-def deprecated(reason):
-    # This decorator is a copy-pase from:
-    # https://stackoverflow.com/questions/2536307/decorators-in-the-python-standard-lib-deprecated-specifically
-    """
-    This is a decorator which can be used to mark functions
-    as deprecated. It will result in a warning being emitted
-    when the function is used.
-    """
-    string_types = (type(b""), type(""))
-
-    if isinstance(reason, string_types):
-
-        # The @deprecated is used with a 'reason'.
-        #
-        # .. code-block:: python
-        #
-        #    @deprecated("please, use another function")
-        #    def old_function(x, y):
-        #      pass
-
-        def decorator(func1):
-
-            if inspect.isclass(func1):
-                fmt1 = "Call to deprecated class {name} ({reason})."
-            else:
-                fmt1 = "Call to deprecated function {name} ({reason})."
-
-            @functools.wraps(func1)
-            def new_func1(*args, **kwargs):
-                warnings.simplefilter("always", DeprecationWarning)
-                warnings.warn(
-                    fmt1.format(name=func1.__name__, reason=reason),
-                    category=DeprecationWarning,
-                    stacklevel=2,
-                )
-                warnings.simplefilter("default", DeprecationWarning)
-                return func1(*args, **kwargs)
-
-            return new_func1
-
-        return decorator
-
-    elif inspect.isclass(reason) or inspect.isfunction(reason):
-
-        # The @deprecated is used without any 'reason'.
-        #
-        # .. code-block:: python
-        #
-        #    @deprecated
-        #    def old_function(x, y):
-        #      pass
-
-        func2 = reason
-
-        if inspect.isclass(func2):
-            fmt2 = "Call to deprecated class {name}."
-        else:
-            fmt2 = "Call to deprecated function {name}."
-
-        @functools.wraps(func2)
-        def new_func2(*args, **kwargs):
-            warnings.simplefilter("always", DeprecationWarning)
-            warnings.warn(
-                fmt2.format(name=func2.__name__),
-                category=DeprecationWarning,
-                stacklevel=2,
-            )
-            warnings.simplefilter("default", DeprecationWarning)
-            return func2(*args, **kwargs)
-
-        return new_func2
-
-    else:
-        raise TypeError(repr(type(reason)))
-
-
-def check_dtypes(*dtype_tuples):
+def check_dtypes(*arg: tuple[str, Any, type | tuple[type, ...]]):
     """
     Checks all dtypes of given list.
 
     Parameters
     ----------
-    *dtype_tuples : Any
-        Tuples of (name, parameter, allowed types) to be checked.
-        When checking only one parameter, the wrapping in a tuple can be omitted.
+    name : str
+    value : Any
+    typ : type | tuple[type, ...]
 
     Returns
     -------
@@ -245,33 +143,26 @@ def check_dtypes(*dtype_tuples):
 
     Examples
     --------
-    Check a single parameter:
-    >>> check_dtypes(("var1", 123, int))  # tuple
-    >>> check_dtypes("var1", 123, int)  # without tuple
-
-    Check multiple:
-    >>> check_dtypes(("var1", 123, int), ("var2", 1.0, (int, float)))  # tuples
-    >>> check_dtypes(("var", var, str) for var in ["a", "b"])  # list or generator
+    Check a parameter:
+    >>> check_dtypes("var1", 123, int)  # tuple
 
     Raises
     ------
     ValueError
         If any given constraint is not fulfilled.
     """
-    # Allow single dtype check without wrapping in a tuple
-    if isinstance(dtype_tuples[0], str):
-        if len(dtype_tuples) != 3:
-            raise TypeError("Invalid arguments for `check_dtypes` function.")
-        dtype_tuples = (dtype_tuples,)
 
-    # Allow single list or generator object
-    if isinstance(dtype_tuples[0], (list, Generator)):
-        if len(dtype_tuples) != 1:
-            raise TypeError("Invalid arguments for `check_dtypes` function.")
-        dtype_tuples = dtype_tuples[0]
-
-    # Check dtypes
-    for name, value, typ in dtype_tuples:
+    def check_dtype(name: str, value: Any, typ: type | tuple[type, ...]):
         if not isinstance(value, typ):
             msg = f"Invalid dtype for argument `{name}`: {type(value).__name__}"
+            if isinstance(typ, tuple):
+                msg += f", expected {', '.join(t.__name__ for t in typ)}"
+            else:
+                msg += f", expected {typ.__name__}"
             raise TypeError(msg)
+
+    if isinstance(arg[0], str):
+        check_dtype(arg[0], arg[1], arg[2])
+    else:
+        for check in arg:
+            check_dtype(check[0], check[1], check[2])

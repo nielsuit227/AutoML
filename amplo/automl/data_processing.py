@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 from collections import defaultdict
+from typing import Any
 
 import dateutil
 import numpy as np
@@ -149,16 +150,17 @@ class DataProcessor(LoggingMixin):
         self.drop_duplicate_rows = drop_duplicate_rows
 
         # Fitted Settings
-        self.num_cols_ = []
-        self.bool_cols_ = []
-        self.cat_cols_ = []
-        self.date_cols_ = []
-        self.dummies_ = {}
-        self.q1_ = None
-        self.q3_ = None
-        self.means_ = None
-        self.stds_ = None
-        self.label_encodings_ = []
+        self.num_cols_: list[str] = []
+        self.bool_cols_: list[str] = []
+        self.cat_cols_: list[str] = []
+        self.date_cols_: list[str] = []
+        self.dummies_: dict[str, list[str]] = {}
+        self.q1_: pd.Series | None = None
+        self.q3_: pd.Series | None = None
+        self.means_: pd.Series | None = None
+        self.stds_: pd.Series | None = None
+        self.label_encodings_: list[str] = []
+        self.rename_dict_: dict[str, str] | None = None
 
         # Info for Documenting
         self.is_fitted_ = False
@@ -212,11 +214,10 @@ class DataProcessor(LoggingMixin):
         pd.DataFrame
             Cleaned input data
         """
-
         if fit:
             self.logger.info("Data processor starts fitting and transforming...")
         elif not self.is_fitted_:
-            raise NotFittedError("Transform only available for fitted objects.")
+            raise NotFittedError
         else:
             self.logger.info("Data processor starts transforming...")
 
@@ -258,12 +259,12 @@ class DataProcessor(LoggingMixin):
 
         return data
 
-    def get_settings(self) -> dict:
+    def get_settings(self) -> dict[str, Any]:
         """
         Get settings to recreate fitted object.
         """
         if not self.is_fitted_:
-            raise NotFittedError("Object not yet fitted.")
+            raise NotFittedError
 
         settings = {
             "target": self.target,
@@ -297,10 +298,12 @@ class DataProcessor(LoggingMixin):
         }
         return settings
 
-    def load_settings(self, settings: dict):
+    def load_settings(self, settings: dict[str, Any]):
         """
         Loads settings from dictionary and recreates a fitted object
         """
+        self.logger.debug("Loading data processor settings.")
+
         self.target = settings.get("target")
         self.rename_dict_ = settings.get("rename_dict_", {})
         self.num_cols_ = settings.get("num_cols_", settings.get("num_cols", []))
@@ -329,6 +332,8 @@ class DataProcessor(LoggingMixin):
     def clean_column_names(
         self, data: pl.DataFrame, index_cols: list[str], fit: bool = False
     ) -> pl.DataFrame:
+        """Ensures there are no strange characters in feature names."""
+        self.logger.debug("Cleaning column names.")
 
         if fit:
             return self._fit_clean_column_names(data, index_cols)
@@ -441,7 +446,7 @@ class DataProcessor(LoggingMixin):
 
         # Note
         self.removed_duplicate_rows = rdr = n_rows - data.shape[0]
-        self.removed_duplicate_columns = rdc = n_columns - data.shape[1]
+        self.removed_duplicate_columns_ = rdc = n_columns - data.shape[1]
         self.logger.debug(f"Finished removing {rdc} duplicate columns and {rdr} rows.")
 
         return data
@@ -464,7 +469,7 @@ class DataProcessor(LoggingMixin):
         -------
         data : pl.DataFrame
         """
-        self.logger.debug("Start inferring data types")
+        self.logger.debug("Inferring data types.")
 
         # Initialize
         self.num_cols_ = []
@@ -635,7 +640,6 @@ class DataProcessor(LoggingMixin):
         pl.DataFrame
             Cleaned input data
         """
-
         # Clean values of cat_cols
         # Note that 'null' and 'nan' are ignored and thus not stringified
         cat_data = data[self.cat_cols_].select([pl.all().apply(clean_feature_name)])
@@ -676,7 +680,6 @@ class DataProcessor(LoggingMixin):
         pl.DataFrame
             Cleaned input data
         """
-
         # Clean values of cat_cols
         # Note that 'null' and 'nan' are ignored and thus not stringified
         cat_data = data[self.cat_cols_].select([pl.all().apply(clean_feature_name)])
@@ -698,7 +701,7 @@ class DataProcessor(LoggingMixin):
                 [pl.lit(0).cast(pl.UInt8).alias(cat) for cat in missing_categories]
             )
 
-        self.logger.debug("Removed duplicates.")
+        self.logger.debug("Transformed categorical columns.")
         return data
 
     def remove_constants(self, data: pl.DataFrame) -> pl.DataFrame:
@@ -912,7 +915,7 @@ class DataProcessor(LoggingMixin):
                 encoder.fit(labels)
                 self.label_encodings_ = list(encoder.classes_)
             elif not self.label_encodings_:
-                raise NotFittedError("Encoder it not yet fitted")
+                raise NotFittedError
             else:
                 encoder.fit(self.label_encodings_)
 
@@ -946,19 +949,17 @@ class DataProcessor(LoggingMixin):
         NotFittedError
             When `except_not_fitted` is True and label encoder is not fitted
         """
+        self.logger.debug("Decoding labels.")
+
         # Checks
         if not self.label_encodings_:
-            raise NotFittedError(
-                "Encoder it not yet fitted. Try first calling `encode_target` "
-                "to set an encoding"
-            )
+            raise NotFittedError
 
         # Create encoder
         encoder = LabelEncoder().fit(self.label_encodings_)
 
         # Decode
-        self.logger.debug("Decoded labels.")
-        return pd.Series(encoder.inverse_transform(data))  # type: ignore
+        return pd.Series(encoder.inverse_transform(data))
 
     def _impute_columns(self, data: pl.DataFrame) -> pl.DataFrame:
         """
@@ -995,7 +996,7 @@ class DataProcessor(LoggingMixin):
             )
         return data
 
-    def prune_features(self, features: list):
+    def prune_features(self, features: list[str]) -> None:
         """
         For use with AutoML.Pipeline. We practically never use all features. Yet this
         processor imputes any missing features. This causes redundant operations,
@@ -1006,9 +1007,13 @@ class DataProcessor(LoggingMixin):
         features : list
             Required features (NOTE: include required features for extracted)
         """
-        hash_features = dict([(k, 0) for k in features])
+        self.logger.debug("Pruning dataprocessor features.")
+
+        hash_features = {k: 0 for k in features}
         self.date_cols_ = [f for f in self.date_cols_ if f in hash_features]
         self.num_cols_ = [f for f in self.num_cols_ if f in hash_features]
         self.bool_cols_ = [f for f in self.bool_cols_ if f in hash_features]
         self.cat_cols_ = [f for f in self.cat_cols_ if f in hash_features]
-        self.logger.debug("Pruned dataprocessor features.")
+        self.rename_dict_ = {
+            k: v for k, v in self.rename_dict_.items() if v in features
+        }

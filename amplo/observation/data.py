@@ -11,8 +11,6 @@ References
 The ML test score: A rubric for ML production readiness and technical debt
 reduction. 1123-1132. 10.1109/BigData.2017.8258038.
 """
-from __future__ import annotations
-
 import json
 
 import numpy as np
@@ -87,7 +85,7 @@ class DataObserver(BaseObserver):
         # Sort index from the innermost to outermost index level since it is shuffled
         # in classification.
         for axis in list(range(len(numeric_data.index.names)))[::-1]:
-            numeric_data.sort_index(axis=axis, inplace=True)  # type: ignore
+            numeric_data.sort_index(axis=axis, inplace=True)
 
         monotonic_columns = []
         for col in numeric_data.columns:

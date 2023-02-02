@@ -6,7 +6,9 @@ import setuptools
 
 if __name__ == "__main__":
     version = (
-        subprocess.run(["git", "describe", "--tags"], stdout=subprocess.PIPE)
+        subprocess.run(
+            ["git", "describe", "--tags"], stdout=subprocess.PIPE, check=True
+        )
         .stdout.decode("utf-8")
         .strip()
     )

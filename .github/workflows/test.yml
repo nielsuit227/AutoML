@@ -11,6 +11,48 @@ env:
   DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
 
 jobs:
+  linting:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout branch
+      - name: Checkout branch
+        uses: actions/checkout@v2
+
+      # Set python version
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      # Install backend dependencies
+      - id: python_cache
+        uses: actions/cache@v3
+        with:
+          path: venv
+          key: pip-${{ runner.os }}-${{ steps.setup_python.outputs.python-version }}-${{ hashFiles('**/requirements.txt') }}
+
+      - if: steps.python_cache.outputs.cache-hit != 'true'
+        run: |
+          # Check if venv exists (restored from secondary keys if any, and delete)
+          # You might not need this line if you only have one primary key for the venv caching
+          # I kept it in my code as a fail-safe
+          if [ -d "venv" ]; then rm -rf venv; fi
+          # Re-create the venv
+          python3 -m venv venv
+          # Install dependencies
+          venv/bin/python3 -m pip install -r requirements.txt
+
+      # Run MyPy
+      # - name: Run MyPy
+      #   run: |
+      #     source venv/bin/activate
+      #     mypy --install-types --non-interactive .
+
+      # Run Flake8
+      - name: Run flake8
+        run: |
+          source venv/bin/activate
+          flake8 .
   test:
     runs-on: ubuntu-latest
     strategy:

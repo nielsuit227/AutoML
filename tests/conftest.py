@@ -9,7 +9,7 @@ from tests import rmfile, rmtree
 
 
 @pytest.fixture(autouse=True)
-def rmtree_automl():
+def rmtree_automl() -> str:
     folder = "Auto_ML"
     rmtree(folder, must_exist=False)
     yield folder
@@ -17,7 +17,7 @@ def rmtree_automl():
 
 
 @pytest.fixture(autouse=True)
-def rmfile_automl():
+def rmfile_automl() -> str:
     file = "AutoML.log"
     yield file
     try:
@@ -27,55 +27,60 @@ def rmfile_automl():
 
 
 @pytest.fixture
-@pytest.mark.parametrize("mode", ["classification", "regression"])
-def make_x_y(request, mode):
+def x_y(request, mode: str) -> tuple[pd.DataFrame, pd.Series]:
     if mode == "classification":
         x, y = make_classification(n_features=5)
     elif mode == "multiclass":
         x, y = make_classification(n_features=5, n_classes=3, n_informative=3)
     elif mode == "regression":
-        x, y = make_regression(n_features=5, noise=0.3)  # type: ignore
+        x, y = make_regression(n_features=5, noise=0.3)
     else:
         raise ValueError("Invalid mode")
     x, y = pd.DataFrame(x), pd.Series(y)
-    x.columns = [f"feature_{i}" for i in range(len(x.columns))]  # type: ignore
+    x.columns = [f"feature_{i}" for i in range(len(x.columns))]
     y.name = "target"
     request.mode = mode
     yield x, y
 
 
 @pytest.fixture
-def make_data(request, make_x_y, target="target"):
-    data, y = make_x_y
+def data(request, x_y: tuple[pd.DataFrame, pd.Series], target="target") -> pd.DataFrame:
+    data, y = x_y
     data[target] = y
     request.data = data
     yield data
 
 
 @pytest.fixture
-def make_rng(request):
+def classification_data() -> pd.DataFrame:
+    x, y = make_classification(n_features=5, flip_y=0)
+    df = pd.DataFrame(x, columns=["a", "b", "c", "d", "e"])
+    df["target"] = y
+    yield df
+
+
+@pytest.fixture
+def multiindex_data(classification_data: pd.DataFrame) -> pd.DataFrame:
+    log_ind = range(len(classification_data) // 10)
+    yield classification_data.sort_values(by="target").set_index(
+        pd.MultiIndex.from_product([range(10), log_ind]), drop=True
+    )
+
+
+@pytest.fixture
+def freq_data() -> pd.DataFrame:
+    pos = np.real(np.fft.ifft(np.array([0, 1, 0.1, 0.001, -1, -0.1, -0.001]), n=100))
+    neg = np.real(np.fft.ifft(np.array([0, 0.1, 0.2, 0.1, -1, -0.1, -0.001]), n=100))
+    yield pd.DataFrame(
+        {
+            "a": np.hstack([pos] * 10 + [neg] * 10),
+            "target": np.hstack((np.zeros(1000), np.ones(1000))),
+        },
+        index=pd.MultiIndex.from_product([range(20), range(100)]),
+    )
+
+
+@pytest.fixture
+def random_number_generator(request) -> np.random.Generator:
     request.cls.rng = np.random.default_rng(seed=92938)
-    yield
-
-
-@pytest.fixture(scope="class", params=["regression", "classification"])
-def make_mode(request):
-    mode = request.param
-    target = "target"
-    if mode == "classification":
-        x, y = make_classification(n_features=5)
-        request.cls.objective = "neg_log_loss"
-    elif mode == "multiclass":
-        x, y = make_classification(n_features=5, n_classes=3, n_informative=3)
-        request.cls.objective = "neg_log_loss"
-    elif mode == "regression":
-        x, y = make_regression(n_features=5)  # type: ignore
-        request.cls.objective = "neg_mean_squared_error"
-    else:
-        raise ValueError("Invalid mode")
-    x, y = pd.DataFrame(x), pd.Series(y)
-    x = x.rename({col: f"feature_{col}" for col in x.columns}, axis=1)
-    request.cls.mode = mode
-    request.cls.target = target
-    request.cls.data = pd.concat([x, y.to_frame(target)], axis=1)
     yield

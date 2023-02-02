@@ -1,40 +1,42 @@
 #  Copyright (c) 2022 by Amplo.
 
 from abc import ABCMeta
+from typing import Any
 
-from amplo.base import BasePredictor, LoggingMixin
+import numpy.typing as npt
+import pandas as pd
+
+from amplo.base import BaseEstimator, LoggingMixin
+from amplo.base.exceptions import NotFittedError
 
 __all__ = ["BaseClassifier"]
 
 
-class BaseClassifier(BasePredictor, LoggingMixin, metaclass=ABCMeta):
+class BaseClassifier(BaseEstimator, LoggingMixin, metaclass=ABCMeta):
     _estimator_type = "classifier"
 
-    def __init__(self, model, verbose=0):
-        BasePredictor.__init__(self)
+    def __init__(self, model: BaseEstimator, verbose=0):
+        BaseEstimator.__init__(self)
         LoggingMixin.__init__(self, verbose=verbose)
 
         self.model = model
 
-    def _fit(self, x, y=None, **fit_params):
-        self.model.fit(x, y)
-
-    def _predict(self, x, y=None, **predict_params):
+    def predict(self, x: pd.DataFrame, **predict_params) -> npt.NDArray[Any]:
+        if not self.is_fitted_:
+            raise NotFittedError
         return self.model.predict(x, **predict_params).reshape(-1)
 
-    def predict_proba(self, x, **predict_params):
-        self.check_is_fitted()
+    def fit_predict(self, x: pd.DataFrame, y: pd.Series, *args, **fit_params):
+        self.model.fit(x, y)
+        return self.model.predict(x)
+
+    def predict_proba(self, x: pd.DataFrame, *args, **kwargs) -> npt.NDArray[Any]:
+        if not self.is_fitted_:
+            raise NotFittedError
         if not hasattr(self.model, "predict_proba"):
             raise AttributeError("Model has no attribute `predict_proba`.")
 
-        return self.model.predict_proba(x, **predict_params)
-
-    def score(self, x, y):
-        return self.model.score(x, y)
-
-    @property
-    def classes_(self):
-        return self.model.classes_
+        return self.model.predict_proba(x, *args, **kwargs)
 
     def _get_model_params(self, deep=True):
         """Gets JSON serializable model parameters only."""
@@ -49,9 +51,9 @@ class BaseClassifier(BasePredictor, LoggingMixin, metaclass=ABCMeta):
     def set_params(self, **params):
         # Set class params
         valid_class_params = super().get_params(deep=True)
-        class_params = {key: params[key] for key in params if key in valid_class_params}
+        class_params = {k: v for k, v in params.items() if k in valid_class_params}
         super().set_params(**class_params)
         # Set model params
-        model_params = {key: params[key] for key in params if key not in class_params}
+        model_params = {k: v for k, v in params.items() if k in valid_class_params}
         self.model.set_params(**model_params)
         return self

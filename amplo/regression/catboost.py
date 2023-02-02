@@ -54,7 +54,7 @@ class CatBoostRegressor(BaseRegressor):
 
         super().__init__(model=model, verbose=verbose)
 
-    def _fit(self, x, y=None, **fit_params):
+    def fit(self, x, y=None, **fit_params):
         # Split data and fit model
         xt, xv, yt, yv = train_test_split(
             x, y, test_size=self.test_size, random_state=self.random_state
@@ -66,3 +66,6 @@ class CatBoostRegressor(BaseRegressor):
             early_stopping_rounds=self.model.get_params().get("early_stopping_rounds"),
             use_best_model=self.model.get_params().get("use_best_model"),
         )
+
+        self.is_fitted_ = True
+        return self

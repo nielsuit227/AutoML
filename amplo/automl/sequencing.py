@@ -1,9 +1,9 @@
 #  Copyright (c) 2022 by Amplo.
-from __future__ import annotations
-
+from typing import Any
 from warnings import warn
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from amplo.base import LoggingMixin
@@ -62,18 +62,18 @@ class Sequencer(LoggingMixin):
             if back <= 0:
                 raise ValueError("'back' arg needs to be strictly positive.")
         else:
-            if not all([x >= 0 for x in back]):
+            if not all(x >= 0 for x in back):
                 raise ValueError("All integers in 'back' need to be positive.")
-            if not all([x > 0 for x in np.diff(back)]):
+            if not all(x > 0 for x in np.diff(back)):
                 raise ValueError(
                     "All integers in 'back' need to be monotonically increasing."
                 )
         if isinstance(forward, int) and forward < 0:
             raise ValueError("'forward' arg needs to be positive")
-        elif isinstance(forward, list):
-            if not all([x >= 0 for x in forward]):
+        if isinstance(forward, list):
+            if not all(x >= 0 for x in forward):
                 raise ValueError("All integers in 'forward' need to be positive.")
-            if not all([x > 0 for x in np.diff(forward)]):
+            if not all(x > 0 for x in np.diff(forward)):
                 raise ValueError(
                     "All integers in 'forward' need to be monotonically increasing."
                 )
@@ -194,19 +194,19 @@ class Sequencer(LoggingMixin):
             y = y.drop([key for key in y.keys() if "_0" in key], axis=1)
 
             # Return (first lags are NaN, last shifts are NaN
-            x = x.iloc[lag : -shift if shift > 0 else None]  # type: ignore
-            y = y.iloc[lag : -shift if shift > 0 else None]  # type: ignore
+            x = x.iloc[lag : -shift if shift > 0 else None]
+            y = y.iloc[lag : -shift if shift > 0 else None]
             x[self.target] = y
             return x
         else:
-            raise NotImplemented(
+            raise NotImplementedError(
                 "Technically, we could use _convert_numpy, ",
                 "but returning 3d is not supported by the pipeline.",
             )
 
     def _convert_numpy(
-        self, x: np.ndarray, y: np.ndarray, flat=True
-    ) -> tuple[np.ndarray, np.ndarray]:
+        self, x: npt.NDArray[Any], y: npt.NDArray[Any], flat=True
+    ) -> tuple[npt.NDArray[Any], npt.NDArray[Any]]:
         # Initializations
         if x.ndim == 1:
             x = x.reshape((-1, 1))
@@ -271,7 +271,9 @@ class Sequencer(LoggingMixin):
         else:
             return input_sequence, output_sequence
 
-    def revert(self, seq_y, y_start):
+    def revert(
+        self, seq_y: npt.NDArray[Any], y_start: npt.NDArray[Any]
+    ) -> npt.NDArray[Any]:
         """
         Reverts the sequenced vector back.
 
@@ -306,12 +308,11 @@ class Sequencer(LoggingMixin):
                     y[i, j + self.output_indices_] = (
                         y[0, j + self.output_diff_indices_] + seq_y[j, i]
                     )
-                return np.exp(y) - self.output_constant_
+            return np.exp(y) - self.output_constant_
 
         else:
             if self.diff == "none":
                 raise ValueError(
                     "With differencing set to none, reverting is not necessary."
                 )
-            else:
-                raise ValueError("Differencing method not implemented.")
+            raise ValueError("Differencing method not implemented.")

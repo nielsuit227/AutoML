@@ -1,32 +1,26 @@
 #  Copyright (c) 2022 by Amplo.
 
-from __future__ import annotations
-
 import json
 import os
 import re
+from logging import Logger
 from pathlib import Path
 from time import time
-from typing import TYPE_CHECKING, Iterable
+from typing import Any, Iterable
 from warnings import warn
 
 import numpy as np
 import pandas as pd
 from requests import HTTPError
 
+from amplo.api.platform import AmploPlatformAPI
 from amplo.api.storage import AzureBlobDataAPI
 from amplo.utils.logging import get_root_logger
-
-if TYPE_CHECKING:
-    from logging import Logger
-
-    from amplo.api.platform import AmploPlatformAPI
 
 __all__ = [
     "boolean_input",
     "parse_json",
     "NpEncoder",
-    "read_pandas",
     "get_file_metadata",
     "merge_logs",
 ]
@@ -44,7 +38,7 @@ class NpEncoder(json.JSONEncoder):
             return obj.to_list()
         if isinstance(obj, pd.DataFrame):
             obj.to_json()
-        return super(NpEncoder, self).default(obj)
+        return super().default(obj)
 
 
 def boolean_input(question: str) -> bool:
@@ -58,7 +52,7 @@ def boolean_input(question: str) -> bool:
         return boolean_input(question)
 
 
-def parse_json(json_string: str | dict) -> str | dict:
+def parse_json(json_string: str | dict[Any, Any]) -> str | dict[Any, Any]:
     if isinstance(json_string, dict):
         return json_string
     else:
@@ -99,7 +93,7 @@ def get_file_metadata(file_path: str | Path) -> dict[str, str | float]:
 
     from amplo.utils import check_dtypes
 
-    check_dtypes("file_path", file_path, (str, Path))
+    check_dtypes(("file_path", file_path, (str, Path)))
 
     file_path = Path(file_path)
 
@@ -128,8 +122,9 @@ def _get_api_clients(
     if not azure:
         blob_api = None
     else:
-        azure = azure if not isinstance(azure, bool) else tuple()
-        blob_api = AzureBlobDataAPI.from_os_env(*azure)
+        blob_api = AzureBlobDataAPI.from_os_env(
+            *azure if isinstance(azure, tuple) else (None, None)
+        )
 
     # Mirror azure parameter when platform is not set
     if platform is None:
@@ -138,8 +133,9 @@ def _get_api_clients(
     if not platform:
         platform_api = None
     else:
-        platform = platform if not isinstance(platform, bool) else tuple()
-        platform_api = AmploPlatformAPI.from_os_env(*platform)
+        platform_api = AmploPlatformAPI.from_os_env(
+            *platform if isinstance(platform, tuple) else (None, None)
+        )
     return blob_api, platform_api
 
 
@@ -151,18 +147,19 @@ def _get_folders(
     """
     Lists folders for merge_logs
     """
-    if not blob_api:
+    folders: list[Path]
+    if blob_api:
+        folders = [Path(f) for f in blob_api.ls_folders(parent_folder)]
+    else:
         if not Path(parent_folder).exists():
             raise ValueError(f"{parent_folder} directory does not exist.")
         folders = [
             folder for folder in Path(parent_folder).iterdir() if folder.is_dir()
         ]
-    else:
-        folders = blob_api.ls_folders(parent_folder)
 
     # Add more_folders
     if more_folders:
-        folders += more_folders
+        folders += [Path(f) for f in more_folders]
 
     # return [Path(f) for f in folders]
     return [Path(f) for f in folders]
@@ -173,7 +170,7 @@ def _read_files_in_folders(
     target: str,
     blob_api: AzureBlobDataAPI | None = None,
     logger: Logger | None = None,
-) -> tuple[list[str], pd.DataFrame, dict[str, dict]]:
+) -> tuple[list[str], pd.DataFrame, dict[str, dict[str, Any]]]:
     """
     Use pandas to read all non-hidden and non-empty files into a DataFrame.
 
@@ -202,16 +199,16 @@ def _read_files_in_folders(
     """
 
     # Map folders to pathlib.Path object
-    folders = [Path(f) for f in folders]
+    folder_paths = [Path(f) for f in folders]
 
     # Initialize
     file_names, data, metadata = [], [], {}
     last_time_logged = time()
-    for folder_count, folder in enumerate(sorted(folders)):
+    for folder_count, folder in enumerate(sorted(folder_paths)):
 
         # List all files
         if blob_api:
-            files = list(map(Path, blob_api.ls_files(folder)))
+            files = [Path(f) for f in blob_api.ls_files(folder)]
         else:
             files = [f for f in folder.iterdir() if f.is_file()]
 
@@ -232,9 +229,7 @@ def _read_files_in_folders(
             continue
 
         # Read files
-        for file_ in sorted(files):
-            if logger:
-                logger.debug(file_)
+        for i, file_ in enumerate(sorted(files)):
 
             # read_pandas() may raise an EmptyDataError when the file has no content.
             # The try...except catches such errors and warns the user instead.
@@ -250,6 +245,10 @@ def _read_files_in_folders(
                 continue
 
             # Convert to dataframe
+            if logger:
+                logger.debug(
+                    f"{file_} {len(datum)} samples, {len(datum.keys())} columns."
+                )
             if isinstance(datum, pd.Series):
                 datum = datum.to_frame()
 
@@ -270,25 +269,27 @@ def _read_files_in_folders(
 
         if logger and time() - last_time_logged > 90:
             last_time_logged = time()
-            logger.info(f".. progress: {folder_count / len(folders) * 100:.1f} %")
+            logger.info(f".. progress: {folder_count / len(folder_paths) * 100:.1f} %")
 
     # Concatenate data
-    data = pd.concat(data, axis=0)
+    df = pd.concat(data, axis=0)
 
     # Validate data
-    if target not in data:
+    if target not in df:
         raise ValueError("Target not in data.")
-    if data[target].nunique() != 2:
-        raise ValueError(f"Number of unique labels is {data[target].nunique()} != 2.")
+    if df[target].nunique() != 2:
+        raise ValueError(
+            f"Number of unique labels is {df[target].nunique()} != 2."  # type:ignore
+        )
 
-    return file_names, data, metadata
+    return file_names, df, metadata
 
 
 def _map_datalogs_to_file_names(
     file_names: list[str],
     platform_api: AmploPlatformAPI | None = None,
     logger: Logger | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """
     Get datalogs for every filename.
 
@@ -321,7 +322,7 @@ def _map_datalogs_to_file_names(
     try:
         team, machine = file_names[0].split("/")[-6:-4]
     except IndexError:
-        warn(f"Got an empty list of file names")
+        warn("Got an empty list of file names")
         return {}
 
     # Get datalog for each filename
@@ -343,7 +344,7 @@ def _map_datalogs_to_file_names(
     return datalogs
 
 
-def _mask_intervals(datalogs: dict, data: pd.DataFrame) -> pd.DataFrame:
+def _mask_intervals(datalogs: dict[str, Any], data: pd.DataFrame) -> pd.DataFrame:
     """
     Masks the data with the intervals given by the datalogs.
 
@@ -393,7 +394,7 @@ def _mask_intervals(datalogs: dict, data: pd.DataFrame) -> pd.DataFrame:
             ) & drop_mask
         if isinstance(drop_mask, pd.Series) and not drop_mask.loc[filename].any():
             continue
-        data = data.drop(data.loc[(filename, drop_mask), :].index)
+        data.drop(data.loc[(filename, drop_mask), :].index, inplace=True)
 
     return data
 
@@ -404,7 +405,7 @@ def merge_logs(
     more_folders: list[str | Path] | None = None,
     azure: tuple[str, str] | bool = False,
     platform: tuple[str, str] | bool | None = None,
-) -> tuple[pd.DataFrame, dict[str, dict]]:
+) -> tuple[pd.DataFrame, dict[str, dict[str, Any]]]:
     """
     Combine log files of all subdirectories into a multi-indexed DataFrame.
 

@@ -1,4 +1,6 @@
 #  Copyright (c) 2022 by Amplo.
+import numpy as np
+import pandas as pd
 import xgboost.callback
 from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier as _XGBClassifier
@@ -16,7 +18,7 @@ def _validate_xgboost_callbacks(callbacks):
         if not isinstance(cb, str):
             raise ValueError(f"Expected a string but got '{cb}' of type '{type(cb)}'.")
 
-        elif cb.startswith("early_stopping_rounds="):
+        if cb.startswith("early_stopping_rounds="):
             n_rounds = int(cb.removeprefix("early_stopping_rounds="))
             valild_callbacks.append(xgboost.callback.EarlyStopping(n_rounds))
 
@@ -49,10 +51,10 @@ class XGBClassifier(BaseClassifier):
 
     def __init__(
         self,
-        callbacks=None,
-        test_size=0.1,
-        random_state=None,
-        verbose=0,
+        callbacks: list[str] | None = None,
+        test_size: float = 0.1,
+        random_state: int | None = None,
+        verbose: int = 0,
         **model_params,
     ):
         # Verify input dtypes and integrity
@@ -91,10 +93,11 @@ class XGBClassifier(BaseClassifier):
         self.callbacks = callbacks
         self.test_size = test_size
         self.random_state = random_state
-
         super().__init__(model=model, verbose=verbose)
 
-    def _fit(self, x, y=None, **fit_params):
+    def fit(self, x: pd.DataFrame, y: pd.Series, **fit_params):
+        self.reset()
+        self.classes_ = np.unique(y)
         # Split data and fit model
         xt, xv, yt, yv = train_test_split(
             x, y, stratify=y, test_size=self.test_size, random_state=self.random_state
@@ -102,3 +105,5 @@ class XGBClassifier(BaseClassifier):
         # Note that we have to set `verbose` in `fit`.
         # Otherwise, it will still verbose print the evaluation.
         self.model.fit(xt, yt, eval_set=[(xv, yv)], verbose=bool(self.verbose))
+        self.is_fitted_ = True
+        return self

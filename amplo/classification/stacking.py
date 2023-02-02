@@ -8,8 +8,9 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 
+from amplo.base.exceptions import NotFittedError
 from amplo.classification._base import BaseClassifier
-from amplo.utils import check_dtypes, get_model
+from amplo.utils import check_dtypes
 
 
 def _get_default_estimators(n_samples=None):
@@ -43,6 +44,8 @@ def _make_estimator_stack(estimators, add_defaults=True, n_samples=None):
     list of (str, estimator)
         Stack of estimators.
     """
+    from amplo.automl.modelling import get_model
+
     check_dtypes(
         ("estimators", estimators, list),
         *[(f"estimators_item: `{est}`", est, str) for est in estimators],
@@ -132,7 +135,7 @@ class StackingClassifier(BaseClassifier):
 
         super().__init__(model=model, verbose=verbose)
 
-    def _fit(self, x, y=None, **fit_params):
+    def fit(self, x, y=None, **fit_params):
         # When `self.n_samples` or `self.n_features` is None or badly initialized, we
         # reset the stacking estimator as its stack and final estimator depend on that.
         if self.n_samples != x.shape[0] or self.n_features != x.shape[1]:
@@ -167,13 +170,14 @@ class StackingClassifier(BaseClassifier):
         # Fit model
         self.model.fit(x, y)
 
-    def _predict(self, x, y=None, **kwargs):
+    def predict(self, x, y=None, **kwargs):
         mean = np.array(self._mean)
         std = np.array(self._std)
         return self.model.predict((x - mean) / std, **kwargs).reshape(-1)
 
     def predict_proba(self, x, **kwargs):
-        self.check_is_fitted()
+        if not self.is_fitted_:
+            raise NotFittedError
         mean = np.array(self._mean)
         std = np.array(self._std)
         return self.model.predict_proba((x - mean) / std, **kwargs)

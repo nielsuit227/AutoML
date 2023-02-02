@@ -5,10 +5,12 @@ Base class repository of Amplo.
 """
 
 from amplo.base.exceptions import NotFittedError
-from amplo.base.objects import (
-    BaseEstimator,
-    BaseObject,
-    BasePredictor,
-    BaseTransformer,
-    LoggingMixin,
-)
+from amplo.base.objects import BaseEstimator, BaseObject, BaseTransformer, LoggingMixin
+
+__all__ = [
+    "NotFittedError",
+    "BaseEstimator",
+    "BaseObject",
+    "BaseTransformer",
+    "LoggingMixin",
+]

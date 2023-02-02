@@ -1,6 +1,4 @@
 #  Copyright (c) 2022 by Amplo.
-from __future__ import annotations
-
 import copy
 import re
 import time
@@ -13,7 +11,7 @@ import pandas as pd
 from sklearn.metrics import get_scorer
 from sklearn.model_selection import BaseCrossValidator, StratifiedKFold, cross_val_score
 
-from amplo.base.objects import BasePredictor, LoggingMixin
+from amplo.base.objects import BaseEstimator, LoggingMixin, Result
 
 __all__ = ["OptunaGridSearch"]
 
@@ -28,6 +26,7 @@ MIN_SPLIT = 0.1
 MAX_SPLIT = 1.0
 MIN_LEAF_SIZE = 1
 MAX_LEAF_SIZE = 10_000
+
 
 # Define min-max-function
 def minimax(min_, value, max_):
@@ -49,7 +48,7 @@ def warn_at_extreme(params: dict[str, int | float | str], samples: int):
                 warn(
                     f"Parameter {param} (={value}) at the edge of search space: ({MIN_DEPTH}, {max_depth(samples)})"
                 )
-        if params in [
+        if param in [
             "n_estimators",
             "alpha",
             "C",
@@ -66,12 +65,12 @@ def warn_at_extreme(params: dict[str, int | float | str], samples: int):
             "lambda_l1",
             "lambda_l1",
         ]:
-            if value == MIN_REGULARIZATION or value == MAX_REGULARIZATION:
+            if value in (MIN_REGULARIZATION, MAX_REGULARIZATION):
                 warn(
                     f"Parameter {param} (={value}) at the edge of search space: ({MIN_REGULARIZATION}, {MAX_REGULARIZATION})"
                 )
         if param in ["max_iter", "n_estimators"]:
-            if value == MIN_BOOSTERS or value == MAX_BOOSTERS:
+            if value in (MIN_BOOSTERS, MAX_BOOSTERS):
                 warn(
                     f"Parameter {param} (={value}) at the edge of search space: ({MIN_BOOSTERS}, {MAX_BOOSTERS})"
                 )
@@ -83,12 +82,12 @@ def warn_at_extreme(params: dict[str, int | float | str], samples: int):
             "bagging_fraction",
             "subsample",
         ]:
-            if value == MIN_SPLIT or value == MAX_SPLIT:
+            if value in (MIN_SPLIT, MAX_SPLIT):
                 warn(
                     f"Parameter {param} (={value}) at the edge of search space: ({MIN_SPLIT}, {MAX_SPLIT})"
                 )
         if param in ["leaf_size", "min_data_in_leaf", "min_samples_leaf"]:
-            if value == MIN_LEAF_SIZE or value == max_leaf_size(samples):
+            if value in (MIN_LEAF_SIZE, max_leaf_size(samples)):
                 warn(
                     f"Parameter {param} (={value}) at the edge of search space: ({MIN_LEAF_SIZE}, {max_leaf_size(samples)})"
                 )
@@ -122,10 +121,11 @@ class OptunaGridSearch(LoggingMixin):
 
     def __init__(
         self,
-        model: BasePredictor,
+        model: BaseEstimator,
         target: str,
         n_trials: int = 250,
         timeout: int = -1,
+        feature_set: str = "",
         cv: BaseCrossValidator = StratifiedKFold(n_splits=10),
         scoring: str = "neg_log_loss",
         verbose: int = 0,
@@ -138,26 +138,24 @@ class OptunaGridSearch(LoggingMixin):
                 "The model is already fitted but Amplo's grid search will re-fit.",
                 UserWarning,
             )
-        scoring = get_scorer(scoring)  # type: ignore
+        scoring = get_scorer(scoring)
 
         # Set class attributes
         self.target = target
         self.model = model
         self.n_trials = n_trials
         self.timeout = timeout
+        self.feature_set = feature_set
         self.cv = cv
         self.scoring = get_scorer(scoring)
 
         # Set attributes
-        self.binary_ = None
-        self.samples_ = None
+        self.binary_: bool | None = None
+        self.samples_: int | None = None
         self.trial_count_ = -1
 
         # Model specific settings
-        if (
-            type(self.model).__name__ == "LinearRegression"
-            or type(self.model).__name__ == "LogisticRegression"
-        ):
+        if type(self.model).__name__ in ("LinearRegression", "LogisticRegression"):
             self.n_trials = 1
 
     def _get_hyper_params(
@@ -184,10 +182,10 @@ class OptunaGridSearch(LoggingMixin):
             raise ValueError("Could not determine mode (regression or classification).")
 
         # Find matching model and return its parameter values
-        if model_name == "LinearRegression" or model_name == "LogisticRegression":
+        if model_name in ("LinearRegression", "LogisticRegression"):
             return {}
 
-        elif model_name == "Lasso" or "Ridge" in model_name:
+        elif model_name in ("Lasso", "Ridge"):
             return dict(
                 alpha=trial.suggest_float(
                     "alpha", MIN_REGULARIZATION, MAX_REGULARIZATION, log=True
@@ -587,22 +585,25 @@ class OptunaGridSearch(LoggingMixin):
         )
 
         # Parse results
-        optuna_results = study.trials_dataframe()
-        results = pd.DataFrame(
-            {
-                "date": datetime.today().strftime("%d %b %y"),
-                "model": type(self.model).__name__,
-                "params": [x.params for x in study.get_trials()],
-                "score": optuna_results["value"],
-                "worst_case": optuna_results["value"]
-                - optuna_results["user_attrs_score_std"],
-                "time": optuna_results["user_attrs_time"],
-            }
-        ).sort_values("score", ascending=False)
+        results: list[Result] = []
+        date = datetime.today().strftime("%d %b %y")
+        results = [
+            Result(
+                date=date,
+                model=type(self.model).__name__,
+                params=trial.params,
+                score=trial.value if trial.value else -np.inf,
+                worst_case=trial.value - trial.user_attrs["score_std"],
+                feature_set=self.feature_set,
+                time=trial.user_attrs["time"],
+            )
+            for trial in study.get_trials()
+        ]
         self.trial_count_ = len(study.trials)
+        results.sort(reverse=True)
 
         # Warn against edge params
-        warn_at_extreme(results.iloc[0]["params"], self.samples_)
+        warn_at_extreme(results[0].params, self.samples_)
 
         return results
 
@@ -620,8 +621,12 @@ class OptunaGridSearch(LoggingMixin):
         trial.set_user_attr("time", run_time)
         trial.set_user_attr("score_std", np.std(scores))
 
-        # Stop trial (avoid overwriting)
+        # Stop study (avoid overwriting)
         if trial.number == self.n_trials:
+            self.logger.info("Maximum trails reached.")
+            trial.study.stop()
+        if score > -1e-9:
+            self.logger.info(f"Superb score achieved, stopping search ({score:.4E})")
             trial.study.stop()
 
         # Pruning
@@ -661,7 +666,7 @@ class _BadTrialPruner(optuna.pruners.BasePruner):
         self._std_threshold_multiplier = std_threshold_multiplier
         self._n_startup_trials = n_startup_trials
 
-    def prune(self, study, trial):
+    def prune(self, study: optuna.Study, trial: optuna.trial.FrozenTrial) -> bool:
         # Don't prune while startup trials
         if not [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]:
             return False

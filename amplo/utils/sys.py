@@ -4,15 +4,17 @@ import sys
 from collections import deque
 from collections.abc import Mapping, Set
 from numbers import Number
+from typing import Any
 
 import pandas as pd
 
 __all__ = ["getsize"]
 
+
 ZERO_DEPTH_BASES = (str, bytes, Number, range, bytearray)
 
 
-def getsize(obj_0):
+def getsize(obj_0: Any) -> int:
     # Credits: https://stackoverflow.com/questions/449560/how-do-i-determine-the-size-of-an-object-in-python  # noqa: E501
     """
     Recursively iterate to sum size of object & members.
@@ -24,7 +26,7 @@ def getsize(obj_0):
     """
     _seen_ids = set()
 
-    def inner(obj):
+    def inner(obj: Any) -> int:
         obj_id = id(obj)
         if obj_id in _seen_ids:
             return 0
@@ -49,7 +51,8 @@ def getsize(obj_0):
                     inner(getattr(obj, s)) for s in obj.__slots__ if hasattr(obj, s)
                 )
             return size
-        except:
+            # TODO: figure out what can error here.
+        except:  # type: ignore # noqa: E722
             return 0
 
     return inner(obj_0)

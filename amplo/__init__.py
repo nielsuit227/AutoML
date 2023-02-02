@@ -2,3 +2,5 @@
 
 from amplo.pipeline import Pipeline
 from amplo.training import train_locally, train_on_cloud
+
+__all__ = ["Pipeline", "train_locally", "train_on_cloud"]

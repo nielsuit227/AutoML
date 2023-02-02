@@ -1,0 +1,12 @@
+[flake8]
+ignore=
+    # ignore whitespace before ':' (for black)
+    E203, 
+    # line to long
+    E501, 
+    # line break before binary operator
+    W503,
+max-line-length = 88
+ban-relative-imports = "parents"
+exclude=
+    venv

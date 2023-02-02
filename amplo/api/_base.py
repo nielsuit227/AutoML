@@ -1,13 +1,15 @@
 #  Copyright (c) 2022 by Amplo.
 
+from abc import ABCMeta, abstractmethod
+
 import requests
 
-from amplo.utils import check_dtypes
+from amplo.utils.util import check_dtypes
 
 __all__ = ["BaseRequestAPI"]
 
 
-class BaseRequestAPI:
+class BaseRequestAPI(metaclass=ABCMeta):
     """
     Base class for API.
 
@@ -31,8 +33,9 @@ class BaseRequestAPI:
 
         return f"{self.__class__.__name__}({self.host.removeprefix('https://')})"
 
-    def _authorization_header(self) -> dict:
-        raise NotImplementedError("Abstract method.")
+    @abstractmethod
+    def _authorization_header(self):
+        pass
 
     def request(self, method: str, action: str, **kwargs) -> requests.Response:
         """
@@ -59,13 +62,13 @@ class BaseRequestAPI:
         """
 
         # Add authorization string to "headers" key
-        headers: dict = kwargs.get("headers") or {}
-        check_dtypes("kwargs__headers", headers, dict)
+        headers: dict[str, str] = kwargs.get("headers", {})
+        check_dtypes(("kwargs__headers", headers, dict))
         headers.update(self._authorization_header())
 
         # Request
         url = f"{self.host}/api/{action.lstrip('/')}"
-        response = requests.request(method, url, headers=headers, **kwargs)
+        response = requests.request(method, url, headers=headers, timeout=300, **kwargs)
 
         # Verify response
         if response.status_code != 200:

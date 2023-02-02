@@ -1,13 +1,14 @@
 #  Copyright (c) 2022 by Amplo.
-from __future__ import annotations
-
 from copy import deepcopy
+from typing import Any
 from warnings import warn
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from amplo.base import LoggingMixin
+from amplo.base.exceptions import NotFittedError
 
 
 class Standardizer(LoggingMixin):
@@ -33,10 +34,15 @@ class Standardizer(LoggingMixin):
 
     def fit(self, data: pd.DataFrame):
         # Gather cols
-        self.cols_ = data.select_dtypes(include=np.number).columns.tolist()  # type: ignore
+        self.cols_ = data.select_dtypes(include=np.number).columns.tolist()
 
         # Remove target if classification
-        if self.target and self.target in self.cols_ and self.mode == "classification":
+        if (
+            self.target
+            and self.cols_
+            and self.target in self.cols_
+            and self.mode == "classification"
+        ):
             self.cols_.remove(self.target)
 
         # Set attrs
@@ -46,7 +52,7 @@ class Standardizer(LoggingMixin):
 
     def transform(self, data: pd.DataFrame) -> pd.DataFrame:
         if not self.is_fitted_:
-            raise ValueError("Object not yet fitted.")
+            raise NotFittedError
         assert self.cols_ is not None
         if not all(k in data for k in self.cols_):
             warn(f"Missing keys in data: {[k for k in self.cols_ if k not in data]}")
@@ -54,13 +60,13 @@ class Standardizer(LoggingMixin):
         data[self.cols_] = (data[self.cols_] - self.means_) / self.stds_
         return data
 
-    def reverse(self, data: np.ndarray, column: str | None = None) -> pd.Series:
+    def reverse(self, data: npt.NDArray[Any], column: str | None = None) -> pd.Series:
         """
         Currently only used to reverse predict regression predictions. Hence the natural
         support for np.ndarrays.
         """
         if not self.is_fitted_:
-            raise ValueError("Object not yet fitted.")
+            raise NotFittedError
         assert (
             self.cols_ is not None
             and self.stds_ is not None
@@ -94,10 +100,10 @@ class Standardizer(LoggingMixin):
             "stds_": self.stds_.to_json(),
         }
 
-    def load_settings(self, settings: dict):
+    def load_settings(self, settings: dict[str, Any]):
         self.cols_ = settings.get("cols_", [])
         self.means_ = settings.get("means_")
         self.stds_ = settings.get("stds_")
-        self.mode = settings.get("mode")
+        self.mode = settings["mode"]
         self.target = settings.get("target")
         return self

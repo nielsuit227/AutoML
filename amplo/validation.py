@@ -16,7 +16,7 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import BaseCrossValidator, cross_val_predict
 
-from amplo.base import BasePredictor, LoggingMixin
+from amplo.base import BaseEstimator, LoggingMixin
 
 __all__ = ["ModelValidator"]
 
@@ -40,7 +40,7 @@ class ModelValidator(LoggingMixin):
         self.target = target
         self.cv = cv
 
-    def validate(self, model: BasePredictor, data: pd.DataFrame, mode: str):
+    def validate(self, model: BaseEstimator, data: pd.DataFrame, mode: str):
         """
         Validate model and return performance metrics.
 
@@ -80,7 +80,7 @@ class ModelValidator(LoggingMixin):
 
         if mode == "classification":
             self.logger.info(
-                """Confusion Matrix: 
+                """Confusion Matrix:
             Predicted / actual  |    Positive    |    Negative    |
             Positive            |  {}  |  {}  |
             Negative            |  {}  |  {}  |

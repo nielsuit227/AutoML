@@ -4,10 +4,10 @@
 Enables connection to Databricks via API calls.
 """
 
-
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from amplo.api._base import BaseRequestAPI
 
@@ -34,10 +34,7 @@ class DatabricksJobsAPI(BaseRequestAPI):
         Access token (see Databricks > User Settings > Access tokens).
     """
 
-    def __init__(self, host: str, access_token: str):
-        super().__init__(host, access_token)
-
-    def _authorization_header(self) -> dict:
+    def _authorization_header(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.access_token}"}
 
     @classmethod
@@ -71,7 +68,9 @@ class DatabricksJobsAPI(BaseRequestAPI):
         access_token = os.environ[access_token_os]
         return cls(host, access_token)
 
-    def request(self, method: str, action: str, body: dict | None = None) -> dict:
+    def request_json(
+        self, method: str, action: str, body: dict[str, Any] | None = None
+    ) -> dict[str, int | str]:
         """
         Send a request to Databricks.
 
@@ -111,9 +110,9 @@ class DatabricksJobsAPI(BaseRequestAPI):
         limit: int | None = None,
         offset: int | None = None,
         expand_tasks: bool | None = None,
-    ) -> dict:
+    ) -> dict[str, int | str]:
         body = {"limit": limit, "offset": offset, "expand_tasks": expand_tasks}
-        return self.request("get", "2.1/jobs/list", body)
+        return self.request_json("get", "2.1/jobs/list", body)
 
     def list_runs(
         self,
@@ -126,7 +125,7 @@ class DatabricksJobsAPI(BaseRequestAPI):
         job_id: int | None = None,
         start_time_from: int | None = None,
         start_time_to: int | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         body = {
             "limit": limit,
             "offset": offset,
@@ -137,28 +136,30 @@ class DatabricksJobsAPI(BaseRequestAPI):
             "start_time_from": start_time_from,
             "start_time_to": start_time_to,
         }
-        return self.request("get", "2.1/jobs/runs/list", body)
+        return self.request_json("get", "2.1/jobs/runs/list", body)
 
-    def get_job(self, job_id: int) -> dict:
-        return self.request("get", "2.1/jobs/get", {"job_id": job_id})
+    def get_job(self, job_id: int) -> dict[str, int | str]:
+        return self.request_json("get", "2.1/jobs/get", {"job_id": job_id})
 
-    def get_run(self, run_id: int, include_history: bool | None = None) -> dict:
-        body = {"run_id": run_id, include_history: include_history}
-        return self.request("get", "2.1/jobs/runs/get", body)
+    def get_run(
+        self, run_id: int, include_history: bool | None = None
+    ) -> dict[str, str | int]:
+        body = {"run_id": run_id, "include_history": include_history}
+        return self.request_json("get", "2.1/jobs/runs/get", body)
 
     def run_job(
         self,
         job_id: int,
         idempotency_token: str | None = None,
-        notebook_params: dict[str, int | str] | None = None,
+        notebook_params: dict[str, Any] | None = None,
         # Note: more parameters are available
-    ) -> dict:
+    ) -> dict[str, Any]:
         body = {
             "job_id": job_id,
             "idempotency_token": idempotency_token,
             "notebook_params": notebook_params,
         }
-        return self.request("post", "2.1/jobs/run-now", body)
+        return self.request_json("post", "2.1/jobs/run-now", body)
 
-    def cancel_run(self, run_id: int) -> dict:
-        return self.request("post", "2.1/jobs/runs/cancel", {"run_id": run_id})
+    def cancel_run(self, run_id: int) -> dict[str, int | str]:
+        return self.request_json("post", "2.1/jobs/runs/cancel", {"run_id": run_id})

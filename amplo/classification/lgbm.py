@@ -1,10 +1,9 @@
 #  Copyright (c) 2022 by Amplo.
 
-from __future__ import annotations
-
-from typing import Callable
+from typing import Any, Callable
 
 import lightgbm
+import numpy as np
 from lightgbm import LGBMClassifier as _LGBMClassifier
 from sklearn.model_selection import train_test_split
 
@@ -12,7 +11,7 @@ from amplo.classification._base import BaseClassifier
 from amplo.utils import check_dtypes
 
 
-def _validate_lightgbm_callbacks(callbacks) -> list[Callable]:
+def _validate_lightgbm_callbacks(callbacks) -> list[Callable[..., Any]]:
     if not callbacks:
         return []
 
@@ -21,7 +20,7 @@ def _validate_lightgbm_callbacks(callbacks) -> list[Callable]:
         if not isinstance(cb, str):
             raise ValueError(f"Expected a string but got '{cb}' of type '{type(cb)}'.")
 
-        elif cb.startswith("early_stopping_rounds="):
+        if cb.startswith("early_stopping_rounds="):
             n_rounds = int(cb.removeprefix("early_stopping_rounds="))
             valid_callbacks.append(lightgbm.early_stopping(n_rounds, verbose=False))
 
@@ -97,7 +96,9 @@ class LGBMClassifier(BaseClassifier):
 
         super().__init__(model=model, verbose=verbose)
 
-    def _fit(self, x, y=None, **fit_params):
+    def fit(self, x, y=None, **fit_params):
+        self.classes_ = np.unique(y)
+
         # Set up fitting callbacks
         callbacks = _validate_lightgbm_callbacks(self.callbacks)
 
@@ -108,3 +109,5 @@ class LGBMClassifier(BaseClassifier):
         self.model.fit(
             xt, yt, eval_set=[(xv, yv)], callbacks=callbacks, eval_metric="logloss"
         )
+        self.is_fitted_ = True
+        return self

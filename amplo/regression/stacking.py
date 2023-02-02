@@ -8,7 +8,7 @@ from sklearn.svm import SVR
 from sklearn.tree import DecisionTreeRegressor
 
 from amplo.regression._base import BaseRegressor
-from amplo.utils import check_dtypes, get_model
+from amplo.utils import check_dtypes
 
 
 def _get_default_estimators(n_samples=None):
@@ -41,6 +41,8 @@ def _make_estimator_stack(estimators, add_defaults=True, n_samples=None):
     list of (str, estimator)
         Stack of estimators.
     """
+    from amplo.automl.modelling import get_model
+
     check_dtypes(
         ("estimators", estimators, list),
         *[(f"estimators_item: `{est}`", est, str) for est in estimators],

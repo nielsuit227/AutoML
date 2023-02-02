@@ -1,7 +1,5 @@
 #  Copyright (c) 2022 by Amplo.
 
-from __future__ import annotations
-
 import json
 import os
 import time
@@ -13,6 +11,7 @@ from warnings import warn
 
 import joblib
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from shap import TreeExplainer
 from sklearn import metrics
@@ -20,25 +19,24 @@ from sklearn.model_selection import KFold, StratifiedKFold
 
 import amplo
 from amplo.automl.data_processing import DataProcessor
-from amplo.automl.feature_processing import FeatureProcessor
-from amplo.automl.feature_processing.feature_processor import (
+from amplo.automl.feature_processing.feature_processing import (
+    FeatureProcessor,
     get_required_columns,
     translate_features,
 )
 from amplo.automl.grid_search import OptunaGridSearch
-from amplo.automl.interval_analysis import IntervalAnalyser
-from amplo.automl.modelling import Modeller
-from amplo.automl.sequencing import Sequencer
+from amplo.automl.modelling import Modeller, get_model
 from amplo.automl.standardization import Standardizer
-from amplo.base import BasePredictor
-from amplo.base.objects import LoggingMixin
+from amplo.base import BaseEstimator
+from amplo.base.objects import LoggingMixin, Result
 from amplo.observation import DataObserver, ModelObserver
-from amplo.utils import clean_feature_name, get_model, io, logging
+from amplo.utils import clean_feature_name, io, logging
 from amplo.validation import ModelValidator
 
 __all__ = ["Pipeline"]
 
 warnings.filterwarnings("ignore", message="lbfgs failed to converge")
+pd.options.mode.copy_on_write = True
 
 
 class Pipeline(LoggingMixin):
@@ -96,28 +94,6 @@ class Pipeline(LoggingMixin):
     use_wavelets : bool, default: False
         Whether to use wavelet transforms (useful for frequency data)
 
-    # Interval analysis
-    interval_analyse : bool, default: False
-        Whether to use the IntervalAnalyser module.
-
-    # Sequencing
-    sequence : bool, default: False
-        Whether to use the Sequencer module.
-    seq_back : int or list of int, default: 1
-        Input time indices.
-        If int: includes that many samples backward.
-        If list of int: includes all integers within the list.
-    seq_forward : int or list of int, default: 1
-        Output time indices.
-        If int: includes that many samples forward.
-        If list of int: includes all integers within the list.
-    seq_shift : int, default: 0
-        Shift input / output samples in time.
-    seq_diff : {"none", "diff", "log_diff"}, default: "none"
-        Difference the input and output.
-    seq_flat : bool, default: True
-        Whether to return a matrix (True) or a tensor (False).
-
     # Modelling
     standardize : bool, default: False
         Whether to standardize the input/output data.
@@ -173,15 +149,6 @@ class Pipeline(LoggingMixin):
         information_threshold: float = 0.999,
         feature_timeout: int = 3600,
         use_wavelets: bool = False,
-        # Interval analysis
-        interval_analyse: bool = False,
-        # Sequencing
-        sequence: bool = False,
-        seq_back: int | list[int] = 1,
-        seq_forward: int | list[int] = 1,
-        seq_shift: int = 0,
-        seq_diff: str = "none",
-        seq_flat: bool = True,
         # Modelling
         standardize: bool = False,
         cv_shuffle: bool = True,
@@ -198,7 +165,7 @@ class Pipeline(LoggingMixin):
         **kwargs,
     ):
         # Get init parameters for `self.settings`
-        sig, init_locals = signature(self.__init__), locals()
+        sig, init_locals = signature(self.__init__), locals()  # type: ignore[misc]
         init_params = {
             param.name: init_locals[param.name] for param in sig.parameters.values()
         }
@@ -220,14 +187,6 @@ class Pipeline(LoggingMixin):
         # Input checks: advices
         if kwargs:
             warn(f"Got unexpected keyword arguments that are not handled: {kwargs}")
-        if include_output and not sequence:
-            warn("It is strongly advised NOT to include output without sequencing.")
-        if interval_analyse and not standardize:
-            warn(
-                "Data needs to be normalized for the interval analyser, setting "
-                "standardize = True."
-            )
-            standardize = True
 
         # Main settings
         self.main_dir = f"{Path(main_dir)}/"  # assert backslash afterwards
@@ -251,17 +210,6 @@ class Pipeline(LoggingMixin):
         self.information_threshold = information_threshold
         self.feature_timeout = feature_timeout
         self.use_wavelets = use_wavelets
-
-        # Interval analysis
-        self.use_interval_analyser = interval_analyse
-
-        # Sequencing
-        self.sequence = sequence
-        self.sequence_back = seq_back
-        self.sequence_forward = seq_forward
-        self.sequence_shift = seq_shift
-        self.sequence_diff = seq_diff
-        self.sequence_flat = seq_flat
 
         # Modelling
         self.standardize = standardize
@@ -293,95 +241,27 @@ class Pipeline(LoggingMixin):
             self.scorer = None
 
         # Required sub-classes
-        self.data_processor = None
-        self.data_sequencer = None
-        self.interval_analyser = None
-        self.feature_processor = None
-        self.standardizer = None
+        self.data_processor: DataProcessor | None = None
+        self.feature_processor: FeatureProcessor | None = None
+        self.standardizer: Standardizer | None = None
 
         # Instance initiating
-        self.best_model_: BasePredictor | None = None
-        self.best_model_str_: str | None = None
-        self.best_params_: dict[str, Any] | None = None
-        self.best_feature_set_: str | None = None
-        self.best_score_: float | None = None
-        self.feature_sets_: dict[str, list[str]] | None = None
-        self.results_: pd.DataFrame = pd.DataFrame(
-            columns=[
-                "feature_set",
-                "score",
-                "worst_case",
-                "date",
-                "model",
-                "params",
-                "time",
-            ]
-        )
+        self.best_model_: BaseEstimator | None = None
+        self.results_: list[Result] = []
         self.is_fitted_ = False
 
         # Monitoring
         self._prediction_time_: float | None = None
-        self.main_predictors_: dict | None = None
-
-    # User Pointing Functions
-    def load(self):
-        """
-        Restores a pipeline from directory, given main_dir and version.
-        """
-        assert self.main_dir and self.version
-
-        # Load settings
-        settings_path = self.main_dir + "Settings.json"
-        with open(settings_path, "r") as settings:
-            self.load_settings(json.load(settings))
-
-        # Load model
-        model_path = self.main_dir + "Model.joblib"
-        self.load_model(joblib.load(model_path))
-
-    def load_settings(self, settings: dict):
-        """
-        Restores a pipeline from settings.
-
-        Parameters
-        ----------
-        settings : dict
-            Pipeline settings.
-        """
-        # Set parameters
-        settings["pipeline"]["no_dirs"] = True
-        settings["pipeline"]["main_dir"] = self.main_dir
-        self.__init__(**settings["pipeline"])
-        self.settings = settings
-        self.best_model_str_ = settings.get("model")
-        self.best_params_ = settings.get("params", {})
-        self.best_score_ = settings.get("best_score")
-        self.best_features_ = settings.get("features")
-        self.best_feature_set_ = settings.get("feature_set")
-        self.data_processor = DataProcessor().load_settings(settings["data_processing"])
-        self.feature_processor = FeatureProcessor().load_settings(
-            settings["feature_processing"]
-        )
-        self.standardizer = Standardizer().load_settings(
-            settings.get("standardizing", {})
-        )
-
-    def load_model(self, model: BasePredictor):
-        """
-        Restores a trained model
-        """
-        assert type(model).__name__ == self.settings["model"]
-        self.best_model_ = model
-        self.is_fitted_ = True
+        self.main_predictors_: dict[str, float] | None = None
 
     def fit(
         self,
-        data_or_path: np.ndarray | pd.DataFrame | str | Path,
-        target: np.ndarray | pd.Series | str | None = None,
+        data: npt.NDArray[Any] | pd.DataFrame | str | Path,
+        target: npt.NDArray[Any] | pd.Series | str | None = None,
         *,
-        metadata: dict[str, dict] | None = None,
-        model: str | list[str] | None = None,
-        feature_set: str | list[str] | None = None,
+        metadata: dict[str, dict[str, Any]] | None = None,
+        model: str | None = None,
+        feature_set: str | None = None,
     ):
         """
         Fit the full AutoML pipeline.
@@ -392,20 +272,17 @@ class Pipeline(LoggingMixin):
 
         Parameters
         ----------
-        data_or_path : np.ndarray or pd.DataFrame or str or Path
+        data_or_path : npt.NDArray[Any] or pd.DataFrame or str or Path
             Data or path to data. Propagated to `self.data_preparation`.
-        target : np.ndarray or pd.Series or str
+        target : npt.NDArray[Any] or pd.Series or str
             Target data or column name. Propagated to `self.data_preparation`.
         *
         metadata : dict of {int : dict of {str : str or float}}, optional
             Metadata. Propagated to `self.data_preparation`.
-        model : str or list of str, optional
-            Constrain grid search and fitting conclusion to given model(s).
-            Propagated to `self.model_training` and `self.conclude_fitting`.
-        feature_set : str or list of str, optional
-            Constrain grid search and fitting conclusion to given feature set(s).
-            Propagated to `self.model_training` and `self.conclude_fitting`.
-            Options: {rf_threshold, rf_increment, shap_threshold, shap_increment}
+        model : str, optional
+            Limits model training and grid search to a specific model.
+        feature_set : str, optional
+            Limits model training and grid search to a specific feature set.
         params : dict, optional
             Constrain parameters for fitting conclusion.
             Propagated to `self.conclude_fitting`.
@@ -414,17 +291,16 @@ class Pipeline(LoggingMixin):
         self.logger.info(f"\n\n*** Starting Amplo AutoML - {self.name} ***\n\n")
 
         # Reading data
-        data = self._read_data(data_or_path, target, metadata=metadata)
+        data = self._read_data(data, target, metadata=metadata)
 
         # Detect mode (classification / regression)
         self._mode_detector(data)
+
         self._set_subclasses()
         assert (
             self.mode
             and self.objective
             and self.data_processor
-            and self.data_sequencer
-            and self.interval_analyser
             and self.feature_processor
             and self.standardizer
         )
@@ -432,31 +308,20 @@ class Pipeline(LoggingMixin):
         # Preprocess Data
         data = self.data_processor.fit_transform(data)
 
-        # Sequence
-        if self.sequence:
-            data = self.data_sequencer.fit_transform(data)
-
         # Extract and select features
-        data = self.feature_processor.fit_transform(data)
-        self.feature_sets_ = self.feature_processor.feature_sets_
+        data = self.feature_processor.fit_transform(data, feature_set=feature_set)
 
         # Standardize
         if self.standardize:
             data = self.standardizer.fit_transform(data)
 
-        # Interval-analyze data
-        if (
-            self.use_interval_analyser
-            and len(data.index.names) == 2
-            and self.mode == "classification"
-        ):
-            data = self.interval_analyser.fit_transform(data)
+        # Model Training
+        ################
+        for feature_set_, cols in self.feature_processor.feature_sets_.items():
+            if feature_set and feature_set_ != feature_set:
+                continue
 
-        # Model Training #
-        ##################
-        # TODO: add model limitation
-        for feature_set, cols in self.feature_sets_.items():
-            self.logger.info(f"Fitting modeller on: {feature_set}")
+            self.logger.info(f"Fitting modeller on: {feature_set_}")
             feature_data: pd.DataFrame = data[cols + [self.target]]
             results_ = Modeller(
                 target=self.target,
@@ -464,42 +329,44 @@ class Pipeline(LoggingMixin):
                 cv=self.cv,
                 objective=self.objective,
                 verbose=self.verbose,
+                feature_set=feature_set_,
+                model=model,
             ).fit(feature_data)
-            results_["feature_set"] = feature_set
-            self.results_ = self.sort_results(pd.concat([results_, self.results_]))
+            self.results_.extend(results_)
+        self.sort_results()
 
         # Optimize Hyper parameters
-        for model, feature_set in self.grab_grid_search_iterations():
+        for model_, feature_set in self.grid_search_iterations():
             # TODO: implement models limitations
-            assert feature_set in self.feature_sets_
+            assert feature_set in self.feature_processor.feature_sets_
             self.logger.info(
-                f"Starting Hyper Parameter Optimization for {model} on "
+                f"Starting Hyper Parameter Optimization for {model_} on "
                 f"{feature_set} features ({len(data)} samples, "
-                f"{len(self.feature_sets_[feature_set])} features)"
+                f"{len(self.feature_processor.feature_sets_[feature_set])} features)"
             )
             results_ = OptunaGridSearch(
-                get_model(model),
+                get_model(model_),
                 target=self.target,
                 timeout=self.grid_search_timeout,
+                feature_set=feature_set,
                 cv=self.cv,
                 n_trials=self.n_trials_per_grid_search,
                 scoring=self.objective,
                 verbose=self.verbose,
             ).fit(data)
-            results_["feature_set"] = feature_set
-            self.results_ = self.sort_results(
-                pd.concat([self.results_, results_], ignore_index=True)
-            )
+            self.results_.extend(results_)
+        self.sort_results()
 
         # Storing model
         self.store_best(data)
+        assert self.best_model_ is not None
 
         # Observe
         self.settings["data_observer"] = DataObserver().observe(
             data, self.mode, self.target, self.data_processor.dummies_
         )
         self.settings["model_observer"] = ModelObserver().observe(
-            self.best_model_, data, self.target, self.mode  # type: ignore
+            self.best_model_, data, self.target, self.mode
         )
 
         # Finish
@@ -507,104 +374,22 @@ class Pipeline(LoggingMixin):
         self.logger.info("All done :)")
         logging.del_file_handlers()
 
-    def grab_grid_search_iterations(self) -> list[tuple[str, str]]:
-        iterations = []
-        for i in range(self.n_grid_searches):
-            row = self.results_.iloc[i]
-            iterations.append((row["model"], row["feature_set"]))
-        return iterations
-
-    def store_best(self, data: pd.DataFrame):
-        # TODO implement models limitations
-        assert (
-            self.feature_sets_
-            and self.scorer
-            and self.mode
-            and self.data_processor
-            and self.data_sequencer
-            and self.feature_processor
-            and self.standardizer
-        )
-
-        # Gather best results_
-        self.best_score_ = self.results_.iloc[0]["worst_case"]
-        self.best_model_str_ = self.results_.iloc[0]["model"]
-        self.best_feature_set_ = self.results_.iloc[0]["feature_set"]
-        self.best_features_ = self.feature_sets_.get(self.best_feature_set_, [])
-        parsed_params = io.parse_json(self.results_.iloc[0]["params"])
-        assert isinstance(parsed_params, dict)
-        self.best_params_ = parsed_params
-
-        # Train model on all training data
-        self.best_model_ = get_model(self.best_model_str_)
-        self.best_model_.set_params(**self.best_params_)
-        self.best_model_.fit(data[self.best_features_], data[self.target])
-
-        # Prune Data Processor
-        required_features = get_required_columns(
-            self.feature_processor.feature_sets_[self.best_feature_set_],
-            self.feature_processor.numeric_cols_,
-        )
-        self.data_processor.prune_features(required_features)
-
-        # Update pipeline settings
-        self.settings["version"] = self.version
-        self.settings["pipeline"]["verbose"] = self.verbose
-        self.settings["model"] = self.best_model_str_
-        self.settings["params"] = self.best_params_
-        self.settings["feature_set"] = self.best_feature_set_
-        self.settings["features"] = self.best_features_
-        self.settings["data_processing"] = self.data_processor.get_settings()
-        self.settings["feature_processing"] = self.feature_processor.get_settings()
-        if self.standardize:
-            self.settings["standardizing"] = self.standardizer.get_settings()
-        self.settings["best_score"] = self.best_score_
-        self.settings["amplo_version"] = (
-            amplo.__version__ if hasattr(amplo, "__version__") else "dev"  # type: ignore
-        )
-
-        # Validation
-        validator = ModelValidator(
-            target=self.target,
-            cv=self.cv,
-            verbose=self.verbose,
-        )
-        self.settings["validation"] = validator.validate(
-            model=self.best_model_, data=data, mode=self.mode
-        )
-
-        # Return if no_dirs flag is set
-        if self.no_dirs:
-            return
-
-        # Create directory
-        if not os.path.exists(self.main_dir):
-            os.makedirs(self.main_dir)
-
-        # Save model & settings
-        joblib.dump(self.best_model_, self.main_dir + "Model.joblib")
-        with open(self.main_dir + "Settings.json", "w") as settings:
-            json.dump(self.settings, settings, indent=4, cls=io.NpEncoder)
-
     def transform(self, data: pd.DataFrame) -> pd.DataFrame:
         if not self.is_fitted_:
             raise ValueError("Pipeline not yet fitted.")
-        assert self.data_processor and self.feature_processor and self.standardizer
+        assert self.data_processor and self.feature_processor
 
         # Process data
         data = self.data_processor.transform(data)
 
-        # Sequence
-        if self.sequence:
-            warn("Sequencer is temporarily disabled.", DeprecationWarning)
-
         # Convert Features
         data = self.feature_processor.transform(
-            data, feature_set=self.settings["feature_set"]
+            data, feature_set=self.best_feature_set_
         )
 
         # Standardize
         if self.standardize:
+            assert self.standardizer
             data = self.standardizer.transform(data)
 
         # Output
@@ -654,7 +439,7 @@ class Pipeline(LoggingMixin):
 
         return predictions
 
-    def predict_proba(self, data: pd.DataFrame) -> np.ndarray:
+    def predict_proba(self, data: pd.DataFrame) -> npt.NDArray[Any]:
         """
         Returns probabilistic prediction, only for classification.
 
@@ -666,6 +451,7 @@ class Pipeline(LoggingMixin):
         start_time = time.time()
         if not self.is_fitted_:
             raise ValueError("Pipeline not yet fitted.")
+        assert self.best_model_
         if self.mode != "classification":
             raise ValueError("Predict_proba only available for classification")
         if not hasattr(self.best_model_, "predict_proba"):
@@ -680,7 +466,7 @@ class Pipeline(LoggingMixin):
         data = self.transform(data)
 
         # Predict
-        prediction = self.best_model_.predict_proba(data)  # type: ignore -- asserted
+        prediction = self.best_model_.predict_proba(data)
 
         # Stop timer
         self._prediction_time_ = (time.time() - start_time) / len(data) * 1000
@@ -690,13 +476,136 @@ class Pipeline(LoggingMixin):
 
         return prediction
 
-    # Fit functions
+    def load(self):
+        """
+        Restores a pipeline from directory, given main_dir and version.
+        """
+        self.logger.info("Loading pipeline from {self.main_dir}.")
+        assert self.main_dir and self.version
+
+        # Load settings
+        settings_path = self.main_dir + "Settings.json"
+        with open(settings_path, "r") as settings:
+            self.load_settings(json.load(settings))
+
+        # Load model
+        model_path = self.main_dir + "Model.joblib"
+        self.load_model(joblib.load(model_path))
+
+    def load_settings(self, settings: dict[str, Any]):
+        """
+        Restores a pipeline from settings.
+
+        Parameters
+        ----------
+        settings : dict
+            Pipeline settings.
+        """
+        # Set parameters
+        settings["pipeline"]["no_dirs"] = True
+        settings["pipeline"]["main_dir"] = self.main_dir
+        self.__init__(**settings["pipeline"])  # type:ignore
+        self.settings = settings
+        self.results_ = [Result(**json.loads(js)) for js in settings["results"]]
+        self.data_processor = DataProcessor().load_settings(settings["data_processing"])
+        self.feature_processor = FeatureProcessor().load_settings(
+            settings["feature_processing"]
+        )
+        if self.standardize:
+            self.standardizer = Standardizer().load_settings(
+                settings.get("standardizing", {})
+            )
+
+    def load_model(self, model: BaseEstimator):
+        """
+        Restores a trained model
+        """
+        assert type(model).__name__ == self.best_model_str_
+        self.best_model_ = model
+        self.is_fitted_ = True
+
+    # Support functions
+    def grid_search_iterations(self) -> list[tuple[str, str]]:
+        """Takes top `n_grid_searches` models / feature set combi's from results"""
+        return [
+            (self.results_[i].model, self.results_[i].feature_set)
+            for i in range(self.n_grid_searches)
+        ]
+
+    def store_best(self, data: pd.DataFrame):
+        """rranges settings and parameter file."""
+        assert (
+            self.feature_processor
+            and self.feature_processor.feature_sets_
+            and self.scorer
+            and self.mode
+            and self.data_processor
+            and self.standardizer
+        )
+
+        # Train model on all training data
+        best_model_ = get_model(self.best_model_str_)
+        best_model_.set_params(**self.best_params_)
+        best_model_.fit(data[self.best_features_], data[self.target])
+        self.best_model_ = best_model_
+
+        # Prune Data Processor
+        required_features = get_required_columns(
+            self.feature_processor.feature_sets_[self.best_feature_set_]
+        )
+        self.data_processor.prune_features(required_features)
+
+        # Set feature set
+        self.feature_processor.set_feature_set(self.best_feature_set_)
+
+        # Update pipeline settings
+        self.settings["version"] = self.version
+        self.settings["results"] = [r.toJson() for r in self.results_]
+        self.settings["pipeline"]["verbose"] = self.verbose
+        self.settings["data_processing"] = self.data_processor.get_settings()
+        self.settings["feature_processing"] = self.feature_processor.get_settings()
+        if self.standardize:
+            self.settings["standardizing"] = self.standardizer.get_settings()
+        self.settings["best_score"] = self.best_score_
+        self.settings["amplo_version"] = (
+            amplo.__version__ if hasattr(amplo, "__version__") else "dev"
+        )
+
+        # Validation
+        validator = ModelValidator(
+            target=self.target,
+            cv=self.cv,
+            verbose=self.verbose,
+        )
+        self.settings["validation"] = validator.validate(
+            model=best_model_, data=data, mode=self.mode
+        )
+
+        # Return if no_dirs flag is set
+        if self.no_dirs:
+            return
+
+        # Create directory
+        if not os.path.exists(self.main_dir):
+            os.makedirs(self.main_dir)
+
+        # Save model & settings
+        joblib.dump(self.best_model_, self.main_dir + "Model.joblib")
+        with open(self.main_dir + "Settings.json", "w") as settings:
+            json.dump(self.settings, settings, indent=4, cls=io.NpEncoder)
+
     def _read_data(
         self,
-        data_or_path: np.ndarray | pd.DataFrame | str | Path,
-        target: list | tuple | np.ndarray | pd.Series | str | Path | None = None,
+        data_or_path: npt.NDArray[Any] | pd.DataFrame | str | Path,
+        target: list[Any]
+        | tuple[Any]
+        | npt.NDArray[Any]
+        | pd.Series
+        | str
+        | Path
+        | None = None,
         *,
-        metadata: dict[str, dict] | None = None,
+        metadata: dict[str, dict[str, Any]] | None = None,
     ) -> pd.DataFrame:
         """
         Read and validate data.
@@ -715,14 +624,14 @@ class Pipeline(LoggingMixin):
 
         Note: There's three combinations of data_or_path and target
         1. if data_or_path = pd.DataFrame, target = pd.Series | None | str
-        2. if data_or_path = np.ndarray, target = np.ndarray | pd.Series
+        2. if data_or_path = npt.NDArray[Any], target = npt.NDArray[Any] | pd.Series
         3. if data_or_path = path | str, target = path | str | None
 
         Parameters
         ----------
-        data_or_path : np.ndarray or pd.DataFrame or str or Path
+        data_or_path : npt.NDArray[Any] or pd.DataFrame or str or Path
             Data or path to data.
-        target : np.ndarray or pd.Series or str
+        target : npt.NDArray[Any] or pd.Series or str
             Target data or column name or directory name
         *
         metadata : dict of {int : dict of {str : str or float}}, optional
@@ -733,8 +642,10 @@ class Pipeline(LoggingMixin):
         Pipeline
             The same object but with injected data.
         """
+        self.logger.info("Reading data.")
         # 1. if data_or_path = pd.DataFrame, target = ArrayLike | str | None
         if isinstance(data_or_path, pd.DataFrame):
+            self.logger.debug("Detected pandas dataframe. Checking target.")
             data = data_or_path
             # If it's a series, we check index and take the name
             if isinstance(target, pd.Series):
@@ -777,6 +688,7 @@ class Pipeline(LoggingMixin):
 
         # 2. if data_or_path = np.ndarray, target = ArrayLike
         elif isinstance(data_or_path, np.ndarray):
+            self.logger.debug("Detected numpy array. Checking target.")
             if not isinstance(target, (np.ndarray, pd.Series, list, tuple)):
                 raise NotImplementedError(
                     "If data is ndarray, target should be ArrayLike."
@@ -793,6 +705,7 @@ class Pipeline(LoggingMixin):
 
         # 3. if data_or_path = path | str, target = path | str | None
         elif isinstance(data_or_path, (str, Path)):
+            self.logger.debug("Detected path. ")
             if isinstance(target, (str, Path)):
                 self.target = str(target)
             elif not isinstance(target, type(None)):
@@ -821,6 +734,9 @@ class Pipeline(LoggingMixin):
 
         # Finish
         self.settings["file_metadata"] = metadata or {}
+        self.logger.info(
+            f"Data contains {len(data)} samples and {len(data.keys())} columns."
+        )
 
         return data
 
@@ -836,6 +752,8 @@ class Pipeline(LoggingMixin):
         ----------
         data : pd.DataFrame
         """
+        self.logger.debug("Detecting mode.")
+
         # Only run if mode is not provided
         if self.mode in ("classification", "regression"):
             return
@@ -869,6 +787,7 @@ class Pipeline(LoggingMixin):
         during class initialization due to certain attributes which
         are data dependent. Data is only known at calling .fit().
         """
+        self.logger.debug("Setting subclasses.")
         assert self.mode
         self.data_processor = DataProcessor(
             target=self.target,
@@ -878,17 +797,6 @@ class Pipeline(LoggingMixin):
             outlier_removal=self.outlier_removal,
             z_score_threshold=self.z_score_threshold,
             verbose=self.verbose,
-        )
-        self.data_sequencer = Sequencer(
-            target=self.target,
-            back=self.sequence_back,
-            forward=self.sequence_forward,
-            shift=self.sequence_shift,
-            diff=self.sequence_diff,
-            verbose=self.verbose,
-        )
-        self.interval_analyser = IntervalAnalyser(
-            target=self.target, verbose=self.verbose
         )
         self.feature_processor = FeatureProcessor(
             target=self.target,
@@ -903,7 +811,82 @@ class Pipeline(LoggingMixin):
             target=self.target, mode=self.mode, verbose=self.verbose
         )
 
-    # Getter Functions / Properties
+    # Support Functions
+    def sort_results(self) -> list[Result]:
+        self.results_.sort(reverse=True)
+        return self.results_
+
+    def _get_main_predictors(self, data: pd.DataFrame) -> dict[str, float]:
+        """
+        Using Shapely Additive Explanations, this function calculates the main
+        predictors for a given prediction and sets them into the class' memory.
+        """
+        # shap.TreeExplainer is not implemented for all models. So we try and fall back
+        # to the feature importance given by the feature processor.
+        # Note that the error would be raised when calling `TreeExplainer(best_model_)`.
+        try:
+            # Get shap values
+            best_model_ = self.best_model_
+            if best_model_ is not None and hasattr(best_model_, "model"):
+                best_model_ = best_model_.model
+            # Note: The error would be raised at this point.
+            #  So we have not much overhead.
+            shap_values = np.array(TreeExplainer(best_model_).shap_values(data))
+
+            # Average over classes if necessary
+            if shap_values.ndim == 3:
+                shap_values = np.mean(np.abs(shap_values), axis=0)
+
+            # Average over samples
+            shap_values = np.mean(np.abs(shap_values), axis=0)
+            shap_values /= shap_values.sum()  # normalize to sum up to 1
+            idx_sort = np.flip(np.argsort(shap_values))
+
+            # Set class attribute
+            main_predictors = {
+                col: score
+                for col, score in zip(data.columns[idx_sort], shap_values[idx_sort])
+            }
+
+        except Exception:
+            # Get shap feature importance
+            assert self.feature_processor
+            fi = self.feature_processor.feature_importance_.get("rf", {})
+
+            # Use only those columns that are present in the data
+            main_predictors = {}
+            missing_columns = []
+            for col in data:
+                if col in fi:
+                    main_predictors[col] = fi[col]
+                else:
+                    missing_columns.append(col)
+
+            if missing_columns:
+                warn(
+                    f"Some data column names are missing in the shap feature "
+                    f"importance dictionary: {missing_columns}"
+                )
+
+        # Some feature names are obscure since they come from the feature processing
+        # module. Here, we relate the feature importance back to the original features.
+        translation = translate_features(list(main_predictors))
+        self.main_predictors_ = {}
+        for key, features in translation.items():
+            for feat in features:
+                self.main_predictors_[feat] = (
+                    self.main_predictors_.get(feat, 0.0) + main_predictors[key]
+                )
+        # Normalize
+        total_score = np.sum(list(self.main_predictors_.values()))
+        for key in self.main_predictors_:
+            self.main_predictors_[key] /= total_score
+
+        self.settings["main_predictors"] = self.main_predictors_
+
+        return self.main_predictors_
+
+    # Properties
     @property
     def cv(self):
         """
@@ -932,81 +915,34 @@ class Pipeline(LoggingMixin):
         else:
             raise NotImplementedError("Unknown Mode.")
 
-    # Support Functions
-    @staticmethod
-    def sort_results(results_: pd.DataFrame) -> pd.DataFrame:
-        return results_.sort_values("worst_case", ascending=False)
+    @property
+    def best_features_(self) -> list[str] | None:
+        if len(self.results_) == 0:
+            return 0
+        return self.feature_processor.feature_selector.feature_sets_[
+            self.best_feature_set_
+        ]
 
-    def _get_main_predictors(self, data):
-        """
-        Using Shapely Additive Explanations, this function calculates the main
-        predictors for a given prediction and sets them into the class' memory.
-        """
-        # shap.TreeExplainer is not implemented for all models. So we try and fall back
-        # to the feature importance given by the feature processor.
-        # Note that the error would be raised when calling `TreeExplainer(best_model_)`.
-        try:
-            # Get shap values
-            best_model_ = self.best_model_
-            if type(best_model_).__module__.startswith("amplo"):
-                best_model_ = best_model_.model  # type: ignore
-            # Note: The error would be raised at this point.
-            #  So we have not much overhead.
-            shap_values = np.array(TreeExplainer(best_model_).shap_values(data))
+    @property
+    def best_model_str_(self) -> str | None:
+        if len(self.results_) == 0:
+            return None
+        return self.results_[0].model
 
-            # Average over classes if necessary
-            if shap_values.ndim == 3:
-                shap_values = np.mean(np.abs(shap_values), axis=0)
+    @property
+    def best_feature_set_(self) -> str | None:
+        if len(self.results_) == 0:
+            return None
+        return self.results_[0].feature_set
 
-            # Average over samples
-            shap_values = np.mean(np.abs(shap_values), axis=0)
-            shap_values /= shap_values.sum()  # normalize to sum up to 1
-            idx_sort = np.flip(np.argsort(shap_values))
+    @property
+    def best_params_(self) -> dict[str, Any] | None:
+        if len(self.results_) == 0:
+            return None
+        return io.parse_json(self.results_[0].params)
 
-            # Set class attribute
-            main_predictors = {
-                col: score
-                for col, score in zip(data.columns[idx_sort], shap_values[idx_sort])
-            }
-
-        except Exception:  # the exception can't be more specific  # noqa
-            # Get shap feature importance
-            assert self.feature_processor
-            fi = self.feature_processor.feature_importance_.get("rf", {})
-
-            # Use only those columns that are present in the data
-            main_predictors = {}
-            missing_columns = []
-            for col in data:
-                if col in fi:
-                    main_predictors[col] = fi[col]
-                else:
-                    missing_columns.append(col)
-
-            if missing_columns:
-                warn(
-                    f"Some data column names are missing in the shap feature "
-                    f"importance dictionary: {missing_columns}"
-                )
-
-        # Some feature names are obscure since they come from the feature processing
-        # module. Here, we relate the feature importance back to the original features.
-        translation = translate_features(list(main_predictors))
-        scores = {}
-        for key, features in translation.items():
-            for feat in features:
-                scores[feat] = scores.get(feat, 0.0) + main_predictors[key]
-        # Normalize
-        total_score = np.sum(list(scores.values()))
-        for key in scores:
-            scores[key] /= total_score
-
-        # Set attribute
-        self.main_predictors_ = scores
-
-        # Add to settings: [{"feature": "feature_name", "score": 1}, ...]
-        scores_df = pd.DataFrame({"feature": scores.keys(), "score": scores.values()})
-        scores_df.sort_values("score", ascending=False, inplace=True)
-        self.settings["main_predictors"] = scores_df.to_dict("records")
-
-        return scores
+    @property
+    def best_score_(self) -> float | None:
+        if len(self.results_) == 0:
+            return None
+        return self.results_[0].worst_case

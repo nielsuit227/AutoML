@@ -2,6 +2,8 @@
 
 from copy import deepcopy
 
+import pandas as pd
+
 from amplo.regression._base import BaseRegressor
 
 
@@ -54,11 +56,14 @@ class PartialBoostingRegressor(BaseRegressor):
         else:
             raise AttributeError(f"Unsupported model {model_name}")
 
-    def _predict(self, x, y=None, **kwargs):
+    def fit(self, x: pd.DataFrame, y: pd.Series, **kwargs):
+        return self.model.fit(x, y, **kwargs)
+
+    def predict(self, x: pd.DataFrame, y: pd.Series | None = None, **kwargs):
         return self.model.predict(x, **kwargs, **self._get_prediction_kwargs())
 
-    @classmethod
-    def n_estimators(cls, model):
+    @staticmethod
+    def n_estimators(model):
         model_name = type(model).__name__
         if model_name in ("AdaBoostRegressor", "GradientBoostingRegressor"):
             return len(model.estimators_)

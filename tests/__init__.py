@@ -1,15 +1,15 @@
 #  Copyright (c) 2022 by Amplo.
-from __future__ import annotations
-
 import shutil
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
-from amplo.automl import Modeller
-from amplo.base import BasePredictor
+from amplo.automl.modelling import Modeller
+from amplo.base import BaseEstimator
 
 __all__ = [
     "rmtree",
@@ -80,14 +80,14 @@ def create_data_frames(n_samples, n_features):
     return df1, df2
 
 
-def create_test_folders(directory: Path | str, n_samples, n_features):
+def create_test_folders(directory: Path | str, n_samples: int, n_features: int, n_files: int = 10):
     directory = Path(directory)
     # Make directories
     for sub_folder in ("Class_1", "Class_2"):
         (directory / sub_folder).mkdir(exist_ok=True, parents=True)
 
     # Create and save dataframes
-    for i in range(140):
+    for i in range(n_files):
         df1, df2 = create_data_frames(n_samples, n_features)
         df1.to_parquet(
             directory / f"Class_1/Log_{i}.parquet", index=False, engine="pyarrow"
@@ -101,7 +101,7 @@ def create_test_folders(directory: Path | str, n_samples, n_features):
 # Dummies
 
 
-class _DummyPredictor(BasePredictor):
+class _DummyPredictor(BaseEstimator):
     """
     Dummy predictor for testing.
 
@@ -111,13 +111,15 @@ class _DummyPredictor(BasePredictor):
         Predicting mode ("classification" or "regression").
     """
 
-    _dummy_classifier = None
-    _dummy_regressor = None
+    _dummy_classifier: type[BaseEstimator]
+    _dummy_regressor: type[BaseEstimator]
 
     def __init__(self, mode):
+        super().__init__()
         assert self._dummy_classifier is not None, "Dummy not set"
         assert self._dummy_regressor is not None, "Dummy not set"
 
+        self.predictor: BaseEstimator
         if mode == "classification":
             self.predictor = self._dummy_classifier()
         elif mode == "regression":
@@ -125,28 +127,22 @@ class _DummyPredictor(BasePredictor):
         else:
             raise ValueError("Invalid predictor mode.")
 
-    def fit(self, x, y):
+    def fit(self, x: pd.DataFrame, y: pd.Series):
         return self.predictor.fit(x, y)
 
-    def predict(self, x):
+    def predict(self, x: pd.DataFrame):
         return self.predictor.predict(x)
 
-    def predict_proba(self, x):
+    def predict_proba(self, x: pd.DataFrame, *args, **kwargs):
+        if not hasattr(self.predictor, "predict_proba"):
+            raise ValueError("Estimator has no 'predict_proba'.")
         return self.predictor.predict_proba(x)
 
-    @property
-    def classes_(self):
-        if hasattr(self.predictor, "classes"):
-            return self.predictor.classes
 
-
-class _RandomClassifier(BasePredictor):
+class _RandomClassifier(BaseEstimator):
     """
     Dummy classifier for testing.
     """
-
-    def __init__(self):
-        self.classes_ = None
 
     def fit(self, x, y):
         self.classes_ = np.unique(y)
@@ -162,12 +158,13 @@ class _RandomClassifier(BasePredictor):
         return proba * (1.0 / proba.sum(1)[:, np.newaxis])  # normalize
 
 
-class _RandomRegressor(BasePredictor):
+class _RandomRegressor(BaseEstimator):
     """
     Dummy regressor for testing.
     """
 
     def __init__(self):
+        super().__init__()
         self.range = None
 
     def fit(self, x, y):
@@ -183,18 +180,18 @@ class RandomPredictor(_DummyPredictor):
     _dummy_regressor = _RandomRegressor
 
 
-class _OverfitClassifier(BasePredictor):
+class _OverfitClassifier(BaseEstimator):
     """
     Dummy classifier for testing. Returns the class if present in the data, else
     predicts 0
     """
 
     def __init__(self):
-        self.classes_: np.ndarray | None = None
-        self.x = None
-        self.y = None
+        super().__init__()
+        self.x: npt.NDArray[Any] | None = None
+        self.y: pd.Series | None = None
 
-    def fit(self, x, y):
+    def fit(self, x: pd.DataFrame, y: pd.Series):
         self.x = x.to_numpy()
         self.y = y
         self.classes_ = y.unique()
@@ -228,12 +225,13 @@ class _OverfitClassifier(BasePredictor):
         return np.array(yt)
 
 
-class _OverfitRegressor(_DummyPredictor):
+class _OverfitRegressor(BaseEstimator):
     """
     Dummy regressor for testing.
     """
 
     def __init__(self):
+        super().__init__()
         self.x = None
         self.y = None
 
