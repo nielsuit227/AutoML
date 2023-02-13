@@ -1,7 +1,5 @@
 #  Copyright (c) 2022 by Amplo.
 
-from __future__ import annotations
-
 import warnings
 
 import pandas as pd
@@ -10,6 +8,7 @@ from sklearn.feature_selection import r_regression  # pearson coefficient
 from sklearn.preprocessing import LabelEncoder
 
 from amplo.utils.util import check_dtypes
+
 __all__ = [
     "influx_query_to_df",
     "check_dataframe_quality",

@@ -1,18 +1,14 @@
 #  Copyright (c) 2022 by Amplo.
-from __future__ import annotations
 
 import logging
 import re
 import warnings
+from collections.abc import Generator
 from typing import Any
-
-import pandas as pd
-import polars as pl
 
 __all__ = [
     "hist_search",
     "clean_feature_name",
-    "clean_column_names",
     "check_dtypes",
     "unique_ordered_list",
 ]
@@ -101,41 +97,18 @@ def clean_feature_name(feature_name: str | int) -> str:
     return re.sub("[^a-z0-9]+", "_", feature_name.lower()).strip("_")
 
 
-def clean_column_names(data: pd.DataFrame | pl.DataFrame) -> dict[str, str]:
+def check_dtype(name: str, value: Any, typ: type | tuple[type, ...]) -> None:
     """
-    Cleans column names in place.
-
-    Notes
-    -----
-    This used to take care of duplicate columns after cleaning the feature names which
-    is no longer the case, and the data processor should take care of duplicate columns.
-
-    Parameters
-    ----------
-    data : pd.DataFrame
-        Data to be cleaned.
-
-    Returns
-    -------
-    pd.DataFrame
-        Same data but with cleaned column names.
-    dict of {str : str}
-        Dictionary which indicates the renaming.
-    """
-    # Make first renaming attempt. May create duplicated names.
-    renaming = pd.Series({old: clean_feature_name(old) for old in data.columns})
-    return data.rename(columns=renaming), renaming.to_dict()
-
-
-def check_dtypes(*arg: tuple[str, Any, type | tuple[type, ...]]):
-    """
-    Checks all dtypes of given list.
+    Checks all dtype.
 
     Parameters
     ----------
     name : str
+        Parameter name, required for properly raising the error.
     value : Any
-    typ : type | tuple[type, ...]
+        Parameter value to be checked.
+    typ : type
+        Required parameter type.
 
     Returns
     -------
@@ -143,26 +116,55 @@ def check_dtypes(*arg: tuple[str, Any, type | tuple[type, ...]]):
 
     Examples
     --------
-    Check a parameter:
-    >>> check_dtypes("var1", 123, int)  # tuple
+    >>> check_dtype("var1", 123, int)
 
     Raises
     ------
-    ValueError
-        If any given constraint is not fulfilled.
+    TypeError
+        If given type constraint is not fulfilled.
     """
 
-    def check_dtype(name: str, value: Any, typ: type | tuple[type, ...]):
-        if not isinstance(value, typ):
-            msg = f"Invalid dtype for argument `{name}`: {type(value).__name__}"
-            if isinstance(typ, tuple):
-                msg += f", expected {', '.join(t.__name__ for t in typ)}"
-            else:
-                msg += f", expected {typ.__name__}"
-            raise TypeError(msg)
+    if not isinstance(value, typ):
+        msg = f"Invalid dtype for argument '{name}': {type(value).__name__}"
+        raise TypeError(msg)
 
-    if isinstance(arg[0], str):
-        check_dtype(arg[0], arg[1], arg[2])
-    else:
-        for check in arg:
-            check_dtype(check[0], check[1], check[2])
+
+_DTCheckType = tuple[str, Any, "type | tuple[type, ...]"]
+
+
+def check_dtypes(
+    *checks: _DTCheckType | Generator[_DTCheckType, None, None] | list[_DTCheckType]
+) -> None:
+    """
+    Checks all dtypes.
+
+    Parameters
+    ----------
+    checks : _DTCheckType | Generator[_DTCheckType, None, None] | list[_DTCheckType]
+        Tuples, generators or lists of (name, parameter, allowed types) to be checked.
+
+    Returns
+    -------
+    None
+
+    Examples
+    --------
+    Check a single parameter:
+    >>> check_dtypes(("var1", 123, int))
+
+    Check multiple:
+    >>> check_dtypes(("var1", 123, int), ("var2", 1.0, (int, float)))  # tuples
+    >>> check_dtypes(("var", var, str) for var in ["a", "b"])  # generator
+    >>> check_dtypes([("var", var, str) for var in ["a", "b"]])  # list
+
+    Raises
+    ------
+    TypeError
+        If any given type constraint is not fulfilled.
+    """
+
+    for check in checks:
+        if isinstance(check, (list, Generator)):
+            check_dtypes(*check)
+        else:
+            check_dtype(*check)

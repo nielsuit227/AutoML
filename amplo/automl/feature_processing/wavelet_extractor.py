@@ -33,8 +33,6 @@ class WaveletExtractor(BaseFeatureExtractor):
     verbose : int
     """
 
-    _add_to_settings = ["target", "strategy", "timeout", "peak_freqs_", "features_"]
-
     def __init__(
         self,
         wavelets: list[str] | None = None,

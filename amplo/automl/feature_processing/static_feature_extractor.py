@@ -31,13 +31,6 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
         Verbosity for logger.
     """
 
-    _add_to_settings = [
-        "means_",
-        "stds_",
-        "centers_",
-        *BaseFeatureExtractor._add_to_settings,
-    ]
-
     def __init__(
         self, target: str = "", mode: str = "classification", verbose: int = 1
     ):

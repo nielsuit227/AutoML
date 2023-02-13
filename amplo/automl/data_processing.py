@@ -1,19 +1,18 @@
 #  Copyright (c) 2022 by Amplo.
 
-from __future__ import annotations
-
 import datetime
 from collections import defaultdict
 from typing import Any
 
 import dateutil
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import polars as pl
 from sklearn.exceptions import NotFittedError
 from sklearn.preprocessing import LabelEncoder
 
-from amplo.base import LoggingMixin
+from amplo.base import BaseTransformer, LoggingMixin
 from amplo.utils.data import pandas_to_polars, polars_to_pandas
 from amplo.utils.util import check_dtypes, clean_feature_name
 
@@ -69,7 +68,7 @@ def pl_masked_fill(
     return out
 
 
-class DataProcessor(LoggingMixin):
+class DataProcessor(BaseTransformer, LoggingMixin):
     """
     Preprocessor. Cleans a dataset into a workable format.
 
@@ -110,8 +109,8 @@ class DataProcessor(LoggingMixin):
         z_score_threshold: int = 4,
         verbose: int = 1,
     ):
-
-        super().__init__(verbose=verbose)
+        BaseTransformer.__init__(self)
+        LoggingMixin.__init__(self, verbose=verbose)
 
         # Type checks
         check_dtypes(
@@ -160,7 +159,7 @@ class DataProcessor(LoggingMixin):
         self.means_: pd.Series | None = None
         self.stds_: pd.Series | None = None
         self.label_encodings_: list[str] = []
-        self.rename_dict_: dict[str, str] | None = None
+        self.rename_dict_: dict[str, str]
 
         # Info for Documenting
         self.is_fitted_ = False
@@ -230,7 +229,9 @@ class DataProcessor(LoggingMixin):
         pl_data = self.clean_column_names(pl_data, work_index_names, fit=fit)
 
         if fit:
-            pl_data = self.remove_duplicates(pl_data, rows=self.drop_duplicate_rows)
+            pl_data = self.remove_duplicates(
+                pl_data, work_index_names, rows=self.drop_duplicate_rows
+            )
             pl_data = self.infer_data_types(pl_data, work_index_names)
         else:
             pl_data = self._impute_columns(pl_data)
@@ -258,76 +259,6 @@ class DataProcessor(LoggingMixin):
             self.logger.info("Data processor finished transforming.")
 
         return data
-
-    def get_settings(self) -> dict[str, Any]:
-        """
-        Get settings to recreate fitted object.
-        """
-        if not self.is_fitted_:
-            raise NotFittedError
-
-        settings = {
-            "target": self.target,
-            "include_output": self.include_output,
-            "drop_datetime": self.drop_datetime,
-            "drop_constants": self.drop_constants,
-            "drop_duplicate_rows": self.drop_duplicate_rows,
-            "missing_values": self.missing_values,
-            "outlier_removal": self.outlier_removal,
-            "z_score_threshold": self.z_score_threshold,
-            "rename_dict_": self.rename_dict_,
-            "num_cols_": self.num_cols_,
-            "bool_cols_": self.bool_cols_,
-            "date_cols_": self.date_cols_,
-            "cat_cols_": self.cat_cols_,
-            "label_encodings_": self.label_encodings_,
-            "means_": (
-                self.means_.to_json() if isinstance(self.means_, pd.Series) else None
-            ),
-            "stds_": (
-                self.stds_.to_json() if isinstance(self.stds_, pd.Series) else None
-            ),
-            "q1_": self.q1_.to_json() if isinstance(self.q1_, pd.Series) else None,
-            "q3_": self.q3_.to_json() if isinstance(self.q3_, pd.Series) else None,
-            "dummies_": self.dummies_,
-            "imputed_missing_values_": self.imputed_missing_values_,
-            "removed_outliers_": self.removed_outliers_,
-            "removed_constant_columns_": self.removed_constant_columns_,
-            "removed_duplicate_rows_": self.removed_duplicate_rows_,
-            "removed_duplicate_columns_": self.removed_duplicate_columns_,
-        }
-        return settings
-
-    def load_settings(self, settings: dict[str, Any]):
-        """
-        Loads settings from dictionary and recreates a fitted object
-        """
-        self.logger.debug("Loading data processor settings.")
-
-        self.target = settings.get("target")
-        self.rename_dict_ = settings.get("rename_dict_", {})
-        self.num_cols_ = settings.get("num_cols_", settings.get("num_cols", []))
-        self.bool_cols_ = settings.get("bool_cols_", settings.get("bool_cols", []))
-        self.date_cols_ = settings.get("date_cols_", settings.get("date_cols", []))
-        self.cat_cols_ = settings.get("cat_cols_", settings.get("cat_cols", []))
-        self.label_encodings_ = settings.get("label_encodings_", [])
-        self.include_output = settings.get("include_output", True)
-        self.drop_datetime = settings.get("drop_datetime", False)
-        self.drop_constants = settings.get("drop_constants", False)
-        self.drop_duplicate_rows = settings.get("drop_duplicate_rows", False)
-        self.missing_values = settings.get("missing_values", [])
-        self.outlier_removal = settings.get("outlier_removal", [])
-        self.z_score_threshold = settings.get("z_score_threshold", [])
-        self.means_ = settings.get("means_", settings.get("_means", None))
-        self.stds_ = settings.get("stds_", settings.get("_stds", None))
-        self.q1_ = settings.get("q1_", settings.get("_q1", None))
-        self.q3_ = settings.get("q3_", settings.get("_q3", None))
-        for key in ["means_", "stds_", "q1_", "q3_"]:
-            if getattr(self, key):
-                setattr(self, key, pd.read_json(getattr(self, key), typ="series"))
-        self.dummies_ = settings.get("dummies_", settings.get("dummies", {}))
-        self.is_fitted_ = True
-        return self
 
     def clean_column_names(
         self, data: pl.DataFrame, index_cols: list[str], fit: bool = False
@@ -379,8 +310,8 @@ class DataProcessor(LoggingMixin):
             inv_rename_dict[new_name].append(old_name)
 
         # Check out which renamings introduce duplicates (not allowed by polars!)
-        safe_rename_dict = {}
-        duplicated_clean = set()
+        safe_rename_dict: dict[str, str] = {}
+        duplicated_clean: set[str] = set()
         for old_name, new_name in self.rename_dict_.items():
             if len(inv_rename_dict[new_name]) > 1:
                 duplicated_clean = duplicated_clean.union({new_name})
@@ -420,7 +351,9 @@ class DataProcessor(LoggingMixin):
         self.logger.debug("Finished cleaning column names.")
         return data
 
-    def remove_duplicates(self, data: pl.DataFrame, rows: bool = False) -> pl.DataFrame:
+    def remove_duplicates(
+        self, data: pl.DataFrame, index_names: list[str], rows: bool = False
+    ) -> pl.DataFrame:
         """
         Removes duplicate columns and rows.
 
@@ -428,6 +361,8 @@ class DataProcessor(LoggingMixin):
         ----------
         data : pl.DataFrame
             Input data
+        index_names : list[str]
+            Column names of the index columns.
         rows : bool
             Whether to remove duplicate rows. This is only recommended with data that
             has no temporal structure, and only for training data.
@@ -439,10 +374,8 @@ class DataProcessor(LoggingMixin):
 
         # Remove duplicate rows
         if rows:
-            subset = []
-            data = data.unique(
-                subset=subset
-            )  # equivalent of 'pandas.drop_duplicates()'
+            subset = [c for c in data.columns if c not in index_names]
+            data = data.unique(subset=subset)  # equivalent of 'pandas.drop_duplicates'
 
         # Note
         self.removed_duplicate_rows = rdr = n_rows - data.shape[0]
@@ -646,7 +579,7 @@ class DataProcessor(LoggingMixin):
         data = data.with_columns([*cat_data])
 
         # One-hot encode each categorical column, including 'null's
-        self.dummies_: dict[str, list[str]] = {}
+        self.dummies_ = {}
         for col in self.cat_cols_:
             # Get one-hot encoding (dummies). Note that we have already cleaned it.
             series = data.drop_in_place(col)  # 'pop' column
@@ -930,7 +863,7 @@ class DataProcessor(LoggingMixin):
             )
             return data
 
-    def decode_labels(self, data: np.ndarray) -> pd.Series:
+    def decode_labels(self, data: npt.NDArray[Any]) -> pd.Series:
         """
         Decode labels from numerical dtype to original value
 
@@ -1008,6 +941,9 @@ class DataProcessor(LoggingMixin):
             Required features (NOTE: include required features for extracted)
         """
         self.logger.debug("Pruning dataprocessor features.")
+
+        if not self.is_fitted_:
+            raise NotFittedError()
 
         hash_features = {k: 0 for k in features}
         self.date_cols_ = [f for f in self.date_cols_ if f in hash_features]

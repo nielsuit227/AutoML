@@ -1,4 +1,5 @@
 #  Copyright (c) 2022 by Amplo.
+
 from copy import deepcopy
 from typing import Any
 from warnings import warn
@@ -7,15 +8,17 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from amplo.base import LoggingMixin
+from amplo.base import BaseTransformer, LoggingMixin
 from amplo.base.exceptions import NotFittedError
 
 
-class Standardizer(LoggingMixin):
+class Standardizer(BaseTransformer, LoggingMixin):
     def __init__(
         self, target: str | None = None, mode: str = "classification", verbose: int = 1
     ):
-        super().__init__(verbose=verbose)
+        BaseTransformer.__init__(self)
+        LoggingMixin.__init__(self, verbose=verbose)
+
         if mode not in ["classification", "regression"]:
             raise ValueError(
                 "Invalid mode. Pick from 'classification' and 'regression'"
@@ -87,23 +90,3 @@ class Standardizer(LoggingMixin):
             raise ValueError("Unequal columns and provided column strings.")
         data = data * self.stds_ + self.means_
         return pd.Series(data)
-
-    def get_settings(self):
-        if not self.is_fitted_:
-            raise ValueError("Object is not yet fitted.")
-        assert self.cols_ and self.means_ is not None and self.stds_ is not None
-        return {
-            "target": self.target,
-            "mode": self.mode,
-            "cols_": self.cols_,
-            "means_": self.means_.to_json(),
-            "stds_": self.stds_.to_json(),
-        }
-
-    def load_settings(self, settings: dict[str, Any]):
-        self.cols_ = settings.get("cols_", [])
-        self.means_ = settings.get("means_")
-        self.stds_ = settings.get("stds_")
-        self.mode = settings["mode"]
-        self.target = settings.get("target")
-        return self

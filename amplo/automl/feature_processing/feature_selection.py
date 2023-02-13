@@ -45,16 +45,6 @@ class FeatureSelector(BaseTransformer, LoggingMixin):
     verbose : int
     """
 
-    _add_to_settings = [
-        "target",
-        "mode",
-        "selection_cutoff",
-        "selection_increment",
-        "feature_set_",
-        "feature_sets_",
-        "feature_importance_",
-    ]
-
     def __init__(
         self,
         target: str,
@@ -81,7 +71,7 @@ class FeatureSelector(BaseTransformer, LoggingMixin):
         self.selection_increment = selection_increment
         self.analyse_feature_sets = analyse_feature_sets
 
-        self.feature_set_: str | None = feature_set
+        self.feature_set: str | None = feature_set
         self.feature_sets_: dict[str, list[str]] = {}
         self.feature_importance_: dict[str, dict[str, float]] = {}
 
@@ -95,10 +85,10 @@ class FeatureSelector(BaseTransformer, LoggingMixin):
         data : pd.DataFrame
         """
         self.logger.info("Fitting feature selector.")
-        if self.feature_set_:
-            if "rf" in self.feature_set_:
+        if self.feature_set:
+            if "rf" in self.feature_set:
                 self.select_gini_impurity(data)
-            elif "shap" in self.feature_set_:
+            elif "shap" in self.feature_set:
                 self.select_shap(data)
             else:
                 raise ValueError("Unknown provided feature set")
@@ -131,8 +121,8 @@ class FeatureSelector(BaseTransformer, LoggingMixin):
 
         # Update feature set
         if feature_set:
-            self.feature_set_ = feature_set
-        elif not self.feature_set_:
+            self.feature_set = feature_set
+        elif not self.feature_set:
             warn("Feature set not given and not set, returning all features.")
 
         # Features_ is given from feature_set, so we can directly return
@@ -242,9 +232,9 @@ class FeatureSelector(BaseTransformer, LoggingMixin):
     @property
     def features_(self) -> list[str]:
         """Returns the features of the current feature set"""
-        if self.feature_set_ is None:
+        if self.feature_set is None:
             return self.all_features
-        return self.feature_sets_[self.feature_set_]
+        return self.feature_sets_[self.feature_set]
 
     @property
     def all_features(self) -> list[str]:

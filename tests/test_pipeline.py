@@ -1,15 +1,13 @@
 #  Copyright (c) 2022 by Amplo.
 
-import json
-import os
 from unittest import mock
 
-import joblib
 import numpy as np
 import pandas as pd
 import pytest
 from sklearn.metrics import log_loss, r2_score
 
+import amplo
 from amplo import Pipeline
 from amplo.base.objects import Result
 from tests import create_test_folders, get_all_modeller_models, rmtree
@@ -48,14 +46,8 @@ class TestPipeline:
     @pytest.mark.parametrize("mode", ["classification"])
     def test_store_best(self, mode, data):
         pipe = get_fake_pipe(data, no_dirs=True)
-        pipe.store_best(data)
-        assert not os.path.exists("Auto_ML"), "Directory created"
-
-        pipe.no_dirs = False
-        pipe.store_best(data)
-        assert os.path.exists("Auto_ML")
-        assert os.path.exists("Auto_ML/Model.joblib")
-        assert os.path.exists("Auto_ML/Settings.json")
+        pipe.train_val_best(data)
+        assert pipe.best_model_ and pipe.best_model_.is_fitted_
 
     @pytest.mark.parametrize("mode", ["classification", "regression"])
     def test_main_predictors(self, mode, data):
@@ -162,7 +154,7 @@ class TestPipeline:
             )
         with pytest.raises(NotImplementedError):
             # wrong type
-            Pipeline()._read_data(x, {"a": 1})
+            Pipeline()._read_data(x, {"a": 1})  # purposely wrong dtype
         with pytest.raises(ValueError):
             # Missing target
             Pipeline()._read_data(data, "label")
@@ -192,7 +184,7 @@ class TestPipeline:
         assert np.allclose(yp, np.array([[0.16389499, 0.83610501]]))
 
     @pytest.mark.parametrize("mode", ["classification"])
-    def test_dir_and_settings(self, mode, data):
+    def test_dump_load(self, mode, data):
         pipeline = Pipeline(
             target="target",
             mode=mode,
@@ -218,30 +210,15 @@ class TestPipeline:
             assert r2_score(data["target"], prediction) > 0.75
 
         else:
-            raise ValueError(f"Invalid mode {self.mode}")
+            raise ValueError(f"Invalid mode {mode}")
 
-        # Settings prediction
-        settings = json.load(open("Auto_ML/Settings.json", "r"))
-        model = joblib.load("Auto_ML/Model.joblib")
-        p = Pipeline(no_dirs=True)
-        p.load_settings(settings)
-        p.load_model(model)
+        # Store and recreate pipeline
+        enc = amplo.dumps(pipeline)
+        p = amplo.loads(enc)
+
         assert np.allclose(p.predict_proba(data), prediction)
-
-        # Test loading function
-        p.load()
-        assert np.allclose(p.predict_proba(data), prediction)
-
-        # Check settings
         assert p.best_model_
         assert p.best_model_str_
         assert p.best_params_
         assert p.best_feature_set_
         assert p.best_score_
-        assert "pipeline" in settings
-        assert "version" in settings
-        assert "results" in settings
-        assert "amplo_version" in settings
-        assert "validation" in settings
-        assert "feature_processing" in settings
-        assert "data_processing" in settings

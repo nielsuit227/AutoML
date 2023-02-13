@@ -1,23 +1,18 @@
 #  Copyright (c) 2022 by Amplo.
 
-import json
-import os
 import time
 import warnings
-from inspect import signature
 from pathlib import Path
 from typing import Any
 from warnings import warn
 
-import joblib
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
 from shap import TreeExplainer
-from sklearn import metrics
+from sklearn.metrics import get_scorer_names
 from sklearn.model_selection import KFold, StratifiedKFold
 
-import amplo
 from amplo.automl.data_processing import DataProcessor
 from amplo.automl.feature_processing.feature_processing import (
     FeatureProcessor,
@@ -27,7 +22,7 @@ from amplo.automl.feature_processing.feature_processing import (
 from amplo.automl.grid_search import OptunaGridSearch
 from amplo.automl.modelling import Modeller, get_model
 from amplo.automl.standardization import Standardizer
-from amplo.base import BaseEstimator
+from amplo.base import AmploObject, BaseEstimator
 from amplo.base.objects import LoggingMixin, Result
 from amplo.observation import DataObserver, ModelObserver
 from amplo.utils import clean_feature_name, io, logging
@@ -39,7 +34,7 @@ warnings.filterwarnings("ignore", message="lbfgs failed to converge")
 pd.options.mode.copy_on_write = True
 
 
-class Pipeline(LoggingMixin):
+class Pipeline(AmploObject, LoggingMixin):
     """
     Automated Machine Learning Pipeline for tabular data.
 
@@ -158,21 +153,13 @@ class Pipeline(LoggingMixin):
         grid_search_timeout: int = 3600,
         n_grid_searches: int = 2,
         n_trials_per_grid_search: int = 250,
-        # Flags
-        process_data: bool = True,
-        no_dirs: bool = False,
         # Other
         **kwargs,
     ):
-        # Get init parameters for `self.settings`
-        sig, init_locals = signature(self.__init__), locals()  # type: ignore[misc]
-        init_params = {
-            param.name: init_locals[param.name] for param in sig.parameters.values()
-        }
-        del sig, init_locals
+        AmploObject.__init__(self)
 
         # Initialize Logger
-        super().__init__(verbose=verbose)
+        LoggingMixin.__init__(self, verbose=verbose)
         if logging_path is None:
             logging_path = f"{Path(main_dir)}/AutoML.log"
         if logging_to_file:
@@ -189,12 +176,16 @@ class Pipeline(LoggingMixin):
             warn(f"Got unexpected keyword arguments that are not handled: {kwargs}")
 
         # Main settings
-        self.main_dir = f"{Path(main_dir)}/"  # assert backslash afterwards
+        self.metadata: dict[str, dict[str, Any]] = {}
+        self.main_dir = f"{Path(main_dir)}/"  # assert '/' afterwards
         self.target = target
         self.name = name
         self.version = version
-        self.mode = mode
-        self.objective = objective
+        self.mode = mode or ""
+        self.objective = objective or ""
+        self.logging_to_file = logging_to_file
+        self.logging_path = logging_path
+        self.verbose = verbose
 
         # Data processing
         self.missing_values = missing_values
@@ -222,37 +213,30 @@ class Pipeline(LoggingMixin):
         self.n_grid_searches = n_grid_searches
         self.n_trials_per_grid_search = n_trials_per_grid_search
 
-        # Flags
-        self.process_data = process_data
-        self.no_dirs = no_dirs
-
         # Set version
         self.version = version if version else 1
 
-        # Store Pipeline Settings
-        self.settings: dict[str, Any] = {"pipeline": init_params}
-
         # Objective & Scorer
-        if self.objective is not None:
-            if not isinstance(self.objective, str):
-                raise ValueError("Objective needs to be a string.")
-            self.scorer = metrics.get_scorer(self.objective)
-        else:
-            self.scorer = None
+        if self.objective and self.objective not in get_scorer_names():
+            raise ValueError(f"Invalid objective.\nPick from {get_scorer_names()}")
 
         # Required sub-classes
-        self.data_processor: DataProcessor | None = None
-        self.feature_processor: FeatureProcessor | None = None
-        self.standardizer: Standardizer | None = None
+        self.data_processor: DataProcessor
+        self.feature_processor: FeatureProcessor
+        self.standardizer: Standardizer
+        self.data_observations: list[dict[str, str | bool]] = []
+        self.model_observations: list[dict[str, str | bool]] = []
 
         # Instance initiating
-        self.best_model_: BaseEstimator | None = None
+        self.best_model_: BaseEstimator
         self.results_: list[Result] = []
         self.is_fitted_ = False
+        self.validation: dict[str, Any] = {}
 
         # Monitoring
-        self._prediction_time_: float | None = None
-        self.main_predictors_: dict[str, float] | None = None
+        self.file_delta_: dict[str, list[str]]
+        self._prediction_time_: float
+        self.main_predictors_: dict[str, float]
 
     def fit(
         self,
@@ -297,13 +281,6 @@ class Pipeline(LoggingMixin):
         self._mode_detector(data)
 
         self._set_subclasses()
-        assert (
-            self.mode
-            and self.objective
-            and self.data_processor
-            and self.feature_processor
-            and self.standardizer
-        )
 
         # Preprocess Data
         data = self.data_processor.fit_transform(data)
@@ -337,8 +314,8 @@ class Pipeline(LoggingMixin):
 
         # Optimize Hyper parameters
         for model_, feature_set in self.grid_search_iterations():
-            # TODO: implement models limitations
-            assert feature_set in self.feature_processor.feature_sets_
+            if feature_set not in self.feature_processor.feature_sets_:
+                raise ValueError(f"Found invalid feature set: '{feature_set}'")
             self.logger.info(
                 f"Starting Hyper Parameter Optimization for {model_} on "
                 f"{feature_set} features ({len(data)} samples, "
@@ -357,19 +334,15 @@ class Pipeline(LoggingMixin):
             self.results_.extend(results_)
         self.sort_results()
 
-        # Storing model
-        self.store_best(data)
-        assert self.best_model_ is not None
+        self.train_val_best(data)
 
-        # Observe
-        self.settings["data_observer"] = DataObserver().observe(
+        self.data_observations = DataObserver().observe(
             data, self.mode, self.target, self.data_processor.dummies_
         )
-        self.settings["model_observer"] = ModelObserver().observe(
+        self.model_observations = ModelObserver().observe(
             self.best_model_, data, self.target, self.mode
         )
 
-        # Finish
         self.is_fitted_ = True
         self.logger.info("All done :)")
         logging.del_file_handlers()
@@ -377,7 +350,6 @@ class Pipeline(LoggingMixin):
     def transform(self, data: pd.DataFrame) -> pd.DataFrame:
         if not self.is_fitted_:
             raise ValueError("Pipeline not yet fitted.")
-        assert self.data_processor and self.feature_processor
 
         # Process data
         data = self.data_processor.transform(data)
@@ -389,7 +361,6 @@ class Pipeline(LoggingMixin):
 
         # Standardize
         if self.standardize:
-            assert self.standardizer
             data = self.standardizer.transform(data)
 
         # Output
@@ -420,15 +391,12 @@ class Pipeline(LoggingMixin):
         data = self.transform(data)
 
         # Predict
-        assert self.best_model_
         predictions = self.best_model_.predict(data)
 
         # Convert
         if self.mode == "regression" and self.standardize:
-            assert self.standardizer
             predictions = self.standardizer.reverse(predictions, column=self.target)
         elif self.mode == "classification":
-            assert self.data_processor
             predictions = self.data_processor.decode_labels(predictions)
 
         # Stop timer
@@ -451,7 +419,6 @@ class Pipeline(LoggingMixin):
         start_time = time.time()
         if not self.is_fitted_:
             raise ValueError("Pipeline not yet fitted.")
-        assert self.best_model_
         if self.mode != "classification":
             raise ValueError("Predict_proba only available for classification")
         if not hasattr(self.best_model_, "predict_proba"):
@@ -476,54 +443,6 @@ class Pipeline(LoggingMixin):
 
         return prediction
 
-    def load(self):
-        """
-        Restores a pipeline from directory, given main_dir and version.
-        """
-        self.logger.info("Loading pipeline from {self.main_dir}.")
-        assert self.main_dir and self.version
-
-        # Load settings
-        settings_path = self.main_dir + "Settings.json"
-        with open(settings_path, "r") as settings:
-            self.load_settings(json.load(settings))
-
-        # Load model
-        model_path = self.main_dir + "Model.joblib"
-        self.load_model(joblib.load(model_path))
-
-    def load_settings(self, settings: dict[str, Any]):
-        """
-        Restores a pipeline from settings.
-
-        Parameters
-        ----------
-        settings : dict
-            Pipeline settings.
-        """
-        # Set parameters
-        settings["pipeline"]["no_dirs"] = True
-        settings["pipeline"]["main_dir"] = self.main_dir
-        self.__init__(**settings["pipeline"])  # type:ignore
-        self.settings = settings
-        self.results_ = [Result(**json.loads(js)) for js in settings["results"]]
-        self.data_processor = DataProcessor().load_settings(settings["data_processing"])
-        self.feature_processor = FeatureProcessor().load_settings(
-            settings["feature_processing"]
-        )
-        if self.standardize:
-            self.standardizer = Standardizer().load_settings(
-                settings.get("standardizing", {})
-            )
-
-    def load_model(self, model: BaseEstimator):
-        """
-        Restores a trained model
-        """
-        assert type(model).__name__ == self.best_model_str_
-        self.best_model_ = model
-        self.is_fitted_ = True
-
     # Support functions
     def grid_search_iterations(self) -> list[tuple[str, str]]:
         """Takes top `n_grid_searches` models / feature set combi's from results"""
@@ -532,16 +451,8 @@ class Pipeline(LoggingMixin):
             for i in range(self.n_grid_searches)
         ]
 
-    def store_best(self, data: pd.DataFrame):
-        """rranges settings and parameter file."""
-        assert (
-            self.feature_processor
-            and self.feature_processor.feature_sets_
-            and self.scorer
-            and self.mode
-            and self.data_processor
-            and self.standardizer
-        )
+    def train_val_best(self, data: pd.DataFrame):
+        """Arranges settings and parameter file."""
 
         # Train model on all training data
         best_model_ = get_model(self.best_model_str_)
@@ -558,41 +469,12 @@ class Pipeline(LoggingMixin):
         # Set feature set
         self.feature_processor.set_feature_set(self.best_feature_set_)
 
-        # Update pipeline settings
-        self.settings["version"] = self.version
-        self.settings["results"] = [r.toJson() for r in self.results_]
-        self.settings["pipeline"]["verbose"] = self.verbose
-        self.settings["data_processing"] = self.data_processor.get_settings()
-        self.settings["feature_processing"] = self.feature_processor.get_settings()
-        if self.standardize:
-            self.settings["standardizing"] = self.standardizer.get_settings()
-        self.settings["best_score"] = self.best_score_
-        self.settings["amplo_version"] = (
-            amplo.__version__ if hasattr(amplo, "__version__") else "dev"
-        )
-
         # Validation
-        validator = ModelValidator(
+        self.validation = ModelValidator(
             target=self.target,
             cv=self.cv,
             verbose=self.verbose,
-        )
-        self.settings["validation"] = validator.validate(
-            model=best_model_, data=data, mode=self.mode
-        )
-
-        # Return if no_dirs flag is set
-        if self.no_dirs:
-            return
-
-        # Create directory
-        if not os.path.exists(self.main_dir):
-            os.makedirs(self.main_dir)
-
-        # Save model & settings
-        joblib.dump(self.best_model_, self.main_dir + "Model.joblib")
-        with open(self.main_dir + "Settings.json", "w") as settings:
-            json.dump(self.settings, settings, indent=4, cls=io.NpEncoder)
+        ).validate(model=best_model_, data=data, mode=self.mode)
 
     def _read_data(
         self,
@@ -725,6 +607,8 @@ class Pipeline(LoggingMixin):
             raise NotImplementedError(
                 "Supported data_or_path types: pd.DataFrame | np.ndarray | Path | str"
             )
+
+        # Safety check
         assert isinstance(data, pd.DataFrame)
 
         # Clean target name
@@ -733,7 +617,7 @@ class Pipeline(LoggingMixin):
         self.target = clean_target
 
         # Finish
-        self.settings["file_metadata"] = metadata or {}
+        self.metadata = metadata or {}
         self.logger.info(
             f"Data contains {len(data)} samples and {len(data.keys())} columns."
         )
@@ -769,13 +653,6 @@ class Pipeline(LoggingMixin):
             self.mode = "regression"
             self.objective = self.objective or "neg_mean_absolute_error"
 
-        # Set scorer
-        self.scorer = metrics.get_scorer(self.objective)
-
-        # Copy to settings
-        self.settings["pipeline"]["mode"] = self.mode
-        self.settings["pipeline"]["objective"] = self.objective
-
         # Logging
         self.logger.info(
             f"Setting mode to {self.mode} & objective to {self.objective}."
@@ -788,7 +665,7 @@ class Pipeline(LoggingMixin):
         are data dependent. Data is only known at calling .fit().
         """
         self.logger.debug("Setting subclasses.")
-        assert self.mode
+
         self.data_processor = DataProcessor(
             target=self.target,
             drop_datetime=True,
@@ -850,7 +727,6 @@ class Pipeline(LoggingMixin):
 
         except Exception:
             # Get shap feature importance
-            assert self.feature_processor
             fi = self.feature_processor.feature_importance_.get("rf", {})
 
             # Use only those columns that are present in the data
@@ -881,8 +757,6 @@ class Pipeline(LoggingMixin):
         total_score = np.sum(list(self.main_predictors_.values()))
         for key in self.main_predictors_:
             self.main_predictors_[key] /= total_score
-
-        self.settings["main_predictors"] = self.main_predictors_
 
         return self.main_predictors_
 
@@ -916,33 +790,30 @@ class Pipeline(LoggingMixin):
             raise NotImplementedError("Unknown Mode.")
 
     @property
-    def best_features_(self) -> list[str] | None:
-        if len(self.results_) == 0:
-            return 0
-        return self.feature_processor.feature_selector.feature_sets_[
-            self.best_feature_set_
-        ]
-
-    @property
-    def best_model_str_(self) -> str | None:
-        if len(self.results_) == 0:
-            return None
-        return self.results_[0].model
-
-    @property
-    def best_feature_set_(self) -> str | None:
-        if len(self.results_) == 0:
-            return None
+    def best_feature_set_(self) -> str:
+        if not self.results_:
+            raise ValueError("No results available.")
         return self.results_[0].feature_set
 
     @property
-    def best_params_(self) -> dict[str, Any] | None:
-        if len(self.results_) == 0:
-            return None
-        return io.parse_json(self.results_[0].params)
+    def best_features_(self) -> list[str]:
+        feature_sets = self.feature_processor.feature_selector.feature_sets_
+        return feature_sets[self.best_feature_set_]
 
     @property
-    def best_score_(self) -> float | None:
-        if len(self.results_) == 0:
-            return None
+    def best_model_str_(self) -> str:
+        if not self.results_:
+            raise ValueError("No results available.")
+        return self.results_[0].model
+
+    @property
+    def best_params_(self) -> dict[str, Any]:
+        if not self.results_:
+            raise ValueError("No results available.")
+        return io.parse_json(self.results_[0].params)  # type: ignore[return-value]
+
+    @property
+    def best_score_(self) -> float:
+        if not self.results_:
+            raise ValueError("No results available.")
         return self.results_[0].worst_case

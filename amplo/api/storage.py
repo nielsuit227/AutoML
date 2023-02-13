@@ -1,5 +1,4 @@
 #  Copyright (c) 2022 by Amplo.
-from __future__ import annotations
 
 import io
 import json
@@ -11,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 from azure.storage.blob import BlobServiceClient
 from requests import exceptions
+from typing_extensions import Self
 
 from amplo.utils.util import check_dtypes
 
@@ -55,7 +55,7 @@ class AzureBlobDataAPI:
     @classmethod
     def from_os_env(
         cls, client: str | None = None, connection_str_os: str | None = None
-    ) -> AzureBlobDataAPI:
+    ) -> Self:
         """
         Instantiate the class using os environment strings.
 
@@ -92,7 +92,7 @@ class AzureBlobDataAPI:
             path = f"{Path(path).as_posix()}/"
 
         # List all files and folders
-        return [f.name for f in self._container.walk_blobs(path)]
+        return [str(f.name) for f in self._container.walk_blobs(path)]
 
     def ls_files(self, path: str | Path | None = None) -> list[str]:
 
@@ -105,7 +105,7 @@ class AzureBlobDataAPI:
     # --------------------------------------------------------------------------
     # File handling
 
-    def get_blob_client(self, path: str | Path) -> BlobClient:
+    def get_blob_client(self, path: str | Path) -> "BlobClient":
         # Check input
         if isinstance(path, Path):
             path = str(path.as_posix())
@@ -149,15 +149,11 @@ class AzureBlobDataAPI:
         if match_timestamps:
             properties = blob.get_blob_properties()
             created: float = (
-                properties.creation_time.timestamp()
-                if properties.creation_time
-                else datetime.now()
-            )
+                properties.creation_time if properties.creation_time else datetime.now()
+            ).timestamp()
             last_modified: float = (
-                properties.last_modified.timestamp()
-                if properties.last_modified
-                else datetime.now()
-            )
+                properties.last_modified if properties.last_modified else datetime.now()
+            ).timestamp()
             os.utime(local_path, (created, last_modified))
 
     def read_json(self, path: str | Path) -> Any:

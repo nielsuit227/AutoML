@@ -1,5 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
+from collections.abc import Iterator
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -9,7 +11,7 @@ from tests import rmfile, rmtree
 
 
 @pytest.fixture(autouse=True)
-def rmtree_automl() -> str:
+def rmtree_automl() -> Iterator[str]:
     folder = "Auto_ML"
     rmtree(folder, must_exist=False)
     yield folder
@@ -17,17 +19,17 @@ def rmtree_automl() -> str:
 
 
 @pytest.fixture(autouse=True)
-def rmfile_automl() -> str:
-    file = "AutoML.log"
-    yield file
+def rmfile_automl() -> Iterator[str]:
+    file_ = "AutoML.log"
+    yield file_
     try:
-        rmfile(file, must_exist=False)
+        rmfile(file_, must_exist=False)
     except PermissionError:
         pass
 
 
 @pytest.fixture
-def x_y(request, mode: str) -> tuple[pd.DataFrame, pd.Series]:
+def x_y(request, mode: str) -> Iterator[tuple[pd.DataFrame, pd.Series]]:
     if mode == "classification":
         x, y = make_classification(n_features=5)
     elif mode == "multiclass":
@@ -44,7 +46,9 @@ def x_y(request, mode: str) -> tuple[pd.DataFrame, pd.Series]:
 
 
 @pytest.fixture
-def data(request, x_y: tuple[pd.DataFrame, pd.Series], target="target") -> pd.DataFrame:
+def data(
+    request, x_y: tuple[pd.DataFrame, pd.Series], target="target"
+) -> Iterator[pd.DataFrame]:
     data, y = x_y
     data[target] = y
     request.data = data
@@ -52,7 +56,7 @@ def data(request, x_y: tuple[pd.DataFrame, pd.Series], target="target") -> pd.Da
 
 
 @pytest.fixture
-def classification_data() -> pd.DataFrame:
+def classification_data() -> Iterator[pd.DataFrame]:
     x, y = make_classification(n_features=5, flip_y=0)
     df = pd.DataFrame(x, columns=["a", "b", "c", "d", "e"])
     df["target"] = y
@@ -60,7 +64,7 @@ def classification_data() -> pd.DataFrame:
 
 
 @pytest.fixture
-def multiindex_data(classification_data: pd.DataFrame) -> pd.DataFrame:
+def multiindex_data(classification_data: pd.DataFrame) -> Iterator[pd.DataFrame]:
     log_ind = range(len(classification_data) // 10)
     yield classification_data.sort_values(by="target").set_index(
         pd.MultiIndex.from_product([range(10), log_ind]), drop=True
@@ -68,7 +72,7 @@ def multiindex_data(classification_data: pd.DataFrame) -> pd.DataFrame:
 
 
 @pytest.fixture
-def freq_data() -> pd.DataFrame:
+def freq_data() -> Iterator[pd.DataFrame]:
     pos = np.real(np.fft.ifft(np.array([0, 1, 0.1, 0.001, -1, -0.1, -0.001]), n=100))
     neg = np.real(np.fft.ifft(np.array([0, 0.1, 0.2, 0.1, -1, -0.1, -0.001]), n=100))
     yield pd.DataFrame(
@@ -81,6 +85,6 @@ def freq_data() -> pd.DataFrame:
 
 
 @pytest.fixture
-def random_number_generator(request) -> np.random.Generator:
+def random_number_generator(request) -> Iterator[None]:
     request.cls.rng = np.random.default_rng(seed=92938)
     yield

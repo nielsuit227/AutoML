@@ -4,7 +4,6 @@
 Feature processor for extracting temporal features.
 """
 
-
 from typing import TypeVar
 
 import pandas as pd
@@ -20,9 +19,7 @@ from amplo.automl.feature_processing.wavelet_extractor import WaveletExtractor
 from amplo.base.exceptions import NotFittedError
 from amplo.utils.util import check_dtypes, unique_ordered_list
 
-__all__ = [
-    "TemporalFeatureExtractor",
-]
+__all__ = ["TemporalFeatureExtractor"]
 
 PandasType = TypeVar("PandasType", pd.Series, pd.DataFrame)
 
@@ -69,8 +66,6 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
     >>> import pywt
     >>> pywt.wavelist()
     """
-
-    _add_to_settings = ["window_size_", *BaseFeatureExtractor._add_to_settings]
 
     def __init__(
         self,
@@ -201,13 +196,16 @@ class TemporalFeatureExtractor(BaseFeatureExtractor):
             return df[self.features_ + [self.target]]
         return df[self.features_]
 
-    def set_features(self, features: list[str]):
+    def set_features(self, features: str | list[str]):
         """Updates the features of the aggregators nad extractor.
 
-        parameters
+        Parameters
         ----------
         features : list[str]
         """
+        if isinstance(features, str):
+            features = [features]
+
         self.features_ = features
         self.raw_aggregator.set_features([f for f in features if "__wav__" not in f])
         self.wavelet_aggregator.set_features([f for f in features if "__wav__" in f])

@@ -24,7 +24,7 @@ class FeatureAggregator(BaseFeatureExtractor):
 
     NOTE: Only for multi-index classification problems.
 
-    parameters
+    Parameters
     ----------
     window_size : int, optional
         Window size for the aggregation
@@ -33,7 +33,6 @@ class FeatureAggregator(BaseFeatureExtractor):
 
     all_pool_func_str = list(POOL_FUNCTIONS.keys())
     all_pool_funcs = POOL_FUNCTIONS
-    _add_to_settings = ["window_size_", "strategy", "features_", "all_pool_func_str"]
 
     def __init__(
         self,
@@ -44,7 +43,7 @@ class FeatureAggregator(BaseFeatureExtractor):
     ):
         super().__init__(mode="classification", target=target, verbose=verbose)
         check_dtypes(("strategy", strategy, str))
-        self.window_size_ = window_size
+        self.window_size = window_size
         self.strategy = strategy
         self.col_watch: ScoreWatcher | None = None
         self.pool_watch: ScoreWatcher | None = None
@@ -60,7 +59,7 @@ class FeatureAggregator(BaseFeatureExtractor):
         data, _ = assert_multi_index(data)
         data.index.names = ["log", "index"]
         self.set_window_size(data.index)
-        assert self.window_size_ is not None
+        assert self.window_size is not None
 
         # Set baseline
         x, y = data.drop(self.target, axis=1), data[self.target]
@@ -80,11 +79,12 @@ class FeatureAggregator(BaseFeatureExtractor):
         y_pooled = self.pool_target(y)
 
         for col in tqdm(x):
+            col = str(col)
             for func in pool_funcs:
                 if self.should_skip_col_func(col, func) or col == self.target:
                     continue
                 feature = pl_pool(
-                    pl_df.select(["log", "index", col]), self.window_size_, func
+                    pl_df.select(["log", "index", col]), self.window_size, func
                 )
                 score = self.calc_feature_score(feature, y=y_pooled)
 
@@ -97,7 +97,7 @@ class FeatureAggregator(BaseFeatureExtractor):
                 accepted = self.accept_feature(score)
                 if accepted:
                     features.append(feature)
-                    self.add_features(feature.name)
+                    self.add_features(str(feature.name))
 
                 # Update baseline
                 self.logger.debug(
@@ -114,7 +114,7 @@ class FeatureAggregator(BaseFeatureExtractor):
         """Aggregates data"""
         if not self.is_fitted_:
             raise NotFittedError
-        assert self.window_size_
+        assert self.window_size
         check_data(data, allow_double_underscore=True)
         data, _ = assert_multi_index(data)
 
@@ -124,7 +124,7 @@ class FeatureAggregator(BaseFeatureExtractor):
         for feature in self.features_:
             key, pool = feature.split("__pool=")
             output.append(
-                pl_pool(pldf.select(["log", "index", key]), self.window_size_, pool)
+                pl_pool(pldf.select(["log", "index", key]), self.window_size, pool)
             )
 
         if self.target in data:
@@ -169,18 +169,25 @@ class FeatureAggregator(BaseFeatureExtractor):
         return target.groupby(
             by=[
                 target.index.get_level_values("log"),
-                target.index.get_level_values("index") // self.window_size_,
+                target.index.get_level_values("index") // self.window_size,
             ]
         ).first()
 
     def set_window_size(self, index: pd.Index) -> None:
-        """Sets the window size in case not provided.
-
-
-        We'll make the window size such that on average there's 5 samples
-        NOTE: ** IMPORTANT ** Window size CANNOT be small, it significantly slows down the window calculations.
         """
-        if self.window_size_ is not None:
+        Sets the window size in case not provided.
+
+        Notes
+        -----
+        We'll make the window size such that on average there's 5 samples
+        Window size CANNOT be small, it significantly slows down the window calculations.
+
+        Parameters
+        ----------
+        index : pandas.Index
+            Index of data to be fitted.
+        """
+        if self.window_size is not None:
             self.logger.debug("Window size taken from args.")
             return
 
@@ -190,9 +197,9 @@ class FeatureAggregator(BaseFeatureExtractor):
 
         # Ensure that window size is an integer and at least 50
         # We're doing fft, less than 50 makes no sense
-        self.window_size_ = max(int(ws), 50)
-        self.logger.debug(f"Set window size to {self.window_size_}.")
-        if counts.max() // self.window_size_ > 100:
+        self.window_size = max(int(ws), 50)
+        self.logger.debug(f"Set window size to {self.window_size}.")
+        if counts.max() // self.window_size > 100:
             warn("Data with over a 100 windows, will result in slow pooling.")
 
     def fit_data_to_window_size(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -238,14 +245,14 @@ class FeatureAggregator(BaseFeatureExtractor):
         pd.DataFrame
             Parsed data.
         """
-        if self.window_size_ is None:
+        if self.window_size is None:
             raise ValueError("Window size not yet set.")
-        if self.window_size_ == 1:
+        if self.window_size == 1:
             return data
 
-        tail = data.shape[0] % self.window_size_
-        n_missing_in_tail = self.window_size_ - tail
-        if 0 < n_missing_in_tail < self.window_size_ / 2:
+        tail = data.shape[0] % self.window_size
+        n_missing_in_tail = self.window_size - tail
+        if 0 < n_missing_in_tail < self.window_size / 2:
             # Fill up tail
             add_to_tail = data.iloc[-n_missing_in_tail:]
             data = pd.concat([data, add_to_tail])

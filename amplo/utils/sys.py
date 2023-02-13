@@ -52,7 +52,7 @@ def getsize(obj_0: Any) -> int:
                 )
             return size
             # TODO: figure out what can error here.
-        except:  # type: ignore # noqa: E722
+        except:  # noqa: E722
             return 0
 
     return inner(obj_0)

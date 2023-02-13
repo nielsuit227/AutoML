@@ -213,16 +213,6 @@ class FeatureProcessor(BaseTransformer, LoggingMixin):
         Currently, only the `TemporalFeatureExtractor` module supports this parameter.
     """
 
-    _add_to_settings = [
-        "target",
-        "mode",
-        "verbose",
-        "collinear_cols_",
-        "numeric_cols_",
-        "feature_extractor",
-        "feature_selector",
-    ]
-
     def __init__(
         self,
         target: str = "",
@@ -259,7 +249,7 @@ class FeatureProcessor(BaseTransformer, LoggingMixin):
                 raise ValueError(f"Invalid argument {name} = {value} ∉ (0, 1).")
 
         # Set attributes
-        self.feature_extractor: BaseFeatureExtractor | None = None
+        self.feature_extractor: BaseFeatureExtractor
         self.feature_selector = FeatureSelector(
             target, mode, selection_cutoff, selection_increment
         )
@@ -294,7 +284,6 @@ class FeatureProcessor(BaseTransformer, LoggingMixin):
 
         # Fit and transform feature extractor.
         self._set_feature_extractor(data)
-        assert self.feature_extractor is not None
         data = self.feature_extractor.fit_transform(data)
 
         # Analyse feature importance and feature setssdfg
@@ -341,7 +330,6 @@ class FeatureProcessor(BaseTransformer, LoggingMixin):
             raise ValueError(f"Feature set does not exist: {feature_set}")
 
         # Transform
-        assert self.feature_extractor
         data = self.feature_extractor.transform(data)
         return self.feature_selector.transform(data)
 
@@ -450,7 +438,7 @@ class FeatureProcessor(BaseTransformer, LoggingMixin):
 
     @property
     def feature_set_(self) -> str | None:
-        return self.feature_selector.feature_set_
+        return self.feature_selector.feature_set
 
     @property
     def feature_sets_(self) -> dict[str, list[str]]:
@@ -465,6 +453,6 @@ class FeatureProcessor(BaseTransformer, LoggingMixin):
 
     def set_feature_set(self, feature_set: str) -> None:
         """Updates the feature set of the feature selector & extractor"""
-        self.feature_selector.feature_set_ = feature_set
+        self.feature_selector.feature_set = feature_set
         if self.feature_extractor:
             self.feature_extractor.set_features(self.features_)

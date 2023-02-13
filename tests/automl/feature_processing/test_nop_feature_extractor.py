@@ -1,9 +1,8 @@
 #  Copyright (c) 2022 by Amplo.
 
-import json
-
 import pytest
 
+import amplo
 from amplo.automl.feature_processing.nop_feature_extractor import NopFeatureExtractor
 
 
@@ -21,14 +20,6 @@ class TestNopFeatureExtractor:
         features = set(data) - {"target"}
         assert set(fe.features_) == features, "Not all / too many features accepted."
 
-        # Test settings
-        new_fe = NopFeatureExtractor().load_settings(fe.get_settings())
-        new_out = new_fe.transform(data)
-        assert set(new_fe.features_) == features, "Features not correctly restored."
-        assert all(out1 == new_out), "Transformation not correct."
-
         # Test JSON serializable
-        settings = json.loads(json.dumps(fe.get_settings()))
-        new_fe = NopFeatureExtractor().load_settings(settings)
-        assert fe.get_settings() == new_fe.get_settings()
+        new_fe = amplo.loads(amplo.dumps(fe))
         assert all(fe.transform(data) == new_fe.transform(data))

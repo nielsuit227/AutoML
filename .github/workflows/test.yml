@@ -43,10 +43,10 @@ jobs:
           venv/bin/python3 -m pip install -r requirements.txt
 
       # Run MyPy
-      # - name: Run MyPy
-      #   run: |
-      #     source venv/bin/activate
-      #     mypy --install-types --non-interactive .
+      - name: Run MyPy
+        run: |
+          source venv/bin/activate
+          mypy --install-types --non-interactive .
 
       # Run Flake8
       - name: Run flake8

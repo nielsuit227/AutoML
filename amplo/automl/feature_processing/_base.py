@@ -4,7 +4,6 @@
 Implements the basic behavior of feature processing.
 """
 
-
 from typing import Any, TypeVar
 from warnings import warn
 
@@ -106,17 +105,7 @@ class BaseFeatureExtractor(BaseTransformer, LoggingMixin):
         Model mode: {"classification", "regression", None}.
     verbose : int
         Verbosity for logger.
-
-    Class attributes
-    ----------------
-    _add_to_settings : list of str
-        Attribute names to be included in settings.
-    _feature_translation : list of (str, str or None, str or None)
-        Instructions for `FeatureProcessor.translate_features()` on how to relate
-        extracted features to their original, raw features.
     """
-
-    _add_to_settings = ["features_", "target", "mode", "verbose"]
 
     def __init__(self, target: str = "target", mode: str = "classification", verbose=0):
         BaseTransformer.__init__(self)
@@ -128,6 +117,7 @@ class BaseFeatureExtractor(BaseTransformer, LoggingMixin):
         self._validation_model = self.get_validation_model()
         self._baseline_score: float = -np.inf
         self.skipped_: bool = False
+        self.is_fitted_ = False
 
     def set_params(self, **params):
         super().set_params(**params)

@@ -1,17 +1,16 @@
 #  Copyright (c) 2022 by Amplo.
-from __future__ import annotations
 
 import os
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO
+from typing import Any, BinaryIO
 from warnings import warn
+
+from requests import Response
+from typing_extensions import Self
 
 from amplo.api._base import BaseRequestAPI
 from amplo.utils.util import check_dtypes
-
-if TYPE_CHECKING:
-    from requests import Response
 
 __all__ = [
     "AmploPlatformAPI",
@@ -77,7 +76,7 @@ class AmploPlatformAPI(BaseRequestAPI):
     @classmethod
     def from_os_env(
         cls, host: str | None = None, access_token_os: str | None = None
-    ) -> AmploPlatformAPI:
+    ) -> Self:
         """
         Instantiate the class using os environment strings.
 

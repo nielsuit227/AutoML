@@ -278,9 +278,7 @@ def _read_files_in_folders(
     if target not in df:
         raise ValueError("Target not in data.")
     if df[target].nunique() != 2:
-        raise ValueError(
-            f"Number of unique labels is {df[target].nunique()} != 2."  # type:ignore
-        )
+        raise ValueError(f"Number of unique labels is {df[target].nunique()} != 2.")
 
     return file_names, df, metadata
 

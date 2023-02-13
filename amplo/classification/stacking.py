@@ -103,7 +103,6 @@ class StackingClassifier(BaseClassifier):
         Model parameters for underlying models.
     """
 
-    _add_to_settings = ["_mean", "_std", *BaseClassifier._add_to_settings]
     model: _StackingClassifier  # type hint
 
     def __init__(

@@ -4,7 +4,6 @@
 Feature processor for extracting no features at all.
 """
 
-
 import pandas as pd
 
 from amplo.automl.feature_processing._base import BaseFeatureExtractor

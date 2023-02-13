@@ -1,12 +1,12 @@
 #  Copyright (c) 2022 by Amplo.
 
 import datetime
-import json
 
 import numpy as np
 import pandas as pd
 import polars as pl
 
+import amplo
 from amplo.automl import DataProcessor
 
 
@@ -217,8 +217,6 @@ class TestDataProcessor:
         assert "a_hoi" in cleaned, f"Cat column not properly converted: {list(cleaned)}"
 
     def test_settings(self):
-        # todo add tests for different arguments, was failing for
-        #  outlier_removal=z-score.
         target = "target"
         x = pd.DataFrame(
             {
@@ -230,16 +228,10 @@ class TestDataProcessor:
         dp = DataProcessor(target=target, include_output=False, drop_constants=True)
         xt = dp.fit_transform(x)
         assert len(xt.keys()) == x["a"].nunique()
-        settings = dp.get_settings()
-        dp2 = DataProcessor()
-        dp2.load_settings(settings)
-        assert isinstance(dp2.get_settings()["label_encodings_"], list)
-        xt2 = dp2.transform(pd.DataFrame({"a": ["a", "b"], "b": [1, 2]}))
-        assert np.allclose(
-            pd.DataFrame({"b": [1.0, 2.0], "a_a": [1, 0], "a_b": [0, 1], "a_c": [0, 0]})
-            - xt2,
-            0,
-        )
+
+        dp2: DataProcessor = amplo.loads(amplo.dumps(dp))
+        xt2 = dp2.transform(x)  # constant column is not dropped, so we do it manually
+        assert np.allclose(xt, xt2.drop("b", axis=1))
 
     def test_pruner(self):
         x = pd.DataFrame({"a": ["a", "b", "c", "b", "c", "a"], "b": [1, 1, 1, 1, 1, 1]})
@@ -257,7 +249,7 @@ class TestDataProcessor:
             for mv in ["remove_rows", "remove_cols", "interpolate", "mean", "zero"]:
                 dp = DataProcessor(outlier_removal=o, missing_values=mv)
                 dp.fit_transform(x)
-                json.dumps(dp.get_settings())
+                amplo.dumps(dp)
 
     def test_cat_target(self):
         df = pd.DataFrame(

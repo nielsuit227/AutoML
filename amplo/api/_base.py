@@ -26,7 +26,7 @@ class BaseRequestAPI(metaclass=ABCMeta):
         self.host = host
         self.access_token = access_token
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """
         Readable string representation of the class.
         """
@@ -34,7 +34,7 @@ class BaseRequestAPI(metaclass=ABCMeta):
         return f"{self.__class__.__name__}({self.host.removeprefix('https://')})"
 
     @abstractmethod
-    def _authorization_header(self):
+    def _authorization_header(self) -> dict[str, str]:
         pass
 
     def request(self, method: str, action: str, **kwargs) -> requests.Response:

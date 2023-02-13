@@ -4,10 +4,10 @@
 Enables connection to Databricks via API calls.
 """
 
-from __future__ import annotations
-
 import os
 from typing import Any
+
+from typing_extensions import Self
 
 from amplo.api._base import BaseRequestAPI
 
@@ -40,7 +40,7 @@ class DatabricksJobsAPI(BaseRequestAPI):
     @classmethod
     def from_os_env(
         cls, host_os: str | None = None, access_token_os: str | None = None
-    ) -> DatabricksJobsAPI:
+    ) -> Self:
         """
         Instantiate the class using os environment strings.
 

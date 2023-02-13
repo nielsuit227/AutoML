@@ -1,12 +1,11 @@
 #  Copyright (c) 2022 by Amplo.
 
-import json
-
 import numpy as np
 import pandas as pd
 import pytest
 from numpy.random import Generator
 
+import amplo
 from amplo.automl.feature_processing.static_feature_extractor import (
     StaticFeatureExtractor,
 )
@@ -33,19 +32,13 @@ class TestStaticFeatureExtractor:
         assert out1.equals(out2), "`fit_transform` and `transform` don't match."
 
         # Test settings
-        new_fe = StaticFeatureExtractor().load_settings(fe.get_settings())
-        assert fe.get_settings() == new_fe.get_settings()
-        new_out = new_fe.transform(data)
-        assert out1.equals(new_out), "FE loaded from settings has invalid output."
+        new_fe = amplo.loads(amplo.dumps(fe))
+        assert out1.equals(
+            new_fe.transform(data)
+        ), "FE loaded from settings has invalid output."
         assert set(fe.features_) == set(
             new_fe.features_
         ), "FE from settings has erroneous `features_`."
-
-        # Test JSON serializable
-        settings = json.loads(json.dumps(fe.get_settings()))
-        new_fe = StaticFeatureExtractor().load_settings(settings)
-        assert fe.get_settings() == new_fe.get_settings()
-        assert all(fe.transform(x) == new_fe.transform(x))
 
     def test_raw_features(self):
         mode = "regression"
@@ -59,7 +52,7 @@ class TestStaticFeatureExtractor:
         assert set(fe.features_) == set(x), "All columns should be accepted."
 
         # Test settings and transformation
-        new_fe = StaticFeatureExtractor().load_settings(fe.get_settings())
+        new_fe = amplo.loads(amplo.dumps(fe))
         out = new_fe.transform(x)
         assert set(fe.features_) == set(out), "Expected columns don't match."
 
@@ -80,7 +73,7 @@ class TestStaticFeatureExtractor:
         assert "b__div__random" in fe.features_, "Division feature not found."
 
         # Test settings and transformation
-        new_fe = StaticFeatureExtractor().load_settings(fe.get_settings())
+        new_fe = amplo.loads(amplo.dumps(fe))
         out = new_fe.transform(x)
         assert set(fe.features_) == set(out), "Expected columns don't match."
 
@@ -103,7 +96,7 @@ class TestStaticFeatureExtractor:
         assert "cos__cosine" in fe.features_, "Cosine feature not found."
 
         # Test settings and transformation
-        new_fe = StaticFeatureExtractor().load_settings(fe.get_settings())
+        new_fe = amplo.loads(amplo.dumps(fe))
         out = new_fe.transform(x)
         assert set(fe.features_) == set(out), "Expected columns don't match."
 
@@ -123,6 +116,6 @@ class TestStaticFeatureExtractor:
         assert "inv__inversed" in fe.features_, "Inverse feature not found."
 
         # Test settings and transformation
-        new_fe = StaticFeatureExtractor().load_settings(fe.get_settings())
+        new_fe = amplo.loads(amplo.dumps(fe))
         out = new_fe.transform(x)
         assert set(fe.features_) == set(out), "Expected columns don't match."

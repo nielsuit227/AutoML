@@ -3,9 +3,8 @@
 """
 Implements base classes.
 """
-import importlib
+
 import inspect
-import json
 import logging
 from abc import ABCMeta, abstractmethod
 from collections import defaultdict
@@ -15,123 +14,40 @@ from warnings import warn
 
 import numpy.typing as npt
 import pandas as pd
+from sklearn.base import clone
+from typing_extensions import Self
 
 from amplo.base.exceptions import NotFittedError
 from amplo.utils.logging import get_root_logger
+from amplo.utils.util import check_dtype, check_dtypes
 
 __all__ = [
-    "BaseObject",
+    "AmploObject",
     "BaseEstimator",
     "BaseTransformer",
     "LoggingMixin",
+    "Result",
 ]
 
 
-class BaseObject:
-    # This class is strongly inspired by sklearn's BaseEstimator.
+class AmploObject:
     """
-    Object base class.
-
-    Class attributes
-    ----------------
-    _add_to_settings : list of str
-        Attribute names to be included in settings.
+    Base class for Amplo objects.
     """
 
-    _add_to_settings: list[str] = []
-    is_fitted_: bool = False
-
-    def get_settings(self, deep=True):
-        """
-        Get setting parameters for this object.
-
-        Parameters
-        ----------
-        deep : bool
-            If True, will return the parameters for this object and contained
-            sub-objects.
-
-        Returns
-        -------
-        settings : dict
-            Settings for this object.
-        """
-        out = {"<init_params>": self.get_params(deep=False)}
-        for key in self._add_to_settings:
-            value = getattr(self, key, None)
-            if deep and isinstance(value, BaseObject):
-                deep_items = value.get_settings().items()
-                out.update((f"{key}__{k}", val) for k, val in deep_items)
-                out[key] = str(type(value))
-            else:
-                out[key] = value
-        return out
-
-    def load_settings(self, settings):
-        """
-        Load settings for this object.
-
-        Parameters
-        ----------
-        settings : dict
-
-        Returns
-        -------
-        self :
-            An object with injected settings.
-        """
-        if not settings:
-            return self
-        settings = settings.copy()
-        valid_settings = self.get_settings(deep=True)
-
-        if "<init_params>" in settings:
-            self.__init__(**settings.pop("<init_params>"))  # type: ignore
-
-        nested_settings: dict[str, Any] = defaultdict(dict)  # grouped by prefix
-        for key, value in settings.items():
-            key, delim, sub_key = key.partition("__")
-            if key not in valid_settings:
-                local_valid_params = self._add_to_settings
-                raise ValueError(
-                    f"Invalid parameter {key!r} for object {self}. "
-                    f"Valid parameters are: {local_valid_params!r}."
-                )
-
-            if delim:
-                nested_settings[key][sub_key] = value
-            else:
-                if isinstance(value, str) and "<class " in value:
-                    _, cls, _ = value.split("'")
-                    module_name, class_name = cls.rsplit(".", 1)
-                    module = importlib.import_module(module_name)
-                    init_params = settings.get(f"{key}__<init_params>", {})
-                    value = getattr(module, class_name)(**init_params)
-                setattr(self, key, value)
-                valid_settings[key] = value
-
-        for key, sub_params in nested_settings.items():
-            valid_settings[key].load_settings(sub_params)
-
-        self.is_fitted_ = True
-        return self
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}()"
 
     @classmethod
-    def _get_param_names(cls):
+    def _get_param_names(cls) -> list[str]:
+        # copied from sklearn.base.BaseEstimator
         """
-        Get parameter names for the estimator.
+        Get parameter names for the object.
         """
-        # fetch the constructor or the original constructor before
-        # deprecation wrapping if any
-        init = getattr(cls.__init__, "deprecated_original", cls.__init__)
-        if init is object.__init__:
-            # No explicit constructor to introspect
-            return []
-
-        # introspect the constructor arguments to find the model parameters
+        # Introspect the constructor arguments to find the model parameters
         # to represent
-        init_signature = inspect.signature(init)
-        # Consider the constructor parameters excluding 'self'
+        init_signature = inspect.signature(cls.__init__)
+        # Consider the positional constructor parameters excluding 'self'
         parameters = [
             p
             for p in init_signature.parameters.values()
@@ -140,24 +56,22 @@ class BaseObject:
         for p in parameters:
             if p.kind == p.VAR_POSITIONAL:
                 raise RuntimeError(
-                    "scikit-learn estimators should always "
-                    "specify their parameters in the signature"
-                    " of their __init__ (no varargs)."
-                    " %s with constructor %s doesn't "
-                    " follow this convention." % (cls, init_signature)
+                    f"Amplo objects should always specify their parameters in the "
+                    f"signature of their __init__ (no varargs). {cls} with constructor "
+                    f"{init_signature} doesn't follow this convention."
                 )
         # Extract and sort argument names excluding 'self'
         return sorted([p.name for p in parameters])
 
-    def get_params(self, deep=True):
+    def get_params(self, deep: bool = True) -> dict[str, Any]:
+        # copied from sklearn.base.BaseEstimator
         """
-        Get parameters for this estimator.
+        Get parameters for this object.
 
         Parameters
         ----------
         deep : bool, default=True
-            If True, will return the parameters for this estimator and
-            contained subobjects that are estimators.
+            If True, will return the parameters for this and contained subobjects.
 
         Returns
         -------
@@ -166,20 +80,20 @@ class BaseObject:
         """
         out: dict[str, Any] = {}
         for key in self._get_param_names():
-            value = getattr(self, key, None)
-            if deep and hasattr(value, "get_params"):
-                deep_items = value.get_params().items()  # type: ignore
+            value = getattr(self, key)
+            if deep and hasattr(value, "get_params") and not isinstance(value, type):
+                deep_items = value.get_params().items()
                 out.update((key + "__" + k, val) for k, val in deep_items)
             out[key] = value
         return out
 
-    def set_params(self, **params):
+    def set_params(self, **params) -> Self:
+        # copied from sklearn.base.BaseEstimator
         """
-        Set the parameters of this estimator.
+        Set the parameters of this object.
 
-        The method works on simple estimators as well as on nested objects
-        (such as :class:`~sklearn.pipeline.Pipeline`). The latter have
-        parameters of the form ``<component>__<parameter>`` so that it's
+        The method works on simple objects as well as on nested objects.
+        The latter have parameters of the form '<component>__<parameter>' so that it's
         possible to update each component of a nested object.
 
         Parameters
@@ -190,14 +104,15 @@ class BaseObject:
         Returns
         -------
         self
-            Estimator instance.
+            Amplo object instance.
         """
         if not params:
             # Simple optimization to gain speed (inspect is slow)
             return self
         valid_params = self.get_params(deep=True)
 
-        nested_params: dict[str, Any] = defaultdict(dict)  # grouped by prefix
+        nested_params: defaultdict[str, dict[str, str]]
+        nested_params = defaultdict(dict)  # grouped by prefix
         for key, value in params.items():
             key, delim, sub_key = key.partition("__")
             if key not in valid_params:
@@ -218,7 +133,8 @@ class BaseObject:
 
         return self
 
-    def reset(self):
+    def reset(self) -> Self:
+        # copied from sklearn.base.BaseEstimator
         """
         Reset the object to a clean post-init state.
 
@@ -248,16 +164,32 @@ class BaseObject:
             delattr(self, attr)
 
         # run init with a copy of parameters self had at the start
-        self.__init__(**params)  # type: ignore
+        self.__init__(**params)  # type: ignore[misc]
 
         return self
 
+    def clone(self, *, safe: bool = True) -> Self:
+        """
+        Constructs a new unfitted object with the same parameters.
 
-class BaseEstimator(BaseObject, metaclass=ABCMeta):
+        Clone does a deep copy of the model in an object without actually copying
+        attached data. It yields a new object with the same parameters that has not been
+        fitted on any data.
+
+        Parameters
+        ----------
+        safe : bool, default=True
+            If safe is False, clone will fall back to a deep copy on objects
+            that are not estimators.
+        """
+        return clone(self, safe=safe)
+
+
+class BaseEstimator(AmploObject, metaclass=ABCMeta):
     """
     Estimator base class.
 
-    Extends the BaseObject class with an is_fitted attribute.
+    Extends the AmploObject class with an is_fitted attribute.
 
     Attributes
     ----------
@@ -265,22 +197,21 @@ class BaseEstimator(BaseObject, metaclass=ABCMeta):
         Indicates whether the estimator is fitted.
     """
 
-    _add_to_settings = ["is_fitted_", *BaseObject._add_to_settings]
-
     def __init__(self) -> None:
-        self.model: Any
         super().__init__()
+        self.model: Any
+        self.is_fitted_ = False
         self.classes_: npt.NDArray[Any] | None = None
 
     @abstractmethod
-    def fit(self, *arg, **kwargs) -> Any:
+    def fit(self, *args, **kwargs) -> Any:
         pass
 
-    def score(self, x: pd.DataFrame, y: pd.Series | None, *arg, **kwargs) -> Any:
-        return self.model.score(x, y)
+    def score(self, x: pd.DataFrame, y: pd.Series | None, *args, **kwargs) -> Any:
+        return self.model.score(x, y, *args, **kwargs)
 
     @abstractmethod
-    def predict(self, *arg, **kwargs) -> Any:
+    def predict(self, *args, **kwargs) -> Any:
         pass
 
     def predict_proba(self, x: pd.DataFrame, *args, **kwargs) -> Any:
@@ -292,7 +223,7 @@ class BaseEstimator(BaseObject, metaclass=ABCMeta):
         return self.model.predict_proba(x, *args, **kwargs)
 
 
-class BaseTransformer(BaseObject, metaclass=ABCMeta):
+class BaseTransformer(AmploObject, metaclass=ABCMeta):
     """
     Transformer base class.
     """
@@ -327,13 +258,12 @@ class LoggingMixin:
         - verbose=2: debugging info or higher priority
     """
 
-    def __init__(self, verbose=0) -> None:
-        if not isinstance(verbose, (float, int)):
-            raise ValueError(f"Invalid dtype for `verbose`: {type(verbose)}.")
+    def __init__(self, verbose=0):
+        check_dtype("verbose", verbose, (float, int))
 
         # Set logging level based on verbose
         if verbose < 0:
-            warn("`verbose` cannot be smaller than zero.", UserWarning)
+            warn("Parameter 'verbose' cannot be smaller than zero.")
             verbose = 0
             logging_level = logging.WARNING
         elif verbose == 0:
@@ -344,10 +274,10 @@ class LoggingMixin:
             logging_level = logging.DEBUG
 
         self.verbose = verbose
-        # Notice: Without creating a new logger (through `getChild`), setting the
-        # logging level will influence all logging. Setting logging levels individually
-        # per class is therefore not possible.
-        self.logger = get_root_logger().getChild(type(self).__name__)
+        # NOTE: Without creating a new logger (through `getChild`), setting the
+        #  logging level will influence all logging. Setting logging levels individually
+        #  per class is therefore not possible.
+        self.logger = get_root_logger().getChild(self.__class__.__name__)
         self.logger.setLevel(logging_level)
 
 
@@ -361,8 +291,16 @@ class Result:
     worst_case: float
     time: float
 
+    def __post_init__(self):
+        check_dtypes(
+            ("date", self.date, str),
+            ("model", self.model, str),
+            ("params", self.params, dict),
+            ("feature_set", self.feature_set, str),
+            ("score", self.score, float),
+            ("worst_case", self.worst_case, float),
+            ("time", self.time, float),
+        )
+
     def __lt__(self, other):
         return self.worst_case < other.worst_case
-
-    def toJson(self):
-        return json.dumps(self, default=lambda o: o.__dict__)

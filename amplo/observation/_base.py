@@ -5,14 +5,11 @@ Base class used to build new observers.
 """
 import abc
 import warnings
-from typing import TYPE_CHECKING, Callable
+from typing import Callable
 
 import numpy as np
 
 from amplo.utils import check_dtypes
-
-if TYPE_CHECKING:
-    from amplo import Pipeline  # type: ignore # noqa
 
 __all__ = ["BaseObserver", "ProductionWarning", "_report_obs"]
 

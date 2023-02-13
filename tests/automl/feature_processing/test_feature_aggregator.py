@@ -9,9 +9,8 @@ from amplo.automl.feature_processing.feature_aggregator import FeatureAggregator
 class TestFeatureAggregator:
     agg: FeatureAggregator
 
-    @classmethod
-    def setup_class(cls):
-        cls.agg = FeatureAggregator(target="target")
+    def setup(self):
+        self.agg = FeatureAggregator(target="target")
 
     def test_fit(self, multiindex_data: pd.DataFrame):
         dft = self.agg.fit_transform(multiindex_data)
@@ -29,26 +28,26 @@ class TestFeatureAggregator:
         assert np.allclose(dft, self.agg.transform(multiindex_data))
         assert isinstance(dft.index, pd.MultiIndex)
         assert "target" in dft
-        assert all("__pool=" in k for k in dft.drop("target", axis=1).keys())
+        assert all("__pool=" in k for k in map(str, dft.drop("target", axis=1).keys()))
 
     def test_set_window_size(self):
         self.agg.reset()
         self.agg.set_window_size(pd.MultiIndex.from_product([[0, 1, 3], range(100)]))
-        assert self.agg.window_size_ == 50
-        self.agg.window_size_ = None  # reset, otherwise taken from args.
+        assert self.agg.window_size == 50
+        self.agg.window_size = None  # reset, otherwise taken from args.
         self.agg.set_window_size(pd.MultiIndex.from_product([[0, 1, 3], range(1000)]))
-        assert self.agg.window_size_ == 200
+        assert self.agg.window_size == 200
 
     def test_fit_data_to_window_size(self, multiindex_data):
-        self.agg.window_size_ = 7
+        self.agg.window_size = 7
         df_t = self.agg.fit_data_to_window_size(multiindex_data)
         assert (df_t.groupby(level=0).count() == 7).all().all()
-        self.agg.window_size_ = 15
+        self.agg.window_size = 15
         df_t = self.agg.fit_data_to_window_size(multiindex_data)
         assert (df_t.groupby(level=0).count() == 15).all().all()
 
     def test_pool_target(self, multiindex_data):
-        self.agg.window_size_ = 10
+        self.agg.window_size = 10
         target_pool = self.agg.pool_target(multiindex_data["target"])
         assert target_pool.sum() / target_pool.count() == multiindex_data[
             "target"

@@ -95,7 +95,6 @@ class StackingRegressor(BaseRegressor):
         Model parameters for underlying models.
     """
 
-    _add_to_settings = ["_mean", "_std", *BaseRegressor._add_to_settings]
     model: _StackingRegressor  # type hint
 
     def __init__(

@@ -79,7 +79,7 @@ def train_locally(
     machine: str,
     service: str,
     issue: str,
-    pipe_kwargs: dict[str, Any] | None = None,
+    pipe_kwargs: dict[str, Any],
     model_version: int = 1,
     *,
     healthy_data_dir: str | Path | bool = True,
@@ -105,7 +105,7 @@ def train_locally(
         Name of the service (a.k.a. category).
     issue : str
         Name of the issue (a.k.a. model).
-    pipe_kwargs : dict, optional, default: None
+    pipe_kwargs : dict
         Keyword arguments for pipeline. Note that defaults will be set.
     model_version : int, default: 1
         Model version.
@@ -140,6 +140,12 @@ def train_locally(
     check_dtypes(
         ("data_dir", data_dir, (str, Path)),
         ("target_dir", target_dir, (str, Path)),
+        ("team", team, str),
+        ("machine", machine, str),
+        ("service", service, str),
+        ("issue", issue, str),
+        ("pipe_kwargs", pipe_kwargs, dict),
+        ("model_version", model_version, int),
         ("working_dir", working_dir, (str, Path)),
     )
 
@@ -174,7 +180,7 @@ def train_locally(
         platform = bool(azure)
     # Indicate new files compared to previous model version
     if azure and platform:
-        pipeline.settings["file_delta"] = _get_file_delta(
+        pipeline.file_delta_ = _get_file_delta(
             file_metadata, team, machine, service, issue, model_version, azure, platform
         )
 
@@ -197,7 +203,6 @@ def train_on_cloud(
     service: str,
     issue: str,
     pipe_kwargs: dict[str, Any] | None = None,
-    model_version: int = 1,
     *,
     train_id: int | None = None,
     host_os: str | None = None,
@@ -234,8 +239,6 @@ def train_on_cloud(
         Name of the issue (a.k.a. model).
     pipe_kwargs : dict, optional, default: None
         Keyword arguments for pipeline. Note that defaults will be set.
-    model_version : int, default: 1
-        Model version.
     train_id : int, optional for now
         Training ID, used for error handling. Will be a required parameter in future editions.
     host_os : str, optional, default: None
