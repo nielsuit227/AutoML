@@ -4,6 +4,8 @@
 Implements the basic behavior of feature processing.
 """
 
+from __future__ import annotations
+
 from typing import Any, TypeVar
 from warnings import warn
 

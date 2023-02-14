@@ -1,4 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
+
+from __future__ import annotations
+
 import copy
 import re
 import time

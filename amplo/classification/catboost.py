@@ -1,5 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier as _CatBoostClassifier

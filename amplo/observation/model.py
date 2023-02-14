@@ -11,6 +11,9 @@ References
 The ML test score: A rubric for ML production readiness and technical debt
 reduction. 1123-1132. 10.1109/BigData.2017.8258038.
 """
+
+from __future__ import annotations
+
 from copy import deepcopy
 
 import numpy as np

@@ -1,23 +1,38 @@
 {
+  // Formatting
   "editor.formatOnSave": true,
-  "editor.defaultFormatter": "ms-python.python",
   "python.formatting.provider": "black",
-
+  "isort.args": ["--profile", "black"],
+  // Linting
   "python.linting.lintOnSave": true,
   "python.linting.enabled": true,
+  "python.linting.banditEnabled": false,
   "python.linting.flake8Enabled": true,
+  "python.linting.flake8Args": ["--config", ".flake8"],
   "python.linting.pylintEnabled": false,
-  "python.linting.mypyEnabled": false,
-  "isort.args": ["--profile", "black"],
-  
+  "python.linting.mypyEnabled": true,
+  "python.linting.mypyArgs": ["--config-file", "mypy.ini"],
+  // Testing
+  "python.testing.pytestArgs": ["tests"],
+  "python.testing.pytestPath": "pytest",
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  // Language specific
   "[python]": {
-    "editor.formatOnPaste": false,
+    "editor.defaultFormatter": "ms-python.python",
     "editor.codeActionsOnSave": {
       "source.organizeImports": true
     }
   },
-  "python.testing.pytestArgs": ["tests"],
-  "python.testing.pytestPath": "pytest",
-  "python.testing.pytestEnabled": true,
-  "python.testing.unittestEnabled": false
+  "[markdown]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  // Todo-tree: multi-line highlighting when additional indent
+  "todo-tree.regex.regex": "(//|#|<!--|;|/\\*|^|^\\s*(-|\\d+.))\\s*($TAGS).*(\\n\\s*(//|#)\\s{2,}.*)*",
+  // Other
+  "autoDocstring.docstringFormat": "numpy",
+  "autoDocstring.startOnNewLine": true
 }

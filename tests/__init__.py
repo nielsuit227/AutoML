@@ -1,4 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
+
+from __future__ import annotations
+
 import shutil
 import time
 from pathlib import Path
@@ -80,7 +83,9 @@ def create_data_frames(n_samples, n_features):
     return df1, df2
 
 
-def create_test_folders(directory: Path | str, n_samples: int, n_features: int, n_files: int = 10):
+def create_test_folders(
+    directory: Path | str, n_samples: int, n_features: int, n_files: int = 10
+):
     directory = Path(directory)
     # Make directories
     for sub_folder in ("Class_1", "Class_2"):

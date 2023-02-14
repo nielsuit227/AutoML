@@ -1,5 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
+from __future__ import annotations
+
 from copy import deepcopy
 from typing import Any
 from warnings import warn

@@ -3,6 +3,9 @@
 """
 Feature selector for selecting features.
 """
+
+from __future__ import annotations
+
 from warnings import warn
 
 import numpy as np

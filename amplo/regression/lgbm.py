@@ -1,5 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
+from __future__ import annotations
+
 from lightgbm import LGBMRegressor as _LGBMRegressor
 from sklearn.model_selection import train_test_split
 

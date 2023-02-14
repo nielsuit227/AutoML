@@ -37,6 +37,6 @@ if __name__ == "__main__":
             "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
             "Operating System :: OS Independent",
         ],
-        python_requires=">=3.10",
+        python_requires=">=3.9",
         install_requires=required,
     )

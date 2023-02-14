@@ -3,6 +3,9 @@
 """
 Base class used to build new observers.
 """
+
+from __future__ import annotations
+
 import abc
 import warnings
 from typing import Callable

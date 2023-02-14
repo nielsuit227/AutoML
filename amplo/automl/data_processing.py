@@ -1,5 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
+from __future__ import annotations
+
 import datetime
 from collections import defaultdict
 from typing import Any

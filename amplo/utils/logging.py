@@ -1,5 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -140,7 +142,7 @@ def add_file_handler(file_path: str | Path) -> None:
     _ROOT_LOGGER.addHandler(file_handler)
 
 
-def del_file_handlers():
+def del_file_handlers() -> None:
     """
     Delete all file handlers in the root logger.
 
@@ -163,7 +165,7 @@ def del_file_handlers():
             _ROOT_LOGGER.removeHandler(handler)
 
 
-def get_root_logger():
+def get_root_logger() -> logging.Logger:
     """
     Get the root logger. If not yet done the logger will be initialized.
     """
@@ -179,7 +181,7 @@ def get_root_logger():
     return _ROOT_LOGGER
 
 
-def del_root_logger():
+def del_root_logger() -> None:
     """Reset the root logger and set it to None."""
 
     global _ROOT_LOGGER

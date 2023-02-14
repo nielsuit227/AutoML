@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from logging import Logger
 from typing import Any

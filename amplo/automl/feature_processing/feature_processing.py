@@ -3,6 +3,9 @@
 """
 Feature processor for extracting and selecting features.
 """
+
+from __future__ import annotations
+
 import re
 from warnings import warn
 

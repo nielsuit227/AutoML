@@ -4,6 +4,8 @@
 Feature processor for extracting temporal features.
 """
 
+from __future__ import annotations
+
 from typing import TypeVar
 
 import pandas as pd
