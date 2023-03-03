@@ -28,8 +28,6 @@ class PartialBoostingRegressor(BaseRegressor):
     _SUPPORTED_MODELS = [
         "AdaBoostRegressor",
         "GradientBoostingRegressor",
-        "LGBMRegressor",
-        "XGBRegressor",
         "CatBoostRegressor",
     ]
 
@@ -49,10 +47,6 @@ class PartialBoostingRegressor(BaseRegressor):
         model_name = type(self.model).__name__
         if model_name in ("AdaBoostRegressor", "GradientBoostingRegressor"):
             return {}
-        elif model_name == "LGBMRegressor":
-            return {"num_iterations": self.step}
-        elif model_name == "XGBRegressor":
-            return {"iteration_range": (0, self.step)}
         elif model_name == "CatBoostRegressor":
             return {"ntree_end": self.step}
         else:
@@ -69,8 +63,6 @@ class PartialBoostingRegressor(BaseRegressor):
         model_name = type(model).__name__
         if model_name in ("AdaBoostRegressor", "GradientBoostingRegressor"):
             return len(model.estimators_)
-        elif model_name in ("LGBMRegressor", "XGBRegressor"):
-            return model.model.n_estimators
         elif model_name == "CatBoostRegressor":
             return model.model.tree_count_
         else:

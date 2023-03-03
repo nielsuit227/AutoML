@@ -4,7 +4,6 @@ catboost>=1.0.0
 cleanlab>=2.0.0
 colorlog>=6.6.0
 joblib>=1.1.0
-lightgbm>=3.3.1
 numba>=0.55.0
 numpy>=1.21.4,<1.23
 optuna>=3.0.0,<3.1.0
@@ -19,7 +18,6 @@ scipy>=1.7.1
 setuptools>=57.4.0
 shap>=0.40.0
 tqdm>=4.62.0
-xgboost>=1.5.0
 # Linting
 flake8>=4.0.0
 mypy==1.0.0

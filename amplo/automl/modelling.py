@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
+from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -12,19 +13,31 @@ from sklearn import ensemble, linear_model, model_selection, svm
 from amplo import classification, regression
 from amplo.base import BaseEstimator, LoggingMixin
 from amplo.base.objects import Result
-from amplo.classification import CatBoostClassifier, LGBMClassifier, XGBClassifier
-from amplo.regression import CatBoostRegressor, LGBMRegressor, XGBRegressor
-from amplo.utils.logging import get_root_logger
+from amplo.classification import CatBoostClassifier
+from amplo.regression import CatBoostRegressor
 
 __all__ = ["Modeller", "get_model"]
 
 
-logger = get_root_logger().getChild("Modeller")
+ModelType = Union[
+    BaseEstimator,
+    CatBoostRegressor,
+    CatBoostClassifier,
+    svm.SVC,
+    svm.SVR,
+    ensemble.BaggingClassifier,
+    ensemble.BaggingRegressor,
+    ensemble.RandomForestClassifier,
+    ensemble.RandomForestRegressor,
+    linear_model.RidgeClassifier,
+    linear_model.LogisticRegression,
+    linear_model.LinearRegression,
+]
 
 
-def get_model(model_str: str) -> BaseEstimator:
+def get_model(model_str: str) -> ModelType:
     """Returns a model object given a model string"""
-    model: BaseEstimator
+    model: ModelType
 
     if "RandomForest" in model_str or "Bagging" in model_str:
         model = getattr(ensemble, model_str)()
@@ -164,7 +177,7 @@ class Modeller(LoggingMixin):
         # Return results
         return self.results
 
-    def return_models(self) -> list[BaseEstimator]:
+    def return_models(self) -> list[ModelType]:
         """
         Get all models that are considered appropriate for training.
 
@@ -176,7 +189,7 @@ class Modeller(LoggingMixin):
         if self.model:
             return [get_model(self.model)]
 
-        models: list[BaseEstimator] = []
+        models: list[ModelType] = []
 
         # All classifiers
         if self.mode == "classification":
@@ -184,13 +197,6 @@ class Modeller(LoggingMixin):
             if not self.samples or self.samples < 25000:
                 models.append(svm.SVC(kernel="rbf", probability=self.needs_proba))
                 models.append(ensemble.BaggingClassifier())
-                # models.append(ensemble.GradientBoostingClassifier()) == XG Boost
-                models.append(XGBClassifier())
-
-            # The efficient ones
-            else:
-                # models.append(ensemble.HistGradientBoostingClassifier()) == LGBM
-                models.append(LGBMClassifier())
 
             # And the multifaceted ones
             if not self.needs_proba:
@@ -205,13 +211,6 @@ class Modeller(LoggingMixin):
             if not self.samples or self.samples < 25000:
                 models.append(svm.SVR(kernel="rbf"))
                 models.append(ensemble.BaggingRegressor())
-                # models.append(ensemble.GradientBoostingRegressor()) == XG Boost
-                models.append(XGBRegressor())
-
-            # The efficient ones
-            else:
-                # models.append(ensemble.HistGradientBoostingRegressor()) == LGBM
-                models.append(LGBMRegressor())
 
             # And the multifaceted ones
             models.append(linear_model.LinearRegression())

@@ -1,7 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
 import os
-from typing import Any, Union
+from typing import Any
 from unittest import mock
 
 import joblib
@@ -12,31 +12,13 @@ from sklearn.base import clone
 from sklearn.datasets import make_classification, make_regression
 from sklearn.metrics import get_scorer
 
+from amplo.automl.modelling import ModelType
 from amplo.base.exceptions import NotFittedError
-from amplo.classification import CatBoostClassifier, LGBMClassifier, XGBClassifier
-from amplo.regression import CatBoostRegressor, LGBMRegressor, XGBRegressor
-
-Model = Union[
-    CatBoostClassifier,
-    LGBMClassifier,
-    XGBClassifier,
-    CatBoostRegressor,
-    LGBMRegressor,
-    XGBRegressor,
-]
+from amplo.classification import CatBoostClassifier
+from amplo.regression import CatBoostRegressor
 
 
-setup_class_params = [
-    CatBoostClassifier,
-    LGBMClassifier,
-    XGBClassifier,
-    CatBoostRegressor,
-    LGBMRegressor,
-    XGBRegressor,
-]
-
-
-@pytest.fixture(scope="class", params=setup_class_params)
+@pytest.fixture(scope="class", params=[CatBoostClassifier, CatBoostRegressor])
 def setup_class(request):
     model = request.param
 
@@ -74,8 +56,8 @@ def setup_class(request):
 
 @pytest.mark.usefixtures("setup_class")
 class TestModel:
-    model: Model
-    _model: type[Model]
+    model: ModelType
+    _model: type[ModelType]
     model_params: dict[str, Any]
     is_classification: bool
     x: pd.DataFrame

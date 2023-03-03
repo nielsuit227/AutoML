@@ -30,8 +30,6 @@ class PartialBoostingClassifier(BaseClassifier):
     _SUPPORTED_MODELS = [
         "AdaBoostClassifier",
         "GradientBoostingClassifier",
-        "LGBMClassifier",
-        "XGBClassifier",
         "CatBoostClassifier",
     ]
 
@@ -52,10 +50,6 @@ class PartialBoostingClassifier(BaseClassifier):
         model_name = type(self.model).__name__
         if model_name in ("AdaBoostClassifier", "GradientBoostingClassifier"):
             return {}
-        elif model_name == "LGBMClassifier":
-            return {"num_iterations": self.step}
-        elif model_name == "XGBClassifier":
-            return {"iteration_range": (0, self.step)}
         elif model_name == "CatBoostClassifier":
             return {"ntree_end": self.step}
         else:
@@ -78,8 +72,6 @@ class PartialBoostingClassifier(BaseClassifier):
         model_name = type(model).__name__
         if model_name in ("AdaBoostClassifier", "GradientBoostingClassifier"):
             return len(model.estimators_)  # type: ignore
-        elif model_name in ("LGBMClassifier", "XGBClassifier"):
-            return model.model.n_estimators
         elif model_name == "CatBoostClassifier":
             return model.model.tree_count_
         else:
