@@ -1,8 +1,9 @@
-import numpy as np
+from polars.testing import assert_frame_equal
 
 from amplo.automl.feature_processing.temporal_feature_extractor import (
     TemporalFeatureExtractor,
 )
+from amplo.utils.data import pandas_to_polars
 
 
 class TestTemporalFeatureExtractor:
@@ -16,6 +17,10 @@ class TestTemporalFeatureExtractor:
         ]
 
     def test_fit_transform(self, multiindex_data):
+        pl_data, index_renaming = pandas_to_polars(multiindex_data)
+        index_cols = list(index_renaming)
+
         extractor = TemporalFeatureExtractor(target="target", mode="classification")
-        dft = extractor.fit_transform(multiindex_data)
-        assert np.allclose(dft, extractor.transform(multiindex_data))
+        out1 = extractor.fit_transform(pl_data, index_cols)
+        out2 = extractor.transform(pl_data, index_cols)
+        assert_frame_equal(out1, out2)

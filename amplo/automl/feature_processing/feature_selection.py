@@ -6,10 +6,8 @@ Feature selector for selecting features.
 
 from __future__ import annotations
 
-from warnings import warn
-
 import numpy as np
-import pandas as pd
+import polars as pl
 from shap import TreeExplainer
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
@@ -34,7 +32,7 @@ class FeatureSelector(BaseTransformer, LoggingMixin):
     The cutoff takes the n highest features that combined carry a `selection_cutoff`
     fraction of the total feature importance.
 
-    parameters
+    Parameters
     ----------
     target : str
     mode : str
@@ -78,46 +76,61 @@ class FeatureSelector(BaseTransformer, LoggingMixin):
         self.feature_sets_: dict[str, list[str]] = {}
         self.feature_importance_: dict[str, dict[str, float]] = {}
 
-    def fit(self, data: pd.DataFrame):
+    def fit(self, data: pl.DataFrame, index_cols: list[str]):  # type: ignore[override]
         """Fits this feature selector.
 
         If feature set is provided, it only selects using the corresponding method.
 
-        parameters
+        Parameters
         ----------
-        data : pd.DataFrame
+        data : pl.DataFrame
+            Fitting data.
+        index_cols : list[str]
+            Column names of index.
         """
         self.logger.info("Fitting feature selector.")
+
+        # Select x and y data
+        x = data.drop([self.target, *index_cols])
+        y = data[self.target]
+
         if self.feature_set:
             if "rf" in self.feature_set:
-                self.select_gini_impurity(data)
+                self.select_gini_impurity(x, y)
             elif "shap" in self.feature_set:
-                self.select_shap(data)
+                self.select_shap(x, y)
             else:
                 raise ValueError("Unknown provided feature set")
 
         else:
             if self.analyse_feature_sets in ("auto", "all", "gini"):
-                self.select_gini_impurity(data)
+                self.select_gini_impurity(x, y)
             if self.analyse_feature_sets in ("all", "shap") or (
                 self.analyse_feature_sets == "auto" and len(data) < 50_000
             ):
-                self.select_shap(data)
+                self.select_shap(x, y)
 
         self.is_fitted_ = True
         return self
 
-    def transform(
-        self, data: pd.DataFrame, feature_set: str | None = None
-    ) -> pd.DataFrame:
+    def transform(  # type: ignore[override]
+        self, data: pl.DataFrame, index_cols: list[str], feature_set: str | None = None
+    ) -> pl.DataFrame:
         """Transforms feature sets
 
-        parameters
+        Parameters
         ----------
-        data : pd.DataFrame
+        data : pl.DataFrame
+            Transforming data.
+        index_cols : list[str]
+            Column names of index.
         feature_set : str, optional
             When not provided, the union of all feature sets is returned.
 
+        Returns
+        -------
+        pl.DataFrame
+            Transformed data.
         """
         if not self.is_fitted_:
             raise NotFittedError
@@ -126,17 +139,36 @@ class FeatureSelector(BaseTransformer, LoggingMixin):
         if feature_set:
             self.feature_set = feature_set
         elif not self.feature_set:
-            warn("Feature set not given and not set, returning all features.")
+            self.logger.warning("Feature set not set, returning all features.")
 
         # Features_ is given from feature_set, so we can directly return
         if self.target in data:
-            return data[self.features_ + [self.target]]
-        return data[self.features_]
+            return data[[*index_cols, *self.features_, self.target]]
+        return data[[*index_cols, *self.features_]]
 
-    def fit_transform(self, data: pd.DataFrame, **fit_params) -> pd.DataFrame:
-        return self.fit(data).transform(data)
+    def fit_transform(  # type: ignore[override]
+        self, data: pl.DataFrame, index_cols: list[str], feature_set: str | None = None
+    ) -> pl.DataFrame:
+        """
+        Fits and transforms.
 
-    def select_gini_impurity(self, data: pd.DataFrame) -> None:
+        Parameters
+        ----------
+        data : pl.DataFrame
+            Fitting and transforming data.
+        index_cols : list[str]
+            Column names of index.
+        feature_set : str | None, optional
+            When not provided, the union of all feature sets is returned., by default None
+
+        Returns
+        -------
+        pl.DataFrame
+            Transformed data.
+        """
+        return self.fit(data, index_cols).transform(data, index_cols, feature_set)
+
+    def select_gini_impurity(self, x: pl.DataFrame, y: pl.Series) -> None:
         """
         Selects features based on the random forest feature importance.
 
@@ -145,11 +177,10 @@ class FeatureSelector(BaseTransformer, LoggingMixin):
 
         Parameters
         ----------
-        x : pd.DataFrame
-        y : pd.Series
+        x : pl.DataFrame
+        y : pl.Series
         """
         self.logger.info("Analysing feature importance: Gini impurity.")
-        x, y = data.drop(self.target, axis=1), data[self.target]
 
         # Set model
         rs = np.random.RandomState(seed=236868)
@@ -159,7 +190,7 @@ class FeatureSelector(BaseTransformer, LoggingMixin):
             forest = RandomForestClassifier(random_state=rs)
         else:
             raise ValueError("Invalid mode.")
-        forest.fit(x, y)
+        forest.fit(x.to_pandas(), y.to_pandas())
 
         # Get RF values
         fi = forest.feature_importances_
@@ -167,7 +198,7 @@ class FeatureSelector(BaseTransformer, LoggingMixin):
 
         # Convert to dict
         self.feature_importance_["rf"] = self.sort_dict(
-            {k: v for k, v in zip(data.keys(), fi)}
+            {k: v for k, v in zip(x.columns, fi)}
         )
 
         # Make feature sets
@@ -182,7 +213,7 @@ class FeatureSelector(BaseTransformer, LoggingMixin):
             f"{self.selection_increment * 100:.2f}% RF increment."
         )
 
-    def select_shap(self, data: pd.DataFrame) -> None:
+    def select_shap(self, x: pl.DataFrame, y: pl.Series) -> None:
         """
         Calculates shapely value to be used as a measure of feature importance.
 
@@ -192,7 +223,6 @@ class FeatureSelector(BaseTransformer, LoggingMixin):
         y : pd.Series
         """
         self.logger.info("Analysing feature importance: Shapely additive explanations.")
-        x, y = data.drop(self.target, axis=1), data[self.target]
 
         # Set model
         seed = 236868
@@ -203,11 +233,11 @@ class FeatureSelector(BaseTransformer, LoggingMixin):
             base = CatBoostClassifier(random_seed=seed)
         else:
             raise ValueError("Invalid mode.")
-        base.fit(x, y)
+        base.fit(x.to_pandas(), y.to_pandas())
 
         # Get Shap values
         explainer = TreeExplainer(base.model)
-        shap = np.array(explainer.shap_values(x, y))
+        shap = np.array(explainer.shap_values(x.to_pandas(), y.to_pandas()))
 
         # Average over classes and samples and normalize
         if shap.ndim == 3:
@@ -217,7 +247,7 @@ class FeatureSelector(BaseTransformer, LoggingMixin):
 
         # Convert to dict
         self.feature_importance_["shap"] = self.sort_dict(
-            {k: v for k, v in zip(data.keys(), shap)}
+            {k: v for k, v in zip(x.columns, shap)}
         )
 
         # Make feature sets

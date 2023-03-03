@@ -20,7 +20,7 @@ class TestScoreWatcher:
         assert "b" in self.w
         assert "c" in self.w
         assert len(self.w) == 3
-        assert self.w["a"].score == self.watcher.INITIAL_SCORE
+        assert self.w["a"].value == self.watcher.INITIAL_SCORE
         assert self.w["a"].weight == 0
         assert self.w["a"].count == 0
 
@@ -28,19 +28,19 @@ class TestScoreWatcher:
         score = 0.1
         self.watcher.update("a", score, 1)
         assert isinstance(self.w["a"], Score)
-        assert self.w["a"].score == score
+        assert self.w["a"].value == score
         assert self.w["a"].count == 1
         assert self.w["a"].weight == 1
 
         # Update
         self.watcher.update("a", score * 3, 1)
-        assert self.w["a"].score == score * 2
+        assert self.w["a"].value == score * 2
         assert self.w["a"].count == 2
         assert self.w["a"].weight == 2
 
         # Update with multiple weight
         self.watcher.update("a", score, 2)
-        assert np.isclose(self.w["a"].score, score * 6 / 4)
+        assert np.isclose(self.w["a"].value, score * 6 / 4)
         assert self.w["a"].count == 3
         assert self.w["a"].weight == 4
 
@@ -68,7 +68,7 @@ class TestScoreWatcher:
         self.w["a"].count = 11
         self.w["b"].count = 11
         self.w["c"].count = 11
-        self.w["c"].score = -1000
+        self.w["c"].value = -1000
 
         # Check
         assert not self.watcher.should_skip("a")

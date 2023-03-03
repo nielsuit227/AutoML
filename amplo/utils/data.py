@@ -59,7 +59,7 @@ def check_pearson_correlation(features: pd.DataFrame, labels: pd.Series) -> bool
 
 
 def pandas_to_polars(
-    data: pd.DataFrame, include_index: bool = True, index_prefix: None | str = None
+    data: pd.DataFrame, include_index: bool = True
 ) -> tuple[pl.DataFrame, dict[str, str]]:
     """
     Convert pandas to polars DataFrame.
@@ -80,22 +80,18 @@ def pandas_to_polars(
         Pandas object to be converted
     include_index : bool, optional
         Whether to include the index for conversion, by default True
-    index_prefix : None | str, optional
-        When `include_index` is True, will rename the index columns with the given
-        prefix (e.g., index_prefix_1, index_prefix_2, ...), by default None
 
     Returns
     -------
     pl_data : pl.DataFrame
         Converted polars object.
-    index_names : dict[str, str]
+    index_renaming : dict[str, str]
         Rename dictionary for the index names.
     """
 
     check_dtypes(
         ("data", data, pd.DataFrame),
         ("include_index", include_index, bool),
-        ("index_prefix", index_prefix, str),
     )
 
     # Convert to polars without index
@@ -104,12 +100,18 @@ def pandas_to_polars(
 
     # Get original and set new (work) index names
     orig_index_names = list(data.index.names)
-    work_index_names = [f"{index_prefix}_{i}" for i in range(len(orig_index_names))]
-    index_names = dict(zip(work_index_names, orig_index_names))
+    if len(orig_index_names) == 1:
+        work_index_names = ["index"]
+    elif len(orig_index_names) == 2:
+        work_index_names = ["log", "index"]
+    else:
+        raise ValueError("Amplo supports only single- and double-indices.")
+
     # Conversion
+    index_renaming = dict(zip(work_index_names, orig_index_names))
     pl_data = pl.from_pandas(data.reset_index(names=work_index_names))
 
-    return pl_data, index_names
+    return pl_data, index_renaming
 
 
 def polars_to_pandas(

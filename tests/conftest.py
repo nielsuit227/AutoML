@@ -67,7 +67,8 @@ def classification_data() -> Iterator[pd.DataFrame]:
 def multiindex_data(classification_data: pd.DataFrame) -> Iterator[pd.DataFrame]:
     log_ind = range(len(classification_data) // 10)
     yield classification_data.sort_values(by="target").set_index(
-        pd.MultiIndex.from_product([range(10), log_ind]), drop=True
+        pd.MultiIndex.from_product([range(10), log_ind], names=["log", "index"]),
+        drop=True,
     )
 
 

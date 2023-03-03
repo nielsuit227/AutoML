@@ -472,7 +472,7 @@ def merge_logs(
     blob_api, platform_api = _get_api_clients(azure, platform)
 
     # Get child folders
-    folders = _get_folders(parent, blob_api)
+    folders = _get_folders(parent, blob_api, more_folders)
     if target not in [f.name for f in folders]:
         raise ValueError(f"Target {target} not present in folders.")
     logger.info(f"Found {len(folders)} folders.")

@@ -7,11 +7,11 @@ Feature processor for extracting and selecting features.
 from __future__ import annotations
 
 import re
+from itertools import combinations
 from warnings import warn
 
-import numpy as np
 import pandas as pd
-import psutil
+import polars as pl
 
 from amplo.automl.feature_processing._base import BaseFeatureExtractor, check_data
 from amplo.automl.feature_processing.feature_selection import FeatureSelector
@@ -25,6 +25,7 @@ from amplo.automl.feature_processing.temporal_feature_extractor import (
 from amplo.base import BaseTransformer, LoggingMixin
 from amplo.base.exceptions import NotFittedError
 from amplo.utils import check_dtypes
+from amplo.utils.data import pandas_to_polars, polars_to_pandas
 
 __all__ = [
     "find_collinear_columns",
@@ -35,7 +36,7 @@ __all__ = [
 
 
 def find_collinear_columns(
-    data: pd.DataFrame, information_threshold: float = 0.9
+    data: pl.DataFrame, information_threshold: float = 0.9
 ) -> list[str]:
     """
     Finds collinear features and returns them.
@@ -47,7 +48,7 @@ def find_collinear_columns(
 
     Parameters
     ----------
-    data : pd.DataFrame
+    data : pl.DataFrame
         Data to search for collinear features.
     information_threshold : float
         Percentage value that defines the threshold for a ``collinear`` feature.
@@ -58,61 +59,43 @@ def find_collinear_columns(
         List of collinear feature columns.
     """
     check_dtypes(
-        ("data", data, pd.DataFrame),
+        ("data", data, pl.DataFrame),
         ("information_threshold", information_threshold, float),
     )
 
-    # Get collinear features
-    nk = data.shape[1]
-    corr_mat = np.zeros((nk, nk))
+    # Set helpers
+    SPLITTER = "<->"
 
-    try:
-        # Check available memory and raise error if necessary
-        mem_avail = psutil.virtual_memory().available
-        mem_data = data.memory_usage(deep=True).sum()
-        if mem_avail < 2 * mem_data:
-            raise MemoryError(
-                "Data is too big to handle time efficient. Using memory efficient "
-                "implementation instead."
-            )
+    # Calculate correlation within columns
+    data_demeaned = data.fill_nan(None).with_columns(pl.all() - pl.all().mean())
+    ss = data_demeaned.with_columns(pl.all().pow(2).sum().pow(0.5))[0]
+    correlation = data_demeaned.select(
+        [
+            ((pl.col(coli) * pl.col(colj)).sum() / (ss[coli] * ss[colj]))
+            .abs()
+            .alias(f"{coli}{SPLITTER}{colj}")
+            # 'combinations' iterates through all combinations of the column names
+            # without having twice the same column and independent of the order
+            for coli, colj in combinations(data.columns, 2)
+        ]
+    )
 
-        # More efficient in terms of time but may crash when data size is huge
-        norm_data = (data - data.mean(skipna=True, numeric_only=True)).to_numpy()
-        ss = np.sqrt(np.sum(norm_data**2, axis=0))
+    # Filter out every column which succeeds the information threshold
+    # NOTE: 'column', 'column_0' and 'field_{i}' are default names by polars
+    collinear_columns = (
+        # convert the dataframe to a series (kind of)
+        correlation.transpose(include_header=True, header_name="column")
+        # filter by information threshold
+        .filter(pl.col("column_0") > information_threshold)["column"]
+        # extract the column name (apply split and take the right hand side)
+        .str.split_exact(SPLITTER, 2).struct.field("field_1")
+        # convert to list
+        .to_list()
+    )
+    # Sort and remove potential duplicates
+    collinear_columns_ = sorted(set(map(str, collinear_columns)))
 
-        for i in range(nk):
-            for j in range(nk):
-                if i >= j:
-                    continue
-                sum_ = np.sum(norm_data[:, i] * norm_data[:, j])
-                with np.errstate(invalid="ignore"):  # ignore division by zero (out=nan)
-                    corr_mat[i, j] = abs(sum_ / (ss[i] * ss[j]))
-
-    except MemoryError:
-        # More redundant calculations but more memory efficient
-        for i, col_name_i in enumerate(data):
-            col_i = data[col_name_i]
-            norm_col_i = (col_i - col_i.mean(skipna=True)).to_numpy()
-            del col_i
-            ss_i = np.sqrt(np.sum(norm_col_i**2))
-
-            for j, col_name_j in enumerate(data):
-                if i >= j:
-                    continue
-
-                col_j = data[col_name_j]
-                norm_col_j = (col_j - col_j.mean(skipna=True)).to_numpy()
-                del col_j
-                ss_j = np.sqrt(np.sum(norm_col_j**2))
-
-                sum_ = np.sum(norm_col_i * norm_col_j)
-                with np.errstate(invalid="ignore"):  # ignore division by zero (out=nan)
-                    corr_mat[i, j] = abs(sum_ / (ss_i * ss_j))
-
-    # Set collinear columns
-    mask = np.sum(corr_mat > information_threshold, axis=0) > 0
-    collinear_columns = np.array(data.columns)[mask].astype(str).tolist()
-    return collinear_columns
+    return collinear_columns_
 
 
 def translate_features(feature_cols: list[str]) -> dict[str, list[str]]:
@@ -266,32 +249,63 @@ class FeatureProcessor(BaseTransformer, LoggingMixin):
         self.extractor_kwargs = extractor_kwargs
         self.collinear_cols_: list[str] = []
 
-    def fit(self, data: pd.DataFrame, **fit_params):
-        """Fits this feature processor (extractor & selector)
-
-        Note: We implement fit_transform because we anyhow transform the data. Therefore,
-            when using fit_transform we don't have to do redundant transformations.
+    def fit(self, data: pd.DataFrame):
         """
+        Fits this feature processor (extractor & selector).
+
+        Parameters
+        ----------
+        data : pd.DataFrame
+            Input data
+        """
+        # NOTE: We anyhow have to transform the data. Therefore, when calling
+        # 'fit_transform' we do no redundant transformations.
         self.fit_transform(data)
         return self
 
     def fit_transform(
-        self, data: pd.DataFrame, feature_set: str | None = None, **fit_params
+        self, data: pd.DataFrame, feature_set: str | None = None
     ) -> pd.DataFrame:
-        """Fits and transforms this feature processor."""
+        """
+        Fits and transforms this feature processor.
+
+        Parameters
+        ----------
+        data : pd.DataFrame
+            Input data
+        feature_set : str | None, optional
+            Choose specific feature set, by default None
+
+        Returns
+        -------
+        pd.DataFrame
+            Transformed data
+        """
+
         self.logger.info("Fitting data.")
-        check_data(data)
+
+        # Convert to polars
+        self.logger.debug("Convert pandas data to polars.")
+        pl_data, index_renaming = pandas_to_polars(data)
+        index_cols = list(index_renaming)
+
+        # Check
+        check_data(pl_data)
 
         # Remove collinear columns
-        data = self._remove_collinear(data)
+        pl_data = self._remove_collinear(pl_data, index_cols)
 
         # Fit and transform feature extractor.
-        self._set_feature_extractor(data)
-        data = self.feature_extractor.fit_transform(data)
+        self._set_feature_extractor(index_cols)
+        pl_data = self.feature_extractor.fit_transform(pl_data, index_cols)
 
         # Analyse feature importance and feature setssdfg
-        data = self.feature_selector.fit_transform(data, feature_set=feature_set)
+        pl_data = self.feature_selector.fit_transform(pl_data, index_cols, feature_set)
         self.feature_extractor.set_features(self.features_)
+
+        # Convert back to pandas and restore index
+        self.logger.debug("Convert polars data back do pandas.")
+        data = polars_to_pandas(pl_data, index_renaming)
 
         self.is_fitted_ = True
         return data
@@ -320,11 +334,18 @@ class FeatureProcessor(BaseTransformer, LoggingMixin):
         -------
         pandas.DataFrame
         """
-        check_data(data)
+
         self.logger.info("Transforming data.")
         if not self.is_fitted_:
             raise NotFittedError
-        data = self._impute_missing_columns(data)
+
+        # Convert to polars
+        self.logger.debug("Convert pandas data to polars.")
+        pl_data, index_renaming = pandas_to_polars(data)
+        index_cols = list(index_renaming)
+
+        # Check
+        check_data(pl_data)
 
         # Set features for transformation
         if feature_set and feature_set in self.feature_sets_:
@@ -333,22 +354,36 @@ class FeatureProcessor(BaseTransformer, LoggingMixin):
             raise ValueError(f"Feature set does not exist: {feature_set}")
 
         # Transform
-        data = self.feature_extractor.transform(data)
-        return self.feature_selector.transform(data)
+        pl_data = self._impute_missing_columns(pl_data)
+        pl_data = self.feature_extractor.transform(pl_data, index_cols)
+        pl_data = self.feature_selector.transform(pl_data, index_cols)
 
-    def _set_feature_extractor(self, data: pd.DataFrame):
+        # Convert back to pandas and restore index
+        self.logger.debug("Convert polars data back do pandas.")
+        data = polars_to_pandas(pl_data, index_renaming)
+
+        return data
+
+    def _set_feature_extractor(self, index_cols: list[str]):
         """
         Checks is_temporal attribute. If not set and x is multi-indexed, sets to true.
 
         Parameters
         ----------
-        x : pd.DataFrame
+        index_cols : list[str]
+            Column names of the indices.
         """
-        self.logger.debug("Checking whether to data has multi-index.")
+        self.logger.debug("Setting feature extractor...")
 
         # Set is_temporal
+        if len(index_cols) not in (1, 2):
+            self.logger.warning("Index is neither single- nor double-indexed.")
         if self.is_temporal is None:
-            self.is_temporal = len(data.index.names) == 2
+            self.is_temporal = len(index_cols) == 2
+            self.logger.debug(
+                f"Data is {'single' if self.is_temporal else 'double'}-indexed. "
+                f"Setting 'is_temporal' attribute to {self.is_temporal}."
+            )
 
         # Set feature extractor
         if not self.extract_features:
@@ -370,7 +405,11 @@ class FeatureProcessor(BaseTransformer, LoggingMixin):
                 verbose=self.verbose,
             )
 
-    def _remove_collinear(self, data: pd.DataFrame) -> pd.DataFrame:
+        self.logger.debug(f"Chose {type(self.feature_extractor).__name__}.")
+
+    def _remove_collinear(
+        self, data: pl.DataFrame, index_cols: list[str]
+    ) -> pl.DataFrame:
         """
         Examines the data and separates different column types.
 
@@ -381,44 +420,53 @@ class FeatureProcessor(BaseTransformer, LoggingMixin):
 
         Parameters
         ----------
-        data : pd.DataFrame
+        data : pl.DataFrame
             Data to examine.
+        index_cols : list[str]
+            Column names is the index.
         """
         self.logger.info("Analysing columns of interest.")
-        self.collinear_cols_ = find_collinear_columns(data, self.collinear_threshold)
+        self.collinear_cols_ = find_collinear_columns(
+            data.drop(index_cols), self.collinear_threshold
+        )
 
         self.logger.info(f"Removed {len(self.collinear_cols_)} columns.")
-        return data.drop(self.collinear_cols_, axis=1)
+        return data.drop(self.collinear_cols_)
 
-    def _impute_missing_columns(self, x: pd.DataFrame) -> pd.DataFrame:
+    def _impute_missing_columns(self, data: pl.DataFrame) -> pl.DataFrame:
         """
         Imputes missing columns when not present for transforming.
 
         Parameters
         ----------
-        x : pd.DataFrame
+        data : pl.DataFrame
             Data to check and impute when necessary.
 
         Returns
         -------
-        pd.DataFrame
-            Cleaned data.
+        pl.DataFrame
+            Imputed data.
         """
         if not self.is_fitted_:
             raise NotFittedError
 
-        # Find missing columns
+        # Identify required columns
         required_cols = [
             col
             for columns in translate_features(self.features_).values()
             for col in columns
         ]
         required_cols = list(set(required_cols))
-        for col in [col for col in required_cols if col not in x]:
-            warn(f"Imputing missing column: {col}.")
-            x[col] = 0
 
-        return x
+        # Find missing columns and impute
+        missing_cols = [col for col in required_cols if col not in data.columns]
+        if missing_cols:
+            warn(
+                f"Imputing {len(missing_cols)} missing columns, namely: {missing_cols}"
+            )
+            data = data.with_columns([pl.lit(0).alias(col) for col in missing_cols])
+
+        return data
 
     @property
     def features_(self) -> list[str]:

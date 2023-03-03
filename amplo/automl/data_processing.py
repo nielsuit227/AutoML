@@ -13,6 +13,7 @@ import pandas as pd
 import polars as pl
 from sklearn.exceptions import NotFittedError
 from sklearn.preprocessing import LabelEncoder
+from typing_extensions import Self
 
 from amplo.base import BaseTransformer, LoggingMixin
 from amplo.utils.data import pandas_to_polars, polars_to_pandas
@@ -171,7 +172,7 @@ class DataProcessor(BaseTransformer, LoggingMixin):
         self.imputed_missing_values_ = 0
         self.removed_constant_columns_ = 0
 
-    def fit(self, data: pd.DataFrame):
+    def fit(self, data: pd.DataFrame) -> Self:
         """
         Fits the data processor.
 
@@ -224,7 +225,7 @@ class DataProcessor(BaseTransformer, LoggingMixin):
 
         # Convert to polars
         self.logger.debug("Convert pandas data to polars.")
-        pl_data, index_names = pandas_to_polars(data, index_prefix="idx_lvl")
+        pl_data, index_names = pandas_to_polars(data)
         work_index_names = list(index_names)
 
         # Data processing

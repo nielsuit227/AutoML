@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from warnings import warn
-
-import pandas as pd
 import polars as pl
 from tqdm import tqdm
 
 from amplo.automl.feature_processing._base import (
     BaseFeatureExtractor,
-    assert_multi_index,
+    assert_double_index,
     check_data,
 )
 from amplo.automl.feature_processing.pooling import POOL_FUNCTIONS, pl_pool
@@ -28,66 +25,93 @@ class FeatureAggregator(BaseFeatureExtractor):
 
     Parameters
     ----------
-    window_size : int, optional
-        Window size for the aggregation
-    verbose : int, default = 1
+    target : str | None, optional
+        Target column that must be present in data, by default None
+    mode : str | None, optional
+        Model mode: {"classification", "regression"}, by default "classification"
+    window_size : int, optional, default: None
+        Determines how many data rows will be collected and summarized by pooling.
+        If None, will determine a reasonable window size for the data at hand.
+    strategy : {"exhaustive", "random", "smart"}, default: "smart"
+        Fitting strategy for feature extraction.
+    verbose : int, optional
+        Verbisity for logger, by default 0
     """
 
-    all_pool_func_str = list(POOL_FUNCTIONS.keys())
-    all_pool_funcs = POOL_FUNCTIONS
+    ALL_POOL_FUNC_STR = list(POOL_FUNCTIONS)
 
     def __init__(
         self,
-        target: str = "",
-        strategy: str = "smart",
+        target: str | None = None,
+        mode: str | None = "classification",
         window_size: int | None = None,
+        strategy: str = "smart",
         verbose: int = 1,
     ):
-        super().__init__(mode="classification", target=target, verbose=verbose)
-        check_dtypes(("strategy", strategy, str))
+        super().__init__(target=target, mode=mode, verbose=verbose)
+
+        # Assert classification or notset
+        if self.mode and self.mode != "classification":
+            raise NotImplementedError("Only mode 'classification' supported.")
+
+        # Check inputs and set defaults
+        check_dtypes(
+            ("window_size", window_size, (type(None), int)),
+            ("strategy", strategy, str),
+        )
+
+        # Set attributes
         self.window_size = window_size
         self.strategy = strategy
+
+        # Subclasses
         self.col_watch: ScoreWatcher | None = None
         self.pool_watch: ScoreWatcher | None = None
 
-    def fit(self, data: pd.DataFrame):
-        self.fit_transform(data)
+    def fit(self, data: pl.DataFrame, index_cols: list[str]):  # type: ignore[override]
+        self.fit_transform(data, index_cols)
         return self
 
-    def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
+    def fit_transform(self, data: pl.DataFrame, index_cols: list[str]) -> pl.DataFrame:  # type: ignore[override]
         """Fits pool functions and aggregates"""
         self.logger.info("Fitting feature aggregator.")
-        check_data(data, allow_double_underscore=True)
-        data, _ = assert_multi_index(data)
-        data.index.names = ["log", "index"]
-        self.set_window_size(data.index)
-        assert self.window_size is not None
 
-        # Set baseline
-        x, y = data.drop(self.target, axis=1), data[self.target]
+        check_data(data, allow_double_underscore=True)
+        data, index_cols, _ = assert_double_index(data, index_cols)
+
+        # Select data
+        x = data.drop([self.target, *index_cols])
+        y = data[self.target]
+        index = data.select(index_cols)
+
+        # Initialize
+        self.set_window_size(index)
         self.initialize_baseline(x, y)
+        assert self.window_size is not None
         assert self._baseline_score is not None
 
         # Set score watchers
         if self.strategy == "smart":
-            self.col_watch = ScoreWatcher(x.keys().tolist())
-            self.pool_watch = ScoreWatcher(self.all_pool_func_str)
+            self.col_watch = ScoreWatcher(x.columns)
+            self.pool_watch = ScoreWatcher(self.ALL_POOL_FUNC_STR)
 
         # Initialize
-        pool_funcs = [p for p in self.all_pool_funcs]
-        features: list[pd.Series] = []
+        pool_funcs = self.ALL_POOL_FUNC_STR
+        data_out = self.pool_target(data, index_cols)
+        y_pooled = data_out[self.target]
 
-        pl_df = pl.from_pandas(pd.concat([data.index.to_frame(), data], axis=1))
-        y_pooled = self.pool_target(y)
+        for col in tqdm(x.columns):
+            if col in (self.target, *index.columns):
+                continue
 
-        for col in tqdm(x):
-            col = str(col)
             for func in pool_funcs:
-                if self.should_skip_col_func(col, func) or col == self.target:
+                if self.should_skip_col_func(col, func):
                     continue
-                feature = pl_pool(
-                    pl_df.select(["log", "index", col]), self.window_size, func
-                )
+
+                self.logger.debug(f"Fitting: {func}, {col}")
+
+                # Pooling
+                feature = pl_pool(data, col, self.window_size, func)[:, -1]
                 score = self.calc_feature_score(feature, y=y_pooled)
 
                 # Update score watchers
@@ -98,8 +122,8 @@ class FeatureAggregator(BaseFeatureExtractor):
                 # Accept feature
                 accepted = self.accept_feature(score)
                 if accepted:
-                    features.append(feature)
-                    self.add_features(str(feature.name))
+                    data_out = data_out.with_column(feature)
+                    self.add_features(feature.name)
 
                 # Update baseline
                 self.logger.debug(
@@ -109,31 +133,35 @@ class FeatureAggregator(BaseFeatureExtractor):
                 self.update_baseline(score)
 
         self.is_fitted_ = True
-        self.logger.info(f"Accepted {len(features)} aggregated features.")
-        return pd.concat(features + [y_pooled], axis=1)
+        self.logger.info(f"Accepted {data_out.shape[1] - 3} aggregated features.")
 
-    def transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        return data_out
+
+    def transform(self, data: pl.DataFrame, index_cols: list[str]) -> pl.DataFrame:  # type: ignore[override]
         """Aggregates data"""
         if not self.is_fitted_:
             raise NotFittedError
         assert self.window_size
-        check_data(data, allow_double_underscore=True)
-        data, _ = assert_multi_index(data)
 
-        output = []
-        pldf = pl.from_pandas(pd.concat([data.index.to_frame(), data], axis=1))
+        data, index_cols, _ = assert_double_index(data, index_cols)
 
+        # Initialize - include pooled target if provided in input data
+        if self.target not in data:
+            data = data.with_column(pl.lit(0).alias(self.target))
+            data_out = self.pool_target(data, index_cols)
+            data_out.drop_in_place(self.target)
+        else:
+            data_out = self.pool_target(data, index_cols)
+
+        # Pooling
         for feature in self.features_:
-            key, pool = feature.split("__pool=")
-            output.append(
-                pl_pool(pldf.select(["log", "index", key]), self.window_size, pool)
+            col, pool = feature.split("__pool=")
+            data_out = data_out.with_column(
+                pl_pool(data, col, self.window_size, pool)[:, -1]
             )
 
-        if self.target in data:
-            output.append(self.pool_target(data[self.target]))
-
         self.logger.info("Transformed features.")
-        return pd.concat(output, axis=1)
+        return data_out
 
     def should_skip_col_func(self, col: str, func: str) -> bool:
         """Checks whether current iteration of column / function should be skipped.
@@ -152,30 +180,30 @@ class FeatureAggregator(BaseFeatureExtractor):
                 return True
         return False
 
-    def pool_target(self, target: pd.Series):
+    def pool_target(self, data: pl.DataFrame, index_cols: list[str]) -> pl.DataFrame:
         """
         Pools target data with given window size.
 
         Parameters
         ----------
-        target : pd.Series
-            Target data to be pooled.
+        target : pl.DataFrame
+            Data to be pooled. Columns 'log', 'index' and target are required.
+        index_cols : list[str] | None
+            Column names of the double-index. By default ['log', 'index'].
 
         Returns
         -------
-        pd.Series
+        pl.DataFrame
             Pooled target data.
         """
-        target, _ = assert_multi_index(target, allow_single_index=True)
-        target.index.names = ["log", "index"]
-        return target.groupby(
-            by=[
-                target.index.get_level_values("log"),
-                target.index.get_level_values("index") // self.window_size,
-            ]
-        ).first()
+        data, index_cols, _ = assert_double_index(data, index_cols)
 
-    def set_window_size(self, index: pd.Index) -> None:
+        # Transform and rename back to self.target
+        assert self.window_size is not None
+        out = pl_pool(data, self.target, self.window_size, "first")
+        return out.rename({f"{self.target}__pool=first": self.target})
+
+    def set_window_size(self, index: pl.DataFrame) -> None:
         """
         Sets the window size in case not provided.
 
@@ -186,80 +214,24 @@ class FeatureAggregator(BaseFeatureExtractor):
 
         Parameters
         ----------
-        index : pandas.Index
+        index : pl.DataFrame
             Index of data to be fitted.
         """
         if self.window_size is not None:
-            self.logger.debug("Window size taken from args.")
+            self.logger.debug(f"Window size (from args): {self.window_size}.")
             return
 
         # Count log sizes
-        counts = pd.Series(index=index, dtype=int).fillna(0).groupby(level=0).count()
-        ws = int(min(counts.min(), counts.mean() // 5))
+        col_1, col_2 = index.columns
+        counts = index.groupby(col_1).count()["count"]
+        counts_min: int = counts.min()  # type: ignore[assignment]
+        counts_max: int = counts.max()  # type: ignore[assignment]
+        counts_mean: float = counts.mean()
+        ws = int(min(counts_min, counts_mean // 5))
 
         # Ensure that window size is an integer and at least 50
         # We're doing fft, less than 50 makes no sense
-        self.window_size = max(int(ws), 50)
+        self.window_size = max(ws, 50)
         self.logger.debug(f"Set window size to {self.window_size}.")
-        if counts.max() // self.window_size > 100:
-            warn("Data with over a 100 windows, will result in slow pooling.")
-
-    def fit_data_to_window_size(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Fit the data to a multiple of the window size.
-
-        Make sure to always call this function before pooling the data.
-        Also, notice that this function uses ``_add_or_remove_tail`` internally.
-
-        Parameters
-        ----------
-        data : tuple of PandasType
-            Data to be fitted to window size.
-
-        Returns
-        -------
-        data : PandasType or List of PandasType
-        """
-        self.logger.debug("Fitting data to window size")
-        # Check datum
-        if len(data.index.names) != 2:
-            raise ValueError("Index is not a MultiIndex of size 2.")
-
-        # Add or remove tail
-        return data.groupby(level=0, group_keys=False, sort=False).apply(
-            self.add_or_remove_tail
-        )
-
-    def add_or_remove_tail(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Fill or cut the tail to fit the data length to a multiple of the window size.
-
-        This is a helper function to be used with ``_fit_data_to_window_size`` and
-        treats the data as being single indexed.
-
-        Parameters
-        ----------
-        data : pd.DataFrame
-            Data to fill, cut or leave its tail.
-
-        Returns
-        -------
-        pd.DataFrame
-            Parsed data.
-        """
-        if self.window_size is None:
-            raise ValueError("Window size not yet set.")
-        if self.window_size == 1:
-            return data
-
-        tail = data.shape[0] % self.window_size
-        n_missing_in_tail = self.window_size - tail
-        if 0 < n_missing_in_tail < self.window_size / 2:
-            # Fill up tail
-            add_to_tail = data.iloc[-n_missing_in_tail:]
-            data = pd.concat([data, add_to_tail])
-        elif tail != 0:
-            # Cut tail
-            data = data.iloc[:-tail]
-
-        return data
+        if counts_max // self.window_size > 100:
+            self.logger.warning("Data with >100 windows will result in slow pooling.")

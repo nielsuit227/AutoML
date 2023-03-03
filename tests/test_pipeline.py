@@ -19,7 +19,7 @@ def get_fake_pipe(data: pd.DataFrame, **kwargs) -> Pipeline:
     pipe._set_subclasses()
     assert pipe.feature_processor and pipe.data_processor
     pipe.data_processor.fit_transform(data)
-    pipe.feature_processor.fit_transform(data, feature_set="rf")
+    pipe.feature_processor.fit_transform(data, feature_set="rf_threshold")
     pipe.results_ = [
         Result(
             model="CatBoostClassifier",

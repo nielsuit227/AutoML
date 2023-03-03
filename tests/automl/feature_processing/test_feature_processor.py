@@ -1,5 +1,5 @@
 import numpy as np
-import pandas as pd
+import polars as pl
 import pytest
 
 from amplo.automl.feature_processing.feature_processing import (
@@ -19,14 +19,30 @@ from amplo.automl.feature_processing.temporal_feature_extractor import (
 
 class TestFeatureProcessor:
     def test_find_collinear_columns(self):
-        x = np.random.normal(0, 1, 100)
-        noise = np.random.normal(0, 0.0001, 100)
-        df = pd.DataFrame(
-            {"a": x, "b": 2 * x + noise, "c": np.random.normal(0, 1, 100)}
-        )
-        collinear_columns = find_collinear_columns(df)
-        assert len(collinear_columns) == 1
-        assert "b" in collinear_columns
+        # Test clean data
+        a = np.random.normal(0, 1, 100)
+        b = np.random.normal(0, 1, 100)
+        noise = np.random.normal(0, 0.1, 100)
+        df = pl.DataFrame({"a": a, "a_collinear": a + noise, "b": b})
+        assert find_collinear_columns(df, 0.0) == ["a_collinear", "b"]
+        assert find_collinear_columns(df, 0.9) == ["a_collinear"]
+        assert find_collinear_columns(df, 0.999) == []
+
+        # Test data with NaN values
+        a_nan = a.copy()
+        a_nan[::3] = None
+        df_nan = pl.DataFrame({"a": a_nan, "a_collinear": a_nan + noise, "b": b})
+        assert df_nan["a"].is_nan().sum()  # in polars: NaN != null
+        assert find_collinear_columns(df_nan, 0.0) == ["a_collinear", "b"]
+        assert find_collinear_columns(df_nan, 0.9) == ["a_collinear"]
+        assert find_collinear_columns(df_nan, 0.999) == []
+
+        # Test data with null values
+        df_null = df_nan.with_columns(pl.all().fill_nan(None))
+        assert df_null["a"].is_null().sum()  # in polars: NaN != null
+        assert find_collinear_columns(df_null, 0.0) == ["a_collinear", "b"]
+        assert find_collinear_columns(df_null, 0.9) == ["a_collinear"]
+        assert find_collinear_columns(df_null, 0.999) == []
 
     def test_translate_features(self):
         features = {
@@ -52,17 +68,25 @@ class TestFeatureProcessor:
             get_required_columns(features)
         )
 
-    def test_set_extractor(self, multiindex_data):
+    def test_set_extractor(self):
         processor = FeatureProcessor(extract_features=False, mode="classification")
-        processor._set_feature_extractor(multiindex_data)
+        processor._set_feature_extractor(["index"])
         assert isinstance(processor.feature_extractor, NopFeatureExtractor)
 
+        processor = FeatureProcessor(mode="classification")
+        processor._set_feature_extractor(["index"])
+        assert isinstance(processor.feature_extractor, StaticFeatureExtractor)
+
         processor = FeatureProcessor(is_temporal=False, mode="classification")
-        processor._set_feature_extractor(multiindex_data)
+        processor._set_feature_extractor(["index", "index2"])
         assert isinstance(processor.feature_extractor, StaticFeatureExtractor)
 
         processor = FeatureProcessor(mode="classification")
-        processor._set_feature_extractor(multiindex_data)
+        processor._set_feature_extractor(["index", "index2"])
+        assert isinstance(processor.feature_extractor, TemporalFeatureExtractor)
+
+        processor = FeatureProcessor(is_temporal=True, mode="classification")
+        processor._set_feature_extractor(["index"])
         assert isinstance(processor.feature_extractor, TemporalFeatureExtractor)
 
     def test_temporal_feature_pruning(self, multiindex_data):

@@ -3,10 +3,10 @@
 """
 Feature processor for extracting static features.
 """
+
 import re
 
-import numpy as np
-import pandas as pd
+import polars as pl
 from tqdm import tqdm
 
 from amplo.automl.feature_processing._base import (
@@ -25,29 +25,29 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
 
     Parameters
     ----------
-    mode : str
-        Model mode: {"classification", "regression"}.
-    verbose : int
-        Verbosity for logger.
+    target : str | None, optional
+        Target column that must be present in data, by default None
+    mode : str | None, optional
+        Model mode: {"classification", "regression"}, by default None
+    verbose : int, optional
+        Verbisity for logger, by default 0
     """
 
-    def __init__(
-        self, target: str = "", mode: str = "classification", verbose: int = 1
-    ):
-        super().__init__(target, mode, verbose)
-
-    def fit(self, data: pd.DataFrame, **fit_params):
-        # We implement fit_transform because we anyhow transform the data. Therefore,
-        # when using fit_transform we don't have to do redundant transformations.
-        self.fit_transform(data)
+    def fit(self, data: pl.DataFrame, index_cols: list[str]):  # type: ignore[override]
+        # NOTE: We anyhow have to transform the data. Therefore, when calling
+        # 'fit_transform' we do no redundant transformations.
+        self.fit_transform(data, index_cols)
         return self
 
-    def fit_transform(self, data: pd.DataFrame, **fit_params) -> pd.DataFrame:
+    def fit_transform(self, data: pl.DataFrame, index_cols: list[str]) -> pl.DataFrame:  # type: ignore[override]
         self.logger.info("Fitting static feature extractor.")
         check_data(data)
 
+        # Split data
+        x = data.drop([self.target, *index_cols])
+        y = data[self.target]
+
         # Initialize fitting
-        x, y = data.drop(self.target, axis=1), data[self.target]
         self.initialize_baseline(x, y)
         assert self._baseline_score is not None
         if self._baseline_score > PERFECT_SCORE:
@@ -56,43 +56,55 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
             self.skipped_ = True
             return data
 
-        # Fit features
-        x_out = pd.concat(
+        # Fit-transform
+        data = pl.concat(
             [
+                # Add index
+                data.select(index_cols),
+                # Fit and transform features
                 self._fit_transform_raw_features(x),
                 self._fit_transform_cross_features(x, y),
                 self._fit_transform_trigo_features(x, y),
                 self._fit_transform_inverse_features(x, y),
+                # Add target
+                data.select(self.target),
             ],
-            axis=1,
+            how="horizontal",
         )
 
         self.is_fitted_ = True
-        return pd.concat([x_out[self.features_], y], axis=1)
+        return data
 
-    def transform(self, data: pd.DataFrame) -> pd.DataFrame:
+    def transform(self, data: pl.DataFrame, index_cols: list[str]) -> pl.DataFrame:  # type: ignore[override]
         self.logger.info("Transforming data.")
-        check_data(data)
+
         if not self.is_fitted_:
             raise NotFittedError
         if self.skipped_:
             return data
 
+        # Input checks
+        check_data(data)
+
         # Apply transformations
-        x_out = pd.concat(
+        data = pl.concat(
             [
+                # Add index
+                data.select(index_cols),
+                # Fit and transform features
                 self._transform_raw_features(data),
                 self._transform_cross_features(data),
                 self._transform_trigo_features(data),
                 self._transform_inverse_features(data),
+                # Add target iff 'self.target' is present
+                data.select(self.target)
+                if self.target in data.columns
+                else pl.DataFrame(),
             ],
-            axis=1,
+            how="horizontal",
         )
 
-        # Ensure ordering of columns & sanitize
-        if self.target in data:
-            return pd.concat([x_out[self.features_], data[self.target]], axis=1)
-        return x_out[self.features_]
+        return data
 
     # ----------------------------------------------------------------------
     # Feature processing
@@ -102,27 +114,24 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
         out = [str(c) for c in self.features_ if not re.search(".+__.+", c)]
         return sorted(out)
 
-    def _fit_transform_raw_features(self, x: pd.DataFrame) -> pd.DataFrame:
+    def _fit_transform_raw_features(self, x: pl.DataFrame) -> pl.DataFrame:
         self.logger.info(f"Adding {x.shape[1]} raw features.")
 
-        # Add accepted features
+        # Accept all features
         self.add_features(x)
 
-        return x
+        return x[self.raw_features_]
 
-    def _transform_raw_features(self, x: pd.DataFrame) -> pd.DataFrame:
+    def _transform_raw_features(self, x: pl.DataFrame) -> pl.DataFrame:
         if not self.raw_features_:
             self.logger.debug("No raw features added.")
-            return pd.DataFrame(index=x.index)
+            return pl.DataFrame()
 
         self.logger.info("Transforming raw features.")
+        if not set(self.raw_features_).issubset(x.columns):
+            raise ValueError("Expected raw features do not match with actual.")
 
-        assert set(self.raw_features_).issubset(
-            x
-        ), "Expected raw features do not match with actual."
-        x_out = x[self.raw_features_]
-
-        return x_out
+        return x[self.raw_features_]
 
     @property
     def cross_features_(self) -> list[str]:
@@ -130,15 +139,15 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
         return sorted(out)
 
     def _fit_transform_cross_features(
-        self, x: pd.DataFrame, y: pd.Series
-    ) -> pd.DataFrame:
+        self, x: pl.DataFrame, y: pl.Series
+    ) -> pl.DataFrame:
         self.logger.info("Fitting cross features.")
 
         scores = {}
-        x_out = []  # empty df for concat (later)
-        for i, col_a in enumerate(tqdm(x)):
+        x_out: list[pl.Series] = []
+        for i, col_a in enumerate(tqdm(x.columns)):
             col_a_useless_so_far = True
-            for j, col_b in enumerate(x.iloc[:, i + 1 :]):
+            for j, col_b in enumerate(x.select(x.columns[i + 1 :]).columns):
                 # Skip when same column or `col_a` is potentially useless.
                 if col_a == col_b or (
                     j > max(50, x.shape[0] // 3) and col_a_useless_so_far
@@ -146,7 +155,8 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
                     continue
 
                 # Make __div__ feature
-                div_feature = x[col_a] / x[col_b].replace(0, 1e-10)
+                safe_col_b = x[col_b].apply(lambda x: 1e-10 if x == 0 else x)
+                div_feature = x[col_a] / safe_col_b
                 div_score = self.calc_feature_score(div_feature, y)
                 if self.accept_feature(div_score):
                     col_a_useless_so_far = False
@@ -164,27 +174,23 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
                     x_out += [mul_feature.rename(name)]
 
         # Decide which features to accept
-        selected_scores = self.select_scores(pd.Series(scores))
-        x_out_df = (
-            pd.concat(x_out, axis=1)[selected_scores.index]
-            if x_out
-            else pd.DataFrame(index=x.index)
-        )
+        selected_cols = self.select_scores(scores)
+        x_out_df = pl.DataFrame(x_out).select(selected_cols)
         self.logger.info(f"Accepted {x_out_df.shape[1]} cross features.")
 
         # Add accepted features
         self.add_features(x_out_df)
 
-        return x_out_df
+        return x_out_df[self.cross_features_]
 
-    def _transform_cross_features(self, x: pd.DataFrame) -> pd.DataFrame:
+    def _transform_cross_features(self, x: pl.DataFrame) -> pl.DataFrame:
         if not self.cross_features_:
             self.logger.debug("No cross features added.")
-            return pd.DataFrame(index=x.index)
+            return pl.DataFrame()
 
         self.logger.info("Transforming cross features.")
 
-        x_out = []
+        x_out: list[pl.Series] = []
         for feature_name in self.cross_features_:
             # Deprecation support
             if "__x__" in feature_name:
@@ -193,7 +199,8 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
                 x_out += [feat.rename(feature_name)]
             elif "__d__" in feature_name:
                 col_a, col_b = feature_name.split("__d__")
-                feat = x[col_a] / x[col_b].replace(0, -1e-10)
+                safe_col_b = x[col_b].apply(lambda x: 1e-10 if x == 0 else x)
+                feat = x[col_a] / safe_col_b
                 x_out += [feat.rename(feature_name)]
             # New names
             elif "__mul__" in feature_name:
@@ -202,95 +209,113 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
                 x_out += [feat.rename(feature_name)]
             elif "__div__" in feature_name:
                 col_a, col_b = feature_name.split("__div__")
-                feat = x[col_a] / x[col_b].replace(0, -1e-10)
+                safe_col_b = x[col_b].apply(lambda x: 1e-10 if x == 0 else x)
+                feat = x[col_a] / safe_col_b
                 x_out += [feat.rename(feature_name)]
             else:
                 raise ValueError(f"Cross feature not recognized: {feature_name}")
 
-        x_out = pd.concat(x_out, axis=1)
+        x_out_df = pl.DataFrame(x_out)
 
         assert set(self.cross_features_) == set(
-            x_out
+            x_out_df.columns
         ), "Expected cross features do not match with actual."
 
-        return x_out
+        return x_out_df[self.cross_features_]
 
     @property
     def trigo_features_(self) -> list[str]:
         out = [str(c) for c in self.features_ if re.match("(sin|cos)__", c)]
         return sorted(out)
 
-    def _fit_transform_trigo_features(self, x: pd.DataFrame, y: pd.Series):
+    def _fit_transform_trigo_features(
+        self, x: pl.DataFrame, y: pl.Series
+    ) -> pl.DataFrame:
         self.logger.info("Fitting trigonometric features.")
 
         # Make features
-        sin_x = np.sin(x).rename(columns={col: f"sin__{col}" for col in x})
-        cos_x = np.cos(x).rename(columns={col: f"cos__{col}" for col in x})
-        feats = pd.concat([sin_x, cos_x], axis=1)
+        sin_x = x.select([pl.col(c).sin().alias(f"sin__{c}") for c in x.columns])
+        cos_x = x.select([pl.col(c).cos().alias(f"cos__{c}") for c in x.columns])
+        feats = pl.concat([sin_x, cos_x], how="horizontal")
 
-        # Score and decide which features to accept
-        scores = self.select_scores(
-            feats.apply(self.calc_feature_score, y=y, axis=0),
-        )
-        x_out = feats[scores.index]
-        self.logger.info(f"Accepted {x_out.shape[1]} raw features.")
+        # Score
+        scores: dict[str, float] = {}
+        for col in feats.columns:
+            scores[col] = self.calc_feature_score(feats[col], y)
+
+        # Decide which features to accept
+        selected_cols = self.select_scores(scores)
+        x_out = feats.select(selected_cols)
+        self.logger.info(f"Accepted {x_out.shape[1]} trigo features.")
 
         # Add accepted features
         self.add_features(x_out)
 
-        return x_out
+        return x_out[self.trigo_features_]
 
-    def _transform_trigo_features(self, x: pd.DataFrame) -> pd.DataFrame:
+    def _transform_trigo_features(self, x: pl.DataFrame) -> pl.DataFrame:
         if not self.trigo_features_:
             self.logger.debug("No trigonometric features added.")
-            return pd.DataFrame(index=x.index)
+            return pl.DataFrame()
 
         self.logger.info("Transforming trigonometric features.")
 
         # Group by transformation
         feat_info_list = [list(f.partition("__"))[::2] for f in self.trigo_features_]
-        feat_info = pd.DataFrame(feat_info_list).groupby(0).agg(list)[1]
+        feat_info = (
+            pl.DataFrame(feat_info_list, orient="row")
+            .groupby("column_0")
+            .agg(pl.col("column_1"))
+        )
 
         # Transform
-        x_out = []
-        for func, cols in feat_info.iteritems():
-            col_names = {col: f"{func}__{col}" for col in x}
-            x_out += [getattr(np, func)(x[cols]).rename(columns=col_names)]
-        x_out = pd.concat(x_out, axis=1)
+        x_out: list[pl.Expr] = []
+        for func, cols in feat_info.rows():
+            # getattr(...) gets the pl.Expr for the function
+            x_out.extend(getattr(pl.col(c), func)().alias(f"{func}__{c}") for c in cols)
+        x_out_df = x.select(x_out)
 
         assert set(self.trigo_features_) == set(
-            x_out
+            x_out_df.columns
         ), "Expected trigonometric features do not match with actual."
 
-        return x_out
+        return x_out_df[self.trigo_features_]
 
     @property
     def inverse_features_(self) -> list[str]:
         out = [str(c) for c in self.features_ if re.match("inv__", c)]
         return sorted(out)
 
-    def _fit_transform_inverse_features(self, x: pd.DataFrame, y: pd.Series):
+    def _fit_transform_inverse_features(
+        self, x: pl.DataFrame, y: pl.Series
+    ) -> pl.DataFrame:
         self.logger.info("Fitting inverse features.")
 
         # Make features
-        with np.errstate(divide="ignore"):  # ignore true_divide warnings
-            feats = (1.0 / x).rename(columns={col: f"inv__{col}" for col in x})
-        feats.fillna(0, inplace=True)
+        feats = x.select([pl.col(c).pow(-1).alias(f"inv__{c}") for c in x.columns])
+        feats = feats.with_column(
+            pl.when(pl.all().is_infinite()).then(0.0).otherwise(pl.all()).keep_name()
+        )
 
-        # Score and decide which features to accept
-        scores = self.select_scores(feats.apply(self.calc_feature_score, y=y, axis=0))
-        x_out = feats[scores.index]
+        # Score
+        scores: dict[str, float] = {}
+        for col in feats.columns:
+            scores[col] = self.calc_feature_score(feats[col], y)
+
+        # Decide which features to accept
+        selected_cols = self.select_scores(scores)
+        x_out = feats.select(selected_cols)
         self.logger.info(f"Accepted {x_out.shape[1]} inverse features.")
 
         # Add accepted features
         self.add_features(x_out)
 
-        return x_out
+        return x_out[self.inverse_features_]
 
-    def _transform_inverse_features(self, x: pd.DataFrame) -> pd.DataFrame:
+    def _transform_inverse_features(self, x: pl.DataFrame) -> pl.DataFrame:
         if not self.inverse_features_:
             self.logger.debug("No inverse features added.")
-            return pd.DataFrame(index=x.index)
+            return pl.DataFrame()
 
         self.logger.info("Transforming inverse features.")
 
@@ -300,13 +325,13 @@ class StaticFeatureExtractor(BaseFeatureExtractor):
         ]
 
         # Transform
-        with np.errstate(divide="ignore"):  # ignore true_divide warnings
-            x_out = (1.0 / x[inv_columns]).rename(
-                columns={col: f"inv__{col}" for col in x}
-            )
+        x_out = x.select([pl.col(c).pow(-1).alias(f"inv__{c}") for c in inv_columns])
+        x_out = x_out.with_column(
+            pl.when(pl.all().is_infinite()).then(0.0).otherwise(pl.all()).keep_name()
+        )
 
         assert set(self.inverse_features_) == set(
-            x_out
+            x_out.columns
         ), "Expected inverse features do not match with actual."
 
-        return x_out
+        return x_out[self.inverse_features_]

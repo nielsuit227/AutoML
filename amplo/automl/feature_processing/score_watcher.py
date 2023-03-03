@@ -11,7 +11,7 @@ __all__ = ["Score", "ScoreWatcher"]
 class Score:
     count: int
     weight: int
-    score: float
+    value: float
 
 
 class ScoreWatcher:
@@ -52,7 +52,7 @@ class ScoreWatcher:
         -------
         typing.Tuple[int, np.ndarray]
         """
-        return self.watch[key].count, self.watch[key].score
+        return self.watch[key].count, self.watch[key].value
 
     def __repr__(self):
         """
@@ -83,12 +83,12 @@ class ScoreWatcher:
             raise ValueError("Cannot enter a NaN score.")
 
         # Initially, the score is 1
-        if self.watch[key].score == self.INITIAL_SCORE:
+        if self.watch[key].value == self.INITIAL_SCORE:
             self.watch[key] = Score(1, weight, score)
 
         else:
-            self.watch[key].score = (
-                self.watch[key].weight * self.watch[key].score + weight * score
+            self.watch[key].value = (
+                self.watch[key].weight * self.watch[key].value + weight * score
             ) / (self.watch[key].weight + weight)
             self.watch[key].count += 1
             self.watch[key].weight += weight
@@ -101,7 +101,7 @@ class ScoreWatcher:
         """
         if (
             self.watch[key].count > 10
-            and self.watch[key].score < self.mean() - self.std() * 3
+            and self.watch[key].value < self.mean() - self.std() * 3
         ):
             return True
         return False
@@ -115,7 +115,7 @@ class ScoreWatcher:
         np.ndarray
             Mean of all scores.
         """
-        return sum(list(map(lambda x: x.score, self.watch.values()))) / len(self.watch)
+        return sum(list(map(lambda x: x.value, self.watch.values()))) / len(self.watch)
 
     def std(self) -> float:
         """
@@ -126,4 +126,4 @@ class ScoreWatcher:
         np.ndarray
             Standard deviation of all scores.
         """
-        return np.std(list(map(lambda x: x.score, self.watch.values())))
+        return np.std(list(map(lambda x: x.value, self.watch.values())))

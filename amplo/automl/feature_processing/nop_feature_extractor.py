@@ -4,7 +4,9 @@
 Feature processor for extracting no features at all.
 """
 
-import pandas as pd
+from __future__ import annotations
+
+import polars as pl
 
 from amplo.automl.feature_processing._base import BaseFeatureExtractor
 
@@ -18,17 +20,17 @@ class NopFeatureExtractor(BaseFeatureExtractor):
     Each input column will be accepted as a feature.
     """
 
-    def fit(self, data: pd.DataFrame):
+    def fit(self, data: pl.DataFrame, index_cols: list[str]):  # type: ignore[override]
         # Fitting: accept each feature/column
-        self.add_features(data.drop(self.target, axis=1))
+        self.add_features(data.drop([*index_cols, self.target]))
         self.is_fitted_ = True
 
         return self
 
-    def transform(self, data: pd.DataFrame) -> pd.DataFrame:
+    def transform(self, data: pl.DataFrame, index_cols: list[str]) -> pl.DataFrame:  # type: ignore[override]
         if self.target in data:
-            return data[self.features_ + [self.target]]
-        return data[self.features_]
+            return data[[*index_cols, *self.features_, self.target]]
+        return data[[*index_cols, *self.features_]]
 
-    def fit_transform(self, data: pd.DataFrame, **fit_params) -> pd.DataFrame:
-        return self.fit(data).transform(data)
+    def fit_transform(self, data: pl.DataFrame, index_cols: list[str]) -> pl.DataFrame:  # type: ignore[override]
+        return self.fit(data, index_cols).transform(data, index_cols)

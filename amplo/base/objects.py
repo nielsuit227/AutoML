@@ -206,7 +206,7 @@ class BaseEstimator(AmploObject, metaclass=ABCMeta):
         self.classes_: npt.NDArray[Any] | None = None
 
     @abstractmethod
-    def fit(self, *args, **kwargs) -> Any:
+    def fit(self, *args, **kwargs) -> Self:
         pass
 
     def score(self, x: pd.DataFrame, y: pd.Series | None, *args, **kwargs) -> Any:
@@ -231,7 +231,7 @@ class BaseTransformer(AmploObject, metaclass=ABCMeta):
     """
 
     @abstractmethod
-    def fit(self, data: pd.DataFrame) -> Any:
+    def fit(self, data: pd.DataFrame) -> Self:
         pass
 
     @abstractmethod

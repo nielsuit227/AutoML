@@ -4,12 +4,11 @@
 Defines various pooling functions.
 """
 
+from __future__ import annotations
+
 from typing import Callable
 
-import numpy as np
-import pandas as pd
 import polars as pl
-from numpy.typing import ArrayLike
 from polars import internals as pli
 
 __all__ = ["POOL_FUNCTIONS", "pl_pool"]
@@ -98,10 +97,6 @@ def peak_val(column: str, n: int) -> pli.Expr:
     return parsed.filter(pl.col("index") == peak_loc(column, n)).first().fill_null(-1.0)
 
 
-def prominent_class(x: ArrayLike):
-    return np.bincount(x, minlength=2).argmax()
-
-
 # ----------------------------------------------------------------------
 # Globals
 
@@ -117,14 +112,14 @@ POOL_FUNCTIONS: dict[str, Callable[..., pli.Expr]] = {
     "skew": pl.Expr.skew,
     "root_mean_square": root_mean_square,
     "sum_values": sum_values,
-    # # --- Characteristics ---
+    # --- Characteristics ---
     "entropy": pl.Expr.entropy,
     "abs_energy": abs_energy,
     "abs_max": abs_max,
     "linear_trend": linear_trend,
     "linear_trend_error": linear_trend_error,
     "n_mean_crossings": n_mean_crossings,
-    # # --- Difference ---
+    # --- Difference ---
     "abs_sum_of_changes": abs_sum_of_changes,
     "mean_of_changes": mean_of_changes,
     "abs_mean_of_changes": abs_mean_of_changes,
@@ -136,57 +131,59 @@ POOL_FUNCTIONS: dict[str, Callable[..., pli.Expr]] = {
     "peak_2_val": lambda x: peak_val(x, 2),
     "peak_3_val": lambda x: peak_val(x, 3),
 }
-MORE_POOL_FUNCTIONS = {
-    "prominent_class": prominent_class,
+_EXTENDED_POOL_FUNCTIONS: dict[str, Callable[..., pli.Expr]] = {
+    "first": pl.first,
+    **POOL_FUNCTIONS,
 }
 
 
 def pl_pool(
     df: pl.DataFrame,
+    column_name: str,
     window_size: int,
     func_str: str,
-) -> pd.Series:
+) -> pl.DataFrame:
     """
     Pools series data with given aggregation functions.
 
     Parameters
     ----------
     df : pl.DataFrame
-        ** Polars ** dataframe to convert, containing log, index, column.
+        Dataframe to convert, containing log, index, column.
+    col : str
+        Column to be pooled.
     window_size : int
         Window size for pooling.
     func_str : str
-        Name of the pooling funciton to be used
+        Name of the pooling function to be used.
 
     Returns
     -------
-    pd.DataFrame
+    pl.DataFrame
         Pooled data where each column name consists of the original series data name and
         its pooling function name (keys of `aggregation` parameter).
         When for example the series data name is "series" and one `aggregation` key is
         named "min", the resulting column is named "series__pool=min".
     """
-    # Make polars aggregator
-    if not len(df.columns) == 3:
-        raise ValueError("Dataframe should contain columns")
-    if not df.columns[0] == "log":
-        raise ValueError("First column should contain log.")
-    if not df.columns[1] == "index":
-        raise ValueError("Second column should contain index.")
+    # Set defaults
+    LOG, INDEX = "log", "index"
 
-    column_name = df.columns[2]
+    # Input check
+    if column_name not in df.columns:
+        raise ValueError(f"Column '{column_name}' is missing.")
+    if LOG not in df.columns or INDEX not in df.columns:
+        raise ValueError(f"Index columns ('{LOG}' and/or '{INDEX}') are missing.")
+
+    # Set pooling function and polars expression
+    func = _EXTENDED_POOL_FUNCTIONS[func_str]
     alias = f"{column_name}__pool={func_str}"
-
-    func = POOL_FUNCTIONS[func_str]
     if func.__module__ == "polars.internals.expr.expr":
-        exp = func(pl.col(column_name)).alias(alias)
+        expr = func(pl.col(column_name)).alias(alias)
     else:
-        exp = func(column_name).alias(alias)
+        expr = func(column_name).alias(alias)
 
-    # Pool and return
-    return (
-        df.groupby_dynamic("index", every=f"{window_size}i", by="log")
-        .agg(exp)
-        .fill_nan(0)
-        .to_pandas()
-    ).set_index(["log", "index"])[alias]
+    # Pool, ensure column order and return
+    pooled_df = (
+        df.groupby_dynamic(INDEX, every=f"{window_size}i", by=LOG).agg(expr).fill_nan(0)
+    )
+    return pooled_df[[LOG, INDEX, alias]]

@@ -1,6 +1,6 @@
 import numpy as np
-import pandas as pd
 import polars as pl
+from polars.testing import assert_frame_equal
 
 from amplo.automl.feature_processing.pooling import (
     linear_trend,
@@ -70,11 +70,10 @@ class TestPooling:
         assert self.groupby_agg(df, peak_val("a", 2)) == -1
 
     def test_pl_pool(self):
-        pooled = pl_pool(self.df, 3, "abs_max")
-        assert pooled.equals(
-            pd.Series(
-                [1.5, 4.5],
-                name="a__pool=abs_max",
-                index=pd.MultiIndex.from_product([[1], [0, 3]], names=["log", "index"]),
-            )
+        pooled = pl_pool(self.df, "a", 3, "abs_max")
+        assert_frame_equal(
+            pooled,
+            pl.DataFrame(
+                {"log": [1, 1], "index": [0, 3], "a__pool=abs_max": [1.5, 4.5]}
+            ),
         )

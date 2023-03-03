@@ -2,12 +2,16 @@ from sklearn.model_selection import cross_val_score
 from sklearn.tree import DecisionTreeClassifier
 
 from amplo.automl.feature_processing.feature_selection import FeatureSelector
+from amplo.utils.data import pandas_to_polars
 
 
 class TestFeatureSelector:
     def test_fit(self, classification_data):
-        selector = FeatureSelector("target", mode="classification")
-        selector.fit(classification_data)
+        data, index_renaming = pandas_to_polars(classification_data)
+        index_cols = list(index_renaming)
+
+        selector = FeatureSelector(target="target", mode="classification")
+        selector.fit(data, index_cols)
         rf_fi = selector.feature_importance_["rf"]
         shap_fi = selector.feature_importance_["shap"]
 
