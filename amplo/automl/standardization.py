@@ -6,7 +6,6 @@ from copy import deepcopy
 from typing import Any
 from warnings import warn
 
-import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
@@ -28,8 +27,8 @@ class Standardizer(BaseTransformer, LoggingMixin):
         self.mode = mode
         self.target = target
         self.cols_: list[str] | None = None
-        self.means_: pd.Series | None = None
-        self.stds_: pd.Series | None = None
+        self.means_: pd.Series[float] | None = None
+        self.stds_: pd.Series[float] | None = None
         self.is_fitted_ = False
 
     def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -39,7 +38,7 @@ class Standardizer(BaseTransformer, LoggingMixin):
 
     def fit(self, data: pd.DataFrame):
         # Gather cols
-        self.cols_ = data.select_dtypes(include=np.number).columns.tolist()
+        self.cols_ = data.select_dtypes(include="number").columns.tolist()
 
         # Remove target if classification
         if (
@@ -65,7 +64,9 @@ class Standardizer(BaseTransformer, LoggingMixin):
         data[self.cols_] = (data[self.cols_] - self.means_) / self.stds_
         return data
 
-    def reverse(self, data: npt.NDArray[Any], column: str | None = None) -> pd.Series:
+    def reverse(
+        self, data: npt.NDArray[Any], column: str | None = None
+    ) -> pd.Series[Any]:
         """
         Currently only used to reverse predict regression predictions. Hence the natural
         support for np.ndarrays.

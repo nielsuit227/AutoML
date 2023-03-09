@@ -135,13 +135,10 @@ class Modeller(LoggingMixin):
         if self.target not in data:
             raise ValueError(f"Target column not in dataframe: {self.target}")
 
+        # Split and convert to NumPy
         self.samples = len(data)
-        y = data[self.target]
-        x = data.drop(self.target, axis=1)
-
-        # Convert to NumPy
-        x = np.array(x)
-        y = np.array(y).ravel()
+        y = np.array(data[self.target]).ravel()
+        x = np.array(data.drop(self.target, axis=1))
 
         # Models
         self.models = self.return_models()

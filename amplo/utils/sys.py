@@ -1,5 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
+from __future__ import annotations
+
 import sys
 from collections import deque
 from collections.abc import Mapping, Set
@@ -33,8 +35,10 @@ def getsize(obj_0: Any) -> int:
         _seen_ids.add(obj_id)
 
         try:
-            if isinstance(obj, (pd.Series, pd.DataFrame)):
+            if isinstance(obj, pd.Series):
                 return obj.memory_usage(deep=True)
+            elif isinstance(obj, pd.DataFrame):
+                return obj.memory_usage(deep=True).sum()
 
             size = sys.getsizeof(obj)
             if isinstance(obj, ZERO_DEPTH_BASES):

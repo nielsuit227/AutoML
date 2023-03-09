@@ -432,7 +432,7 @@ class OptunaGridSearch(LoggingMixin):
             "Hyper parameter tuning not implemented for {}".format(model_name)
         )
 
-    def fit(self, data: pd.DataFrame) -> pd.DataFrame:
+    def fit(self, data: pd.DataFrame) -> list[Result]:
         assert self.target in data
         self.y = data[self.target]
         self.x = data.drop(self.target, axis=1)

@@ -55,11 +55,11 @@ class PartialBoostingClassifier(BaseClassifier):
         else:
             raise AttributeError(f"Unsupported model {model_name}")
 
-    def fit(self, x: pd.DataFrame, y: pd.Series, *args, **kwargs):
+    def fit(self, x: pd.DataFrame, y: pd.Series[float], *args, **kwargs):
         self.classes_ = y.unique()
         return self.model.fit(x, y)
 
-    def predict(self, x: pd.DataFrame, y: pd.Series | None = None, **kwargs):
+    def predict(self, x: pd.DataFrame, y: pd.Series[float] | None = None, **kwargs):
         return self.model.predict(x, **kwargs, **self._get_prediction_kwargs())
 
     def predict_proba(self, x: pd.DataFrame, *args, **kwargs):

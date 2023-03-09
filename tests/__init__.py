@@ -132,7 +132,7 @@ class _DummyPredictor(BaseEstimator):
         else:
             raise ValueError("Invalid predictor mode.")
 
-    def fit(self, x: pd.DataFrame, y: pd.Series):
+    def fit(self, x: pd.DataFrame, y: pd.Series[Any]):
         return self.predictor.fit(x, y)
 
     def predict(self, x: pd.DataFrame):
@@ -194,9 +194,9 @@ class _OverfitClassifier(BaseEstimator):
     def __init__(self):
         super().__init__()
         self.x: npt.NDArray[Any] | None = None
-        self.y: pd.Series | None = None
+        self.y: pd.Series[Any] | None = None
 
-    def fit(self, x: pd.DataFrame, y: pd.Series):
+    def fit(self, x: pd.DataFrame, y: pd.Series[Any]):
         self.x = x.to_numpy()
         self.y = y
         self.classes_ = y.unique()

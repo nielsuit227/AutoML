@@ -209,7 +209,7 @@ class BaseEstimator(AmploObject, metaclass=ABCMeta):
     def fit(self, *args, **kwargs) -> Self:
         pass
 
-    def score(self, x: pd.DataFrame, y: pd.Series | None, *args, **kwargs) -> Any:
+    def score(self, x: pd.DataFrame, y: pd.Series[Any] | None, *args, **kwargs) -> Any:
         return self.model.score(x, y, *args, **kwargs)
 
     @abstractmethod

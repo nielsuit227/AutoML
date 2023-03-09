@@ -117,7 +117,7 @@ class TestModelObserver:
 
         # Model
         model = LogisticRegression()
-        model.fit(data["x"].values.reshape((-1, 1)), data["target"])
+        model.fit(np.array(data["x"].values).reshape((-1, 1)), data["target"])
 
         # Observe
         with pytest.warns(ProductionWarning):

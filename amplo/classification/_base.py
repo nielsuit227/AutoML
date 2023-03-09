@@ -1,5 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
+from __future__ import annotations
+
 from abc import ABCMeta
 from typing import Any
 
@@ -26,7 +28,7 @@ class BaseClassifier(BaseEstimator, LoggingMixin, metaclass=ABCMeta):
             raise NotFittedError
         return self.model.predict(x, **predict_params).reshape(-1)
 
-    def fit_predict(self, x: pd.DataFrame, y: pd.Series, *args, **fit_params):
+    def fit_predict(self, x: pd.DataFrame, y: pd.Series[Any], *args, **fit_params):
         self.model.fit(x, y)
         return self.model.predict(x)
 

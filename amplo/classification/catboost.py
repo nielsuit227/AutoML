@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier as _CatBoostClassifier
@@ -65,7 +67,7 @@ class CatBoostClassifier(BaseClassifier):
 
         super().__init__(model=model, verbose=verbose)
 
-    def fit(self, x: pd.DataFrame, y: pd.Series, **fit_params):
+    def fit(self, x: pd.DataFrame, y: pd.Series[Any], **fit_params):
         # Split data and fit model
         xt, xv, yt, yv = train_test_split(
             x, y, stratify=y, test_size=self.test_size, random_state=self.random_state

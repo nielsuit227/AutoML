@@ -1,8 +1,12 @@
 #  Copyright (c) 2022 by Amplo.
 
+from __future__ import annotations
+
+from typing import Any
 from unittest import mock
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import pytest
 from sklearn.metrics import log_loss, r2_score
@@ -154,7 +158,7 @@ class TestPipeline:
             )
         with pytest.raises(NotImplementedError):
             # wrong type
-            Pipeline()._read_data(x, {"a": 1})  # purposely wrong dtype
+            Pipeline()._read_data(x, {"a": 1})  # type: ignore[arg-type]  # purposely wrong dtype
         with pytest.raises(ValueError):
             # Missing target
             Pipeline()._read_data(data, "label")
@@ -197,6 +201,8 @@ class TestPipeline:
             return_value=[-0.1, -0.1, -0.1, -0.1, -0.1],
         ):
             pipeline.fit(data)
+
+        prediction: npt.NDArray[Any] | pd.Series[Any]
 
         if mode == "classification":
             # Pipeline Prediction

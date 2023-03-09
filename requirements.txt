@@ -21,6 +21,7 @@ tqdm>=4.62.0
 # Linting
 flake8>=4.0.0
 mypy==1.0.0
+pandas-stubs
 types-chardet
 types-colorama
 types-decorator

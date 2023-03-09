@@ -52,10 +52,10 @@ class PartialBoostingRegressor(BaseRegressor):
         else:
             raise AttributeError(f"Unsupported model {model_name}")
 
-    def fit(self, x: pd.DataFrame, y: pd.Series, **kwargs):
+    def fit(self, x: pd.DataFrame, y: pd.Series[float], **kwargs):
         return self.model.fit(x, y, **kwargs)
 
-    def predict(self, x: pd.DataFrame, y: pd.Series | None = None, **kwargs):
+    def predict(self, x: pd.DataFrame, y: pd.Series[float] | None = None, **kwargs):
         return self.model.predict(x, **kwargs, **self._get_prediction_kwargs())
 
     @staticmethod

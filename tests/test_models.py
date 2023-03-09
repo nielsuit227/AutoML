@@ -1,5 +1,7 @@
 #  Copyright (c) 2022 by Amplo.
 
+from __future__ import annotations
+
 import os
 from typing import Any
 from unittest import mock
@@ -61,7 +63,7 @@ class TestModel:
     model_params: dict[str, Any]
     is_classification: bool
     x: pd.DataFrame
-    y: pd.Series
+    y: pd.Series[Any]
 
     @pytest.fixture(autouse=True)
     def setup(self):

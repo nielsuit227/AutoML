@@ -1,6 +1,9 @@
 #  Copyright (c) 2022 by Amplo.
 
+from __future__ import annotations
+
 from collections.abc import Iterator
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -29,7 +32,7 @@ def rmfile_automl() -> Iterator[str]:
 
 
 @pytest.fixture
-def x_y(request, mode: str) -> Iterator[tuple[pd.DataFrame, pd.Series]]:
+def x_y(request, mode: str) -> Iterator[tuple[pd.DataFrame, pd.Series[Any]]]:
     if mode == "classification":
         x, y = make_classification(n_features=5)
     elif mode == "multiclass":
@@ -47,7 +50,7 @@ def x_y(request, mode: str) -> Iterator[tuple[pd.DataFrame, pd.Series]]:
 
 @pytest.fixture
 def data(
-    request, x_y: tuple[pd.DataFrame, pd.Series], target="target"
+    request, x_y: tuple[pd.DataFrame, pd.Series[Any]], target="target"
 ) -> Iterator[pd.DataFrame]:
     data, y = x_y
     data[target] = y

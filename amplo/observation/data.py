@@ -88,7 +88,7 @@ class DataObserver(BaseObserver):
         # Sort index from the innermost to outermost index level since it is shuffled
         # in classification.
         for axis in list(range(len(numeric_data.index.names)))[::-1]:
-            numeric_data.sort_index(axis=axis, inplace=True)
+            numeric_data.sort_index(axis=axis, inplace=True)  # type: ignore[call-overload]
 
         monotonic_columns = []
         for col in numeric_data.columns:

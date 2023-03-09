@@ -15,6 +15,7 @@ reduction. 1123-1132. 10.1109/BigData.2017.8258038.
 from __future__ import annotations
 
 from copy import deepcopy
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -275,7 +276,9 @@ class ModelObserver(BaseObserver):
         scorer = get_scorer(objective)
         train_indices = [i for i in range(len(x)) if i not in slice_indices]
         xt, xv = x.iloc[train_indices], x.iloc[slice_indices]
-        yt, yv = y.iloc[train_indices], y.iloc[slice_indices]
+        yt: pd.Series[Any]
+        yv: pd.Series[Any]
+        yt, yv = y.iloc[train_indices], y.iloc[slice_indices]  # type: ignore[call-overload]
 
         # Train and check performance
         scores = cross_val_score(model, x, y, scoring=objective)
@@ -361,7 +364,7 @@ class ModelObserver(BaseObserver):
     @staticmethod
     def get_train_test_(
         data: pd.DataFrame, target: str
-    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series[Any], pd.Series[Any]]:
         y = data[target]
         x = data.drop(target, axis=1)
         return train_test_split(x, y)

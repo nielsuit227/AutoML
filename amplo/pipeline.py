@@ -243,7 +243,7 @@ class Pipeline(AmploObject, LoggingMixin):
     def fit(
         self,
         data: npt.NDArray[Any] | pd.DataFrame | str | Path,
-        target: npt.NDArray[Any] | pd.Series | str | None = None,
+        target: npt.NDArray[Any] | pd.Series[Any] | str | None = None,
         *,
         metadata: dict[str, dict[str, Any]] | None = None,
         model: str | None = None,
@@ -372,7 +372,7 @@ class Pipeline(AmploObject, LoggingMixin):
         # Return
         return data
 
-    def predict(self, data: pd.DataFrame) -> pd.Series:
+    def predict(self, data: pd.DataFrame) -> pd.Series[Any]:
         """
         Full script to make predictions. Uses 'Production' folder with defined or
         latest version.
@@ -484,7 +484,7 @@ class Pipeline(AmploObject, LoggingMixin):
         target: list[Any]
         | tuple[Any]
         | npt.NDArray[Any]
-        | pd.Series
+        | pd.Series[Any]
         | str
         | Path
         | None = None,
@@ -734,7 +734,7 @@ class Pipeline(AmploObject, LoggingMixin):
             # Use only those columns that are present in the data
             main_predictors = {}
             missing_columns = []
-            for col in data:
+            for col in data.columns:
                 if col in fi:
                     main_predictors[col] = fi[col]
                 else:

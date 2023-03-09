@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import warnings
+from typing import Any
 
 import pandas as pd
 import polars as pl
@@ -37,9 +38,9 @@ def check_dataframe_quality(data: pd.DataFrame) -> bool:
         warnings.warn("Data contains NaN.")
     elif data.isnull().any().any():
         warnings.warn("Data contains null.")
-    elif (data.dtypes == object).any().any():
+    elif (data.dtypes == object).any():
         warnings.warn("Data contains dtype 'object', which is ambiguous.")
-    elif (data.dtypes == str).any().any():
+    elif (data.dtypes == str).any():
         warnings.warn("Data contains dtype 'str', which is ambiguous.")
     elif data.max().max() > 1e38 or data.min().min() < -1e38:
         warnings.warn("Data contains values larger than float32 (1e38).")
@@ -48,7 +49,7 @@ def check_dataframe_quality(data: pd.DataFrame) -> bool:
     return False
 
 
-def check_pearson_correlation(features: pd.DataFrame, labels: pd.Series) -> bool:
+def check_pearson_correlation(features: pd.DataFrame, labels: pd.Series[Any]) -> bool:
     if labels.dtype == "object":
         labels = LabelEncoder().fit_transform(labels)
     pearson_corr = r_regression(features, labels)

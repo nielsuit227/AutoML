@@ -165,7 +165,7 @@ class AzureBlobDataAPI:
 
     def read_pandas(
         self, path: str | Path, n_retries: int = 1, **kwargs
-    ) -> pd.Series | pd.DataFrame:
+    ) -> pd.Series[Any] | pd.DataFrame:
 
         # Read buffered data into pandas
         blob = self.get_blob_client(path)

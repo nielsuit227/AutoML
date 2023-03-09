@@ -157,10 +157,10 @@ class DataProcessor(BaseTransformer, LoggingMixin):
         self.cat_cols_: list[str] = []
         self.date_cols_: list[str] = []
         self.dummies_: dict[str, list[str]] = {}
-        self.q1_: pd.Series | None = None
-        self.q3_: pd.Series | None = None
-        self.means_: pd.Series | None = None
-        self.stds_: pd.Series | None = None
+        self.q1_: list[dict[str, Any]] = []
+        self.q3_: list[dict[str, Any]] = []
+        self.means_: list[dict[str, Any]] = []
+        self.stds_: list[dict[str, Any]] = []
         self.label_encodings_: list[str] = []
         self.rename_dict_: dict[str, str]
 
@@ -866,7 +866,7 @@ class DataProcessor(BaseTransformer, LoggingMixin):
             )
             return data
 
-    def decode_labels(self, data: npt.NDArray[Any]) -> pd.Series:
+    def decode_labels(self, data: npt.NDArray[Any]) -> pd.Series[Any]:
         """
         Decode labels from numerical dtype to original value
 
