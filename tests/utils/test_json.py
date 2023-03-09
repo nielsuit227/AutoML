@@ -188,6 +188,10 @@ class TestUtilsJSON:
         json_dec = json.loads(amplo_enc)
         json_dec_copy = json_dec.copy()
         json_dec_copy["settings"].pop("estimators_")
+        # Handle deprecated attribute (depends on version of scikit-learn)
+        if "_estimator" in json_dec_copy["settings"]:
+            popped = json_dec_copy["settings"].pop("_estimator")
+            json_dec_copy["settings"]["estimator_"] = popped
         # fmt: off
         assert json_dec_copy == {
             AMPLO_JSON_KEY: "params_object",
@@ -216,7 +220,7 @@ class TestUtilsJSON:
                 "classes_": {
                     "dtype": "int64", "values": [0, 1], AMPLO_JSON_KEY: "ndarray"
                 },
-                "_estimator": {
+                "estimator_": {
                     AMPLO_JSON_KEY: "params_object",
                     "module": "sklearn.neighbors._classification",
                     "class": "KNeighborsClassifier",
